@@ -1,249 +1,272 @@
 /**
- * Pixel-art Kintara-style character avatars (Willow / NPC vibe).
- * Deterministic from seller id or name — no official avatar API.
+ * Kintara marketplace-style avatars (Minecraft cube character).
+ * Matches cosmetic shop look: blocky head, simple face, sky-blue plate.
+ * Deterministic from seller id / name.
  *
- * Sprites are 16×16 grids of palette indices.
+ * Sprites are 32×32 grids. Legend:
+ *  . empty (shows bg)
+ *  B bg mid   b bg light   D bg dark edge
+ *  S skin     s skin shade
+ *  K black / mask dark
+ *  W white / eye white
+ *  E eye dark
+ *  M mouth
+ *  T shirt / shorts    t shade
+ *  P pants             p shade
+ *  A accent (camo spot, belt)
+ *  O outline (near-black)
  */
 
+export type SpriteTemplate = string[]; // 32 rows × 32 chars
+
 export type PixelPalette = {
-  outline: string;
+  bg: string;
+  bgMid: string;
+  bgDark: string;
   skin: string;
   skinShade: string;
-  hair: string;
-  hairShade: string;
+  mask: string;
   shirt: string;
   shirtShade: string;
   pants: string;
-  shoes: string;
+  pantsShade: string;
   accent: string;
   eye: string;
-  bg: string;
-  bgDot: string;
+  outline: string;
 };
 
-/** Legend for templates: . empty, O outline, S skin, s shade, H hair, h hair shade,
- *  E eye, T shirt, t shade, P pants, F shoes, A accent, N neck */
-export type SpriteTemplate = string[]; // 16 rows of 16 chars
-
-/**
- * Templates inspired by kintara.wiki pixel NPCs (e.g. Willow):
- * blocky head, simple hair, tunic, pants, shoes — front 3/4 view.
- */
+/** 32×32 — cube head + blocky body (Kintara shop pose). */
 export const PIXEL_TEMPLATES: SpriteTemplate[] = [
-  // 0 — short mop hair (Willow-like)
+  // 0 — bare face, green shorts (Camo Shorts vibe)
   [
-    "................",
-    ".....OOOOOO.....",
-    "....OHHHHHHO....",
-    "...OHHHHHHHHO...",
-    "...OHSSSSSSHO...",
-    "...OSS.EE.SSO...",
-    "...OSSSSSSSSO...",
-    "....OSSSSSSO....",
-    ".....ONNNO......",
-    "....OTTTTTO.....",
-    "...OTTTTTTTTO...",
-    "...OTTATTATTO...",
-    "....OTTTTTTO....",
-    ".....OPPPO......",
-    "....OPO..OPO....",
-    "....OFO..OFO....",
+    "................................",
+    "................................",
+    "..........bbbbbbbbbb............",
+    ".........bBBBBBBBBBBb...........",
+    "........bBBBBBBBBBBBBb..........",
+    ".......bBBSSSSSSSSSSBBb.........",
+    ".......bBSSSSSSSSSSSSBb.........",
+    ".......bBSSSSSSSSSSSSBb.........",
+    ".......bBSS.EE..EE.SSBb.........",
+    ".......bBSS.EE..EE.SSBb.........",
+    ".......bBSSSSSSSSSSSSBb.........",
+    ".......bBSSSSMMSSSSSSBb.........",
+    ".......bBSSSSSSSSSSSSBb.........",
+    ".......bBssssssssssssBb.........",
+    "........bBSSSSSSSSSSBb..........",
+    ".........bBssssssssBb...........",
+    "..........bBSSSSSSBb............",
+    "...........bBSSSSBb.............",
+    "..........bBSSSSSSBb............",
+    ".........bBSSSSSSSSBb...........",
+    "........bBSSSSSSSSSSBb..........",
+    "........bBSTTTTTTTTSBb..........",
+    "........bBSTTTTTTTTSBb..........",
+    "........bBSTTAAAATTSBb..........",
+    "........bBSTTTTTTTTSBb..........",
+    ".........bBSSSSSSSSBb...........",
+    "..........bBSS..SSBb............",
+    "..........bBSS..SSBb............",
+    "..........bBSS..SSBb............",
+    "..........bBSS..SSBb............",
+    "...........bb....bb.............",
+    "................................",
   ],
-  // 1 — long hair sides
+  // 1 — Sheisty / black balaclava
   [
-    "................",
-    "....OOOOOOOO....",
-    "...OHHHHHHHHO...",
-    "..OHHSSSSSSHHO..",
-    "..OHSSSSSSSSHO..",
-    "..OSS.EE.EESSO..",
-    "..OHSSSSSSSSHO..",
-    "..OH.OSSSSO.HO..",
-    "...O..ONNO..O...",
-    "....OTTTTTO.....",
-    "...OTTTTTTTTO...",
-    "...OTTTTTTTTO...",
-    "....OTTAATTO....",
-    ".....OPPPO......",
-    "....OPO..OPO....",
-    "....OFO..OFO....",
+    "................................",
+    "................................",
+    "..........bbbbbbbbbb............",
+    ".........bBBBBBBBBBBb...........",
+    "........bBBBBBBBBBBBBb..........",
+    ".......bBBKKKKKKKKKKBBb.........",
+    ".......bBKKKKKKKKKKKKBb.........",
+    ".......bBKKKKKKKKKKKKBb.........",
+    ".......bBKK.WW..WW.KKBb.........",
+    ".......bBKK.EE..EE.KKBb.........",
+    ".......bBKKKKKKKKKKKKBb.........",
+    ".......bBKKKKMMKKKKKKBb.........",
+    ".......bBKKKKKKKKKKKKBb.........",
+    ".......bBkkkkkkkkkkkkBb.........",
+    "........bBSSSSSSSSSSBb..........",
+    ".........bBssssssssBb...........",
+    "..........bBSSSSSSBb............",
+    "...........bBSSSSBb.............",
+    "..........bBSSSSSSBb............",
+    ".........bBSSSSSSSSBb...........",
+    "........bBSSSSSSSSSSBb..........",
+    "........bBSTTTTTTTTSBb..........",
+    "........bBSTTTTTTTTSBb..........",
+    "........bBSTTTTTTTTSBb..........",
+    "........bBSTTTTTTTTSBb..........",
+    ".........bBSSSSSSSSBb...........",
+    "..........bBSS..SSBb............",
+    "..........bBSS..SSBb............",
+    "..........bBSS..SSBb............",
+    "..........bBSS..SSBb............",
+    "...........bb....bb.............",
+    "................................",
   ],
-  // 2 — hood / cloak
+  // 2 — full shirt + pants (dressed adventurer)
   [
-    "................",
-    "....OOOOOOOO....",
-    "...OTTTTTTTTO...",
-    "..OTTTHHHHTTTO..",
-    "..OTTHSSSSHTTTO.",
-    "..OTH.SSSS.HTO..",
-    "..OTSS.EE.SSTO..",
-    "..OTSSSSSSSSTO..",
-    "...OTSSSSSSSTO..",
-    "....OTNNNNTO....",
-    "...OTTTTTTTTO...",
-    "..OTTTTTTTTTTO..",
-    "...OTTTTTTTTO...",
-    "....OTPPPTO.....",
-    "....OPO..OPO....",
-    "....OFO..OFO....",
+    "................................",
+    "................................",
+    "..........bbbbbbbbbb............",
+    ".........bBBBBBBBBBBb...........",
+    "........bBBBBBBBBBBBBb..........",
+    ".......bBBSSSSSSSSSSBBb.........",
+    ".......bBSSSSSSSSSSSSBb.........",
+    ".......bBSSSSSSSSSSSSBb.........",
+    ".......bBSS.EE..EE.SSBb.........",
+    ".......bBSS.EE..EE.SSBb.........",
+    ".......bBSSSSSSSSSSSSBb.........",
+    ".......bBSSSSMMSSSSSSBb.........",
+    ".......bBSSSSSSSSSSSSBb.........",
+    ".......bBssssssssssssBb.........",
+    "........bBTTTTTTTTTBb...........",
+    ".........bBTTTTTTTTBb...........",
+    "..........bBTTTTTTBb............",
+    "...........bBTTTTBb.............",
+    "..........bBTTTTTTBb............",
+    ".........bBTTTTTTTTBb...........",
+    "........bBTTTTTTTTTTBb..........",
+    "........bBTTTTTTTTTTBb..........",
+    "........bBTTTTATTTTTBb..........",
+    "........bBTTTTTTTTTTBb..........",
+    ".........bBPPPPPPPPBb...........",
+    "..........bBPP..PPBb............",
+    "..........bBPP..PPBb............",
+    "..........bBPP..PPBb............",
+    "..........bBPP..PPBb............",
+    "..........bBSS..SSBb............",
+    "...........bb....bb.............",
+    "................................",
   ],
-  // 3 — spiky hair
+  // 3 — hood up (dark hood + face)
   [
-    "................",
-    "...O.O.OO.O.O...",
-    "..OHOHOHHOHOHO..",
-    "...OHHHHHHHHO...",
-    "...OHSSSSSSHO...",
-    "...OSS.EE.SSO...",
-    "...OSSSSSSSSO...",
-    "....OSSSSSSO....",
-    ".....ONNNO......",
-    "....OTTTTTO.....",
-    "...OTTAATTATO...",
-    "...OTTTTTTTTO...",
-    "....OTTTTTTO....",
-    ".....OPPPO......",
-    "....OPO..OPO....",
-    "....OFO..OFO....",
+    "................................",
+    "................................",
+    "..........bbbbbbbbbb............",
+    ".........bBBBBBBBBBBb...........",
+    "........bBBKKKKKKKKKBb..........",
+    ".......bBKKKKKKKKKKKKBb.........",
+    ".......bBKKSSSSSSSSKKBb.........",
+    ".......bBKSSSSSSSSSSKBb.........",
+    ".......bBKSS.EE..EE.SBb.........",
+    ".......bBKSS.EE..EE.SBb.........",
+    ".......bBKSSSSSSSSSSKBb.........",
+    ".......bBKSSSSMMSSSSKBb.........",
+    ".......bBKKSSSSSSSSKKBb.........",
+    ".......bBKKKKKKKKKKKKBb.........",
+    "........bBSSSSSSSSSSBb..........",
+    ".........bBssssssssBb...........",
+    "..........bBSSSSSSBb............",
+    "...........bBSSSSBb.............",
+    "..........bBTTTTTTBb............",
+    ".........bBTTTTTTTTBb...........",
+    "........bBTTTTTTTTTTBb..........",
+    "........bBTTTTTTTTTTBb..........",
+    "........bBTTTTTTTTTTBb..........",
+    "........bBTTTTTTTTTTBb..........",
+    ".........bBPPPPPPPPBb...........",
+    "..........bBPP..PPBb............",
+    "..........bBPP..PPBb............",
+    "..........bBPP..PPBb............",
+    "..........bBPP..PPBb............",
+    "..........bBSS..SSBb............",
+    "...........bb....bb.............",
+    "................................",
   ],
-  // 4 — cap / hat
+  // 4 — hair block on top (short hair)
   [
-    "................",
-    ".....OOOOOO.....",
-    "....OAAAAAAO....",
-    "...OAAAAAAAAO...",
-    "...OAHHHHHHAO...",
-    "...OSS.EE.SSO...",
-    "...OSSSSSSSSO...",
-    "....OSSSSSSO....",
-    ".....ONNNO......",
-    "....OTTTTTO.....",
-    "...OTTTTTTTTO...",
-    "...OTTTTTTTTO...",
-    "....OTTAATTO....",
-    ".....OPPPO......",
-    "....OPO..OPO....",
-    "....OFO..OFO....",
+    "................................",
+    "................................",
+    "..........bbbbbbbbbb............",
+    ".........bBBBBBBBBBBb...........",
+    "........bBBKKKKKKKKKBb..........",
+    ".......bBBKKKKKKKKKKBBb.........",
+    ".......bBKSSSSSSSSSSKBb.........",
+    ".......bBSSSSSSSSSSSSBb.........",
+    ".......bBSS.EE..EE.SSBb.........",
+    ".......bBSS.EE..EE.SSBb.........",
+    ".......bBSSSSSSSSSSSSBb.........",
+    ".......bBSSSSMMSSSSSSBb.........",
+    ".......bBSSSSSSSSSSSSBb.........",
+    ".......bBssssssssssssBb.........",
+    "........bBSSSSSSSSSSBb..........",
+    ".........bBssssssssBb...........",
+    "..........bBSSSSSSBb............",
+    "...........bBSSSSBb.............",
+    "..........bBTTTTTTBb............",
+    ".........bBTTTTTTTTBb...........",
+    "........bBTTTTTTTTTTBb..........",
+    "........bBTTTTTTTTTTBb..........",
+    "........bBTTTAATTATTBb..........",
+    "........bBTTTTTTTTTTBb..........",
+    ".........bBPPPPPPPPBb...........",
+    "..........bBPP..PPBb............",
+    "..........bBPP..PPBb............",
+    "..........bBPP..PPBb............",
+    "..........bBPP..PPBb............",
+    "..........bBSS..SSBb............",
+    "...........bb....bb.............",
+    "................................",
   ],
-  // 5 — bald / short fringe
+  // 5 — bare + camo shorts accent spots
   [
-    "................",
-    ".....OOOOOO.....",
-    "....OSSSSSSO....",
-    "...OSSSSSSSSO...",
-    "...OSSSSSSSSO...",
-    "...OSS.EE.SSO...",
-    "...OSSSSSSSSO...",
-    "....OSSSSSSO....",
-    ".....ONNNO......",
-    "....OTTTTTO.....",
-    "...OTTTTTTTTO...",
-    "...OTTATTATTO...",
-    "....OTTTTTTO....",
-    ".....OPPPO......",
-    "....OPO..OPO....",
-    "....OFO..OFO....",
+    "................................",
+    "................................",
+    "..........bbbbbbbbbb............",
+    ".........bBBBBBBBBBBb...........",
+    "........bBBBBBBBBBBBBb..........",
+    ".......bBBSSSSSSSSSSBBb.........",
+    ".......bBSSSSSSSSSSSSBb.........",
+    ".......bBSSSSSSSSSSSSBb.........",
+    ".......bBSS.EE..EE.SSBb.........",
+    ".......bBSS.EE..EE.SSBb.........",
+    ".......bBSSSSSSSSSSSSBb.........",
+    ".......bBSSSSMMSSSSSSBb.........",
+    ".......bBSSSSSSSSSSSSBb.........",
+    ".......bBssssssssssssBb.........",
+    "........bBSSSSSSSSSSBb..........",
+    ".........bBssssssssBb...........",
+    "..........bBSSSSSSBb............",
+    "...........bBSSSSBb.............",
+    "..........bBSSSSSSBb............",
+    ".........bBSSSSSSSSBb...........",
+    "........bBSSSSSSSSSSBb..........",
+    "........bBSTATAATAASBb..........",
+    "........bBSTTTTTTTTSBb..........",
+    "........bBSTAATAATTSBb..........",
+    "........bBSTTTTTTTTSBb..........",
+    ".........bBSSSSSSSSBb...........",
+    "..........bBSS..SSBb............",
+    "..........bBSS..SSBb............",
+    "..........bBSS..SSBb............",
+    "..........bBSS..SSBb............",
+    "...........bb....bb.............",
+    "................................",
   ],
 ];
 
-const PALETTE_SETS: Array<Omit<PixelPalette, "bg" | "bgDot" | "outline" | "eye">> = [
-  {
-    skin: "#e8b896",
-    skinShade: "#c99472",
-    hair: "#3d2918",
-    hairShade: "#2a1a0e",
-    shirt: "#3d8f63",
-    shirtShade: "#2a6b48",
-    pants: "#4a3728",
-    shoes: "#2a1f18",
-    accent: "#c9a45c",
-  },
-  {
-    skin: "#f0c9a0",
-    skinShade: "#d4a574",
-    hair: "#1a1a1a",
-    hairShade: "#0d0d0d",
-    shirt: "#5fa1cf",
-    shirtShade: "#3d7aa8",
-    pants: "#2a4663",
-    shoes: "#1a2430",
-    accent: "#7ec4f0",
-  },
-  {
-    skin: "#c48a6a",
-    skinShade: "#a06a4a",
-    hair: "#5c3a21",
-    hairShade: "#3d2614",
-    shirt: "#c9a45c",
-    shirtShade: "#a8843e",
-    pants: "#3d2a1a",
-    shoes: "#1a120c",
-    accent: "#e0bc72",
-  },
-  {
-    skin: "#f5d4b0",
-    skinShade: "#e0b890",
-    hair: "#8b3a4a",
-    hairShade: "#6a2a38",
-    shirt: "#d96b7a",
-    shirtShade: "#b04a58",
-    pants: "#3a2a40",
-    shoes: "#1a1218",
-    accent: "#f0a0a8",
-  },
-  {
-    skin: "#8d5a42",
-    skinShade: "#6a4030",
-    hair: "#1a120c",
-    hairShade: "#0a0806",
-    shirt: "#54b07c",
-    shirtShade: "#3d8f63",
-    pants: "#243040",
-    shoes: "#121820",
-    accent: "#7ec4f0",
-  },
-  {
-    skin: "#e0b090",
-    skinShade: "#c09070",
-    hair: "#e8f2fa",
-    hairShade: "#b0c8d8",
-    shirt: "#2a4663",
-    shirtShade: "#1c334c",
-    pants: "#1a2430",
-    shoes: "#0a121c",
-    accent: "#5fa1cf",
-  },
-  {
-    skin: "#f0c9a0",
-    skinShade: "#d4a574",
-    hair: "#c9a45c",
-    hairShade: "#a8843e",
-    shirt: "#7ec4f0",
-    shirtShade: "#5fa1cf",
-    pants: "#3d2a50",
-    shoes: "#1a1220",
-    accent: "#e0bc72",
-  },
-  {
-    skin: "#d4a574",
-    skinShade: "#b08050",
-    hair: "#2a1f18",
-    hairShade: "#1a120c",
-    shirt: "#8eabc2",
-    shirtShade: "#5a7a90",
-    pants: "#2a4663",
-    shoes: "#122033",
-    accent: "#3d8f63",
-  },
+const SKIN_SETS = [
+  { skin: "#e0b896", skinShade: "#c99472" },
+  { skin: "#f0c9a0", skinShade: "#d4a574" },
+  { skin: "#c48a6a", skinShade: "#a06a4a" },
+  { skin: "#f5d4b0", skinShade: "#e0b890" },
+  { skin: "#8d5a42", skinShade: "#6a4030" },
+  { skin: "#d4a070", skinShade: "#b08050" },
 ];
 
-const BGS = [
-  { bg: "#0e1a28", bgDot: "#152536" },
-  { bg: "#122033", bgDot: "#1a3048" },
-  { bg: "#0a1814", bgDot: "#122820" },
-  { bg: "#1a1420", bgDot: "#281e30" },
-  { bg: "#1a1810", bgDot: "#282418" },
-  { bg: "#101820", bgDot: "#182430" },
+const CLOTH_SETS = [
+  { shirt: "#4a8f5c", shirtShade: "#2f6b40", pants: "#3d5c3a", pantsShade: "#2a4028", accent: "#2a5a30" },
+  { shirt: "#5fa1cf", shirtShade: "#3d7aa8", pants: "#2a4663", pantsShade: "#1c334c", accent: "#7ec4f0" },
+  { shirt: "#c9a45c", shirtShade: "#a8843e", pants: "#4a3728", pantsShade: "#2a1f18", accent: "#e0bc72" },
+  { shirt: "#d96b7a", shirtShade: "#b04a58", pants: "#3a2a40", pantsShade: "#1a1220", accent: "#f0a0a8" },
+  { shirt: "#6b6b6b", shirtShade: "#404040", pants: "#3a3a3a", pantsShade: "#222", accent: "#8a8a8a" },
+  { shirt: "#54b07c", shirtShade: "#3d8f63", pants: "#243040", pantsShade: "#121820", accent: "#7ec4f0" },
+  { shirt: "#8eabc2", shirtShade: "#5a7a90", pants: "#2a4663", pantsShade: "#122033", accent: "#3d8f63" },
+  { shirt: "#2a4663", shirtShade: "#1c334c", pants: "#1a2430", pantsShade: "#0a121c", accent: "#5fa1cf" },
 ];
 
 function hashSeed(input: string): number {
@@ -260,7 +283,7 @@ export type SellerPixelAvatar = {
   templateIndex: number;
   template: SpriteTemplate;
   palette: PixelPalette;
-  size: 16;
+  size: 32;
 };
 
 export function sellerPixelAvatar(
@@ -272,53 +295,67 @@ export function sellerPixelAvatar(
   const key = (id || name || "seller").toLowerCase();
   const seed = hashSeed(key);
   const templateIndex = seed % PIXEL_TEMPLATES.length;
-  const colors = PALETTE_SETS[(seed >>> 4) % PALETTE_SETS.length]!;
-  const bgPair = BGS[(seed >>> 8) % BGS.length]!;
+  const skin = SKIN_SETS[(seed >>> 3) % SKIN_SETS.length]!;
+  const cloth = CLOTH_SETS[(seed >>> 7) % CLOTH_SETS.length]!;
 
   return {
     seed,
     templateIndex,
     template: PIXEL_TEMPLATES[templateIndex]!,
-    size: 16,
+    size: 32,
     palette: {
-      outline: "#0a0e14",
+      // Kintara shop card sky
+      bg: "#9fd0ee",
+      bgMid: "#7eb8e0",
+      bgDark: "#5a9cc8",
+      skin: skin.skin,
+      skinShade: skin.skinShade,
+      mask: "#1a1a1a",
+      shirt: cloth.shirt,
+      shirtShade: cloth.shirtShade,
+      pants: cloth.pants,
+      pantsShade: cloth.pantsShade,
+      accent: cloth.accent,
       eye: "#1a1010",
-      ...colors,
-      ...bgPair,
+      outline: "#0a0e14",
     },
   };
 }
 
-/** Map grid char → fill color (null = transparent). */
-export function pixelColor(
-  ch: string,
-  p: PixelPalette,
-): string | null {
+export function pixelColor(ch: string, p: PixelPalette): string | null {
   switch (ch) {
-    case "O":
-      return p.outline;
+    case "B":
+      return p.bgMid;
+    case "b":
+      return p.bg;
+    case "D":
+      return p.bgDark;
     case "S":
       return p.skin;
     case "s":
       return p.skinShade;
-    case "H":
-      return p.hair;
-    case "h":
-      return p.hairShade;
+    case "K":
+      return p.mask;
+    case "k":
+      return "#0d0d0d";
+    case "W":
+      return "#f0f0f0";
     case "E":
       return p.eye;
+    case "M":
+      return "#6a4030";
     case "T":
       return p.shirt;
     case "t":
       return p.shirtShade;
     case "P":
       return p.pants;
-    case "F":
-      return p.shoes;
+    case "p":
+      return p.pantsShade;
     case "A":
       return p.accent;
-    case "N":
-      return p.skinShade;
+    case "O":
+      return p.outline;
     case ".":
     default:
       return null;

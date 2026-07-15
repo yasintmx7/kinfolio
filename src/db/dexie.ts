@@ -79,8 +79,13 @@ export async function ensureSeeded(): Promise<void> {
     await db.settings.put(defaultSettings());
   }
 
+  // Always refresh catalog snapshot (A–Z wiki items + images)
   const count = await db.items.count();
-  if (count === 0) {
+  const needsRefresh =
+    count === 0 || count < Math.floor(STATIC_CATALOG.length * 0.8);
+  if (needsRefresh) {
+    await db.items.clear();
+    await db.itemAliases.clear();
     await db.items.bulkPut(STATIC_CATALOG);
     const aliases = STATIC_CATALOG.flatMap((item) =>
       item.aliases.map((alias) => ({
@@ -90,6 +95,24 @@ export async function ensureSeeded(): Promise<void> {
       })),
     );
     if (aliases.length) await db.itemAliases.bulkPut(aliases);
+  } else {
+    // Soft-merge image URLs / new items without wiping user custom items
+    const existing = await db.items.toArray();
+    const byId = new Map(existing.map((e) => [e.id, e]));
+    const toPut = STATIC_CATALOG.map((seed) => {
+      const prev = byId.get(seed.id);
+      if (!prev) return seed;
+      return {
+        ...prev,
+        name: seed.name,
+        category: seed.category,
+        aliases: seed.aliases,
+        imageUrl: seed.imageUrl || prev.imageUrl,
+        wikiUrl: seed.wikiUrl || prev.wikiUrl,
+        updatedAt: seed.updatedAt,
+      };
+    });
+    await db.items.bulkPut(toPut);
   }
 }
 

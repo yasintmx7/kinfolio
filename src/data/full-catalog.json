@@ -1,0 +1,2708 @@
+{
+  "generatedAt": "2026-07-15T03:54:21.317Z",
+  "source": "https://kintara.wiki",
+  "count": 152,
+  "withImages": 143,
+  "items": [
+    {
+      "id": "67-shirt",
+      "name": "67 Shirt",
+      "slug": "67-shirt",
+      "category": "cosmetic",
+      "aliases": [
+        "67 Shirt",
+        "67_shirt",
+        "67-shirt",
+        "67shirt"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.641Z",
+      "wikiUrl": "https://kintara.wiki/wiki/67_Shirt",
+      "imageUrl": "https://kintara.wiki/images/d/d5/Cosmetic_67_shirt.png"
+    },
+    {
+      "id": "alon-durag",
+      "name": "Alon Durag",
+      "slug": "alon-durag",
+      "category": "cosmetic",
+      "aliases": [
+        "Alon Durag",
+        "alon_durag",
+        "alon-durag",
+        "alondurag"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.641Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Alon_Durag",
+      "imageUrl": "https://kintara.wiki/images/2/26/Cosmetic_alon_durag.png"
+    },
+    {
+      "id": "alon-glasses",
+      "name": "Alon Glasses",
+      "slug": "alon-glasses",
+      "category": "cosmetic",
+      "aliases": [
+        "Alon Glasses",
+        "alon_glasses",
+        "alon-glasses",
+        "alonglasses"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.641Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Alon_Glasses",
+      "imageUrl": "https://kintara.wiki/images/f/fe/Cosmetic_alon_glasses.png"
+    },
+    {
+      "id": "alon-tank-top",
+      "name": "Alon Tank Top",
+      "slug": "alon-tank-top",
+      "category": "cosmetic",
+      "aliases": [
+        "Alon Tank Top",
+        "alon_tank_top",
+        "alon-tank-top",
+        "alontanktop"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.641Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Alon_Tank_Top",
+      "imageUrl": "https://kintara.wiki/images/7/7f/Cosmetic_alon_tank_top.png"
+    },
+    {
+      "id": "angel-chest",
+      "name": "Angel Chest",
+      "slug": "angel-chest",
+      "category": "key",
+      "aliases": [
+        "Angel Chest",
+        "angel_chest",
+        "angel-chest",
+        "angelchest"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.641Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Angel_Chest",
+      "imageUrl": "https://kintara.wiki/images/5/51/Angel_chest.png"
+    },
+    {
+      "id": "angel-robe-bottoms",
+      "name": "Angel Robe Bottoms",
+      "slug": "angel-robe-bottoms",
+      "category": "cosmetic",
+      "aliases": [
+        "Angel Robe Bottoms",
+        "angel_robe_bottoms",
+        "angel-robe-bottoms",
+        "angelrobebottoms"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.641Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Angel_Robe_Bottoms",
+      "imageUrl": "https://kintara.wiki/images/a/a0/Cosmetic_angel_robe_bottoms.png"
+    },
+    {
+      "id": "angel-robe-hat",
+      "name": "Angel Robe Hat",
+      "slug": "angel-robe-hat",
+      "category": "cosmetic",
+      "aliases": [
+        "Angel Robe Hat",
+        "angel_robe_hat",
+        "angel-robe-hat",
+        "angelrobehat"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.641Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Angel_Robe_Hat",
+      "imageUrl": "https://kintara.wiki/images/1/17/Cosmetic_angel_robe_hat.png"
+    },
+    {
+      "id": "angel-robe-shirt",
+      "name": "Angel Robe Shirt",
+      "slug": "angel-robe-shirt",
+      "category": "cosmetic",
+      "aliases": [
+        "Angel Robe Shirt",
+        "angel_robe_shirt",
+        "angel-robe-shirt",
+        "angelrobeshirt"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.641Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Angel_Robe_Shirt",
+      "imageUrl": "https://kintara.wiki/images/0/06/Cosmetic_angel_robe_shirt.png"
+    },
+    {
+      "id": "angel-wings",
+      "name": "Angel Wings",
+      "slug": "angel-wings",
+      "category": "cosmetic",
+      "aliases": [
+        "Angel Wings",
+        "angel_wings",
+        "angel-wings",
+        "angelwings"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.641Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Angel_Wings",
+      "imageUrl": "https://kintara.wiki/images/c/c6/Cosmetic_angel_wings.png"
+    },
+    {
+      "id": "argentina-jersey",
+      "name": "Argentina Jersey",
+      "slug": "argentina-jersey",
+      "category": "cosmetic",
+      "aliases": [
+        "Argentina Jersey",
+        "argentina_jersey",
+        "argentina-jersey",
+        "argentinajersey"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.641Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Argentina_Jersey",
+      "imageUrl": "https://kintara.wiki/images/d/d8/Cosmetic_argentina_jersey.png"
+    },
+    {
+      "id": "axe",
+      "name": "Axe",
+      "slug": "axe",
+      "category": "tool",
+      "aliases": [
+        "Axe",
+        "axe"
+      ],
+      "isFavoriteDefault": true,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.641Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Axe",
+      "imageUrl": "https://kintara.wiki/images/f/fb/Axe.png"
+    },
+    {
+      "id": "bartholomew",
+      "name": "Bartholomew",
+      "slug": "bartholomew",
+      "category": "resource",
+      "aliases": [
+        "Bartholomew",
+        "bartholomew"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Bartholomew"
+    },
+    {
+      "id": "black-bull-mount",
+      "name": "Black Bull Mount",
+      "slug": "black-bull-mount",
+      "category": "mount",
+      "aliases": [
+        "Black Bull Mount",
+        "black_bull_mount",
+        "black-bull-mount",
+        "blackbullmount"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Black_Bull_Mount",
+      "imageUrl": "https://kintara.wiki/images/8/81/BlackBull.png"
+    },
+    {
+      "id": "black-i-love-kins",
+      "name": "Black I Love KINS",
+      "slug": "black-i-love-kins",
+      "category": "cosmetic",
+      "aliases": [
+        "Black I Love KINS",
+        "black_i_love_kins",
+        "black-i-love-kins",
+        "blackilovekins"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Black_I_Love_KINS",
+      "imageUrl": "https://kintara.wiki/images/8/84/Black_i_love_kins.png"
+    },
+    {
+      "id": "blue-aura",
+      "name": "Blue Aura",
+      "slug": "blue-aura",
+      "category": "cosmetic",
+      "aliases": [
+        "Blue Aura",
+        "blue_aura",
+        "blue-aura",
+        "blueaura"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Blue_Aura",
+      "imageUrl": "https://kintara.wiki/images/f/f9/Cosmetic_blue_aura.png"
+    },
+    {
+      "id": "blue-cape",
+      "name": "Blue Cape",
+      "slug": "blue-cape",
+      "category": "cosmetic",
+      "aliases": [
+        "Blue Cape",
+        "blue_cape",
+        "blue-cape",
+        "bluecape"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Blue_Cape",
+      "imageUrl": "https://kintara.wiki/images/0/01/Cosmetic_blue_cape.png"
+    },
+    {
+      "id": "blue-party-hat",
+      "name": "Blue Party Hat",
+      "slug": "blue-party-hat",
+      "category": "cosmetic",
+      "aliases": [
+        "Blue Party Hat",
+        "blue_party_hat",
+        "blue-party-hat",
+        "bluepartyhat"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Blue_Party_Hat",
+      "imageUrl": "https://kintara.wiki/images/6/60/Cosmetic_blue_party_hat.png"
+    },
+    {
+      "id": "bronze-key",
+      "name": "Bronze Key",
+      "slug": "bronze-key",
+      "category": "key",
+      "aliases": [
+        "Bronze Key",
+        "bronze_key",
+        "bronze-key",
+        "bronzekey"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Bronze_Key",
+      "imageUrl": "https://kintara.wiki/images/9/9a/Bronzekey.png"
+    },
+    {
+      "id": "brute-horn",
+      "name": "Brute Horn",
+      "slug": "brute-horn",
+      "category": "resource",
+      "aliases": [
+        "Brute Horn",
+        "brute_horn",
+        "brute-horn",
+        "brutehorn"
+      ],
+      "isFavoriteDefault": true,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Brute_Horn",
+      "imageUrl": "https://kintara.wiki/images/a/ae/Brutehorn.png"
+    },
+    {
+      "id": "camo-cargo-pants",
+      "name": "Camo Cargo Pants",
+      "slug": "camo-cargo-pants",
+      "category": "cosmetic",
+      "aliases": [
+        "Camo Cargo Pants",
+        "camo_cargo_pants",
+        "camo-cargo-pants",
+        "camocargopants"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Camo_Cargo_Pants",
+      "imageUrl": "https://kintara.wiki/images/1/11/Cosmetic_camo_cargo.png"
+    },
+    {
+      "id": "canada-jersey",
+      "name": "Canada Jersey",
+      "slug": "canada-jersey",
+      "category": "cosmetic",
+      "aliases": [
+        "Canada Jersey",
+        "canada_jersey",
+        "canada-jersey",
+        "canadajersey"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Canada_Jersey",
+      "imageUrl": "https://kintara.wiki/images/e/e4/Cosmetic_canada_jersey.png"
+    },
+    {
+      "id": "chill-house-hat",
+      "name": "Chill House Hat",
+      "slug": "chill-house-hat",
+      "category": "cosmetic",
+      "aliases": [
+        "Chill House Hat",
+        "chill_house_hat",
+        "chill-house-hat",
+        "chillhousehat"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Chill_House_Hat",
+      "imageUrl": "https://kintara.wiki/images/4/4e/Cosmetic_chill_house_hat.png"
+    },
+    {
+      "id": "coal",
+      "name": "Coal",
+      "slug": "coal",
+      "category": "resource",
+      "aliases": [
+        "Coal",
+        "coal"
+      ],
+      "isFavoriteDefault": true,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Coal",
+      "imageUrl": "https://kintara.wiki/images/a/a7/Coal.png"
+    },
+    {
+      "id": "comrade-hat",
+      "name": "Comrade Hat",
+      "slug": "comrade-hat",
+      "category": "cosmetic",
+      "aliases": [
+        "Comrade Hat",
+        "comrade_hat",
+        "comrade-hat",
+        "comradehat"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Comrade_Hat",
+      "imageUrl": "https://kintara.wiki/images/f/fa/Cosmetic_comrade_hat.png"
+    },
+    {
+      "id": "cooked-chicken",
+      "name": "Cooked Chicken",
+      "slug": "cooked-chicken",
+      "category": "mount",
+      "aliases": [
+        "Cooked Chicken",
+        "cooked_chicken",
+        "cooked-chicken",
+        "cookedchicken"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Cooked_Chicken",
+      "imageUrl": "https://kintara.wiki/images/1/15/Cookedchicken.png"
+    },
+    {
+      "id": "cooked-fish-meat",
+      "name": "Cooked Fish Meat",
+      "slug": "cooked-fish-meat",
+      "category": "resource",
+      "aliases": [
+        "Cooked Fish Meat",
+        "cooked_fish_meat",
+        "cooked-fish-meat",
+        "cookedfishmeat"
+      ],
+      "isFavoriteDefault": true,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Cooked_Fish_Meat",
+      "imageUrl": "https://kintara.wiki/images/6/65/Cookedfish.png"
+    },
+    {
+      "id": "crocodile-mount",
+      "name": "Crocodile Mount",
+      "slug": "crocodile-mount",
+      "category": "mount",
+      "aliases": [
+        "Crocodile Mount",
+        "crocodile_mount",
+        "crocodile-mount",
+        "crocodilemount"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Crocodile_Mount",
+      "imageUrl": "https://kintara.wiki/images/d/d6/Crocodile.png"
+    },
+    {
+      "id": "crocs",
+      "name": "Crocs",
+      "slug": "crocs",
+      "category": "cosmetic",
+      "aliases": [
+        "Crocs",
+        "crocs"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Crocs",
+      "imageUrl": "https://kintara.wiki/images/e/e0/Cosmetic_crocs.png"
+    },
+    {
+      "id": "demon-chest",
+      "name": "Demon Chest",
+      "slug": "demon-chest",
+      "category": "key",
+      "aliases": [
+        "Demon Chest",
+        "demon_chest",
+        "demon-chest",
+        "demonchest"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Demon_Chest",
+      "imageUrl": "https://kintara.wiki/images/9/98/Demon_chest.png"
+    },
+    {
+      "id": "demon-horns",
+      "name": "Demon Horns",
+      "slug": "demon-horns",
+      "category": "cosmetic",
+      "aliases": [
+        "Demon Horns",
+        "demon_horns",
+        "demon-horns",
+        "demonhorns"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Demon_Horns",
+      "imageUrl": "https://kintara.wiki/images/a/ae/Cosmetic_horns.png"
+    },
+    {
+      "id": "demon-robe-bottoms",
+      "name": "Demon Robe Bottoms",
+      "slug": "demon-robe-bottoms",
+      "category": "cosmetic",
+      "aliases": [
+        "Demon Robe Bottoms",
+        "demon_robe_bottoms",
+        "demon-robe-bottoms",
+        "demonrobebottoms"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Demon_Robe_Bottoms",
+      "imageUrl": "https://kintara.wiki/images/d/dd/Cosmetic_demon_robe_bottoms.png"
+    },
+    {
+      "id": "demon-robe-hat",
+      "name": "Demon Robe Hat",
+      "slug": "demon-robe-hat",
+      "category": "cosmetic",
+      "aliases": [
+        "Demon Robe Hat",
+        "demon_robe_hat",
+        "demon-robe-hat",
+        "demonrobehat"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Demon_Robe_Hat",
+      "imageUrl": "https://kintara.wiki/images/6/66/Cosmetic_demon_robe_hat.png"
+    },
+    {
+      "id": "demon-robe-shirt",
+      "name": "Demon Robe Shirt",
+      "slug": "demon-robe-shirt",
+      "category": "cosmetic",
+      "aliases": [
+        "Demon Robe Shirt",
+        "demon_robe_shirt",
+        "demon-robe-shirt",
+        "demonrobeshirt"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Demon_Robe_Shirt",
+      "imageUrl": "https://kintara.wiki/images/8/84/Demon_robe_shirt.png"
+    },
+    {
+      "id": "demon-wings",
+      "name": "Demon Wings",
+      "slug": "demon-wings",
+      "category": "cosmetic",
+      "aliases": [
+        "Demon Wings",
+        "demon_wings",
+        "demon-wings",
+        "demonwings"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Demon_Wings",
+      "imageUrl": "https://kintara.wiki/images/c/c6/Cosmetic_angel_wings.png"
+    },
+    {
+      "id": "doge",
+      "name": "Doge",
+      "slug": "doge",
+      "category": "pet",
+      "aliases": [
+        "Doge",
+        "doge"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Doge",
+      "imageUrl": "https://kintara.wiki/images/4/4c/Pet_doge.png"
+    },
+    {
+      "id": "dragon-mount",
+      "name": "Dragon Mount",
+      "slug": "dragon-mount",
+      "category": "mount",
+      "aliases": [
+        "Dragon Mount",
+        "dragon_mount",
+        "dragon-mount",
+        "dragonmount"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Dragon_Mount",
+      "imageUrl": "https://kintara.wiki/images/c/c7/Dragon.png"
+    },
+    {
+      "id": "eagle-mount",
+      "name": "Eagle Mount",
+      "slug": "eagle-mount",
+      "category": "mount",
+      "aliases": [
+        "Eagle Mount",
+        "eagle_mount",
+        "eagle-mount",
+        "eaglemount"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Eagle_Mount",
+      "imageUrl": "https://kintara.wiki/images/9/9b/Mount_eagle.png"
+    },
+    {
+      "id": "fire-n-ice-baseball-cap",
+      "name": "Fire 'n Ice Baseball Cap",
+      "slug": "fire-n-ice-baseball-cap",
+      "category": "cosmetic",
+      "aliases": [
+        "Fire 'n Ice Baseball Cap",
+        "fire_n_ice_baseball_cap",
+        "fire-n-ice-baseball-cap",
+        "fire_'n_ice_baseball_cap",
+        "fire'nicebaseballcap"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Fire_'n_Ice_Baseball_Cap",
+      "imageUrl": "https://kintara.wiki/images/d/de/Cosmetic_fnice_baseball_cap.png"
+    },
+    {
+      "id": "fire-n-ice-long-sleeve",
+      "name": "Fire 'n Ice Long Sleeve",
+      "slug": "fire-n-ice-long-sleeve",
+      "category": "cosmetic",
+      "aliases": [
+        "Fire 'n Ice Long Sleeve",
+        "fire_n_ice_long_sleeve",
+        "fire-n-ice-long-sleeve",
+        "fire_'n_ice_long_sleeve",
+        "fire'nicelongsleeve"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Fire_'n_Ice_Long_Sleeve",
+      "imageUrl": "https://kintara.wiki/images/7/75/Cosmetic_fnice_longsleeve.png"
+    },
+    {
+      "id": "fire-n-ice-shoes",
+      "name": "Fire 'n Ice Shoes",
+      "slug": "fire-n-ice-shoes",
+      "category": "cosmetic",
+      "aliases": [
+        "Fire 'n Ice Shoes",
+        "fire_n_ice_shoes",
+        "fire-n-ice-shoes",
+        "fire_'n_ice_shoes",
+        "fire'niceshoes"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Fire_'n_Ice_Shoes",
+      "imageUrl": "https://kintara.wiki/images/0/00/Cosmetic_fnice_shoes.png"
+    },
+    {
+      "id": "fire-n-ice-shorts",
+      "name": "Fire 'n Ice Shorts",
+      "slug": "fire-n-ice-shorts",
+      "category": "cosmetic",
+      "aliases": [
+        "Fire 'n Ice Shorts",
+        "fire_n_ice_shorts",
+        "fire-n-ice-shorts",
+        "fire_'n_ice_shorts",
+        "fire'niceshorts"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Fire_'n_Ice_Shorts",
+      "imageUrl": "https://kintara.wiki/images/7/74/Cosmetic_fnice_shorts.png"
+    },
+    {
+      "id": "fish",
+      "name": "Fish",
+      "slug": "fish",
+      "category": "resource",
+      "aliases": [
+        "Fish",
+        "fish"
+      ],
+      "isFavoriteDefault": true,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Fish",
+      "imageUrl": "https://kintara.wiki/images/f/fb/Fish.png"
+    },
+    {
+      "id": "fishing-rod",
+      "name": "Fishing Rod",
+      "slug": "fishing-rod",
+      "category": "tool",
+      "aliases": [
+        "Fishing Rod",
+        "fishing_rod",
+        "fishing-rod",
+        "fishingrod"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Fishing_Rod",
+      "imageUrl": "https://kintara.wiki/images/a/a5/Fishingrod.png"
+    },
+    {
+      "id": "flame-cape",
+      "name": "Flame Cape",
+      "slug": "flame-cape",
+      "category": "cosmetic",
+      "aliases": [
+        "Flame Cape",
+        "flame_cape",
+        "flame-cape",
+        "flamecape"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Flame_Cape",
+      "imageUrl": "https://kintara.wiki/images/3/3e/Cosmetic_flame_cape.png"
+    },
+    {
+      "id": "france-jersey",
+      "name": "France Jersey",
+      "slug": "france-jersey",
+      "category": "cosmetic",
+      "aliases": [
+        "France Jersey",
+        "france_jersey",
+        "france-jersey",
+        "francejersey"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/France_Jersey",
+      "imageUrl": "https://kintara.wiki/images/f/fd/Cosmetic_france_jersey.png"
+    },
+    {
+      "id": "galaxy-boots",
+      "name": "Galaxy Boots",
+      "slug": "galaxy-boots",
+      "category": "cosmetic",
+      "aliases": [
+        "Galaxy Boots",
+        "galaxy_boots",
+        "galaxy-boots",
+        "galaxyboots"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Galaxy_Boots",
+      "imageUrl": "https://kintara.wiki/images/7/78/Cosmetic_galaxy_boots.png"
+    },
+    {
+      "id": "galaxy-cowboy-hat",
+      "name": "Galaxy Cowboy Hat",
+      "slug": "galaxy-cowboy-hat",
+      "category": "cosmetic",
+      "aliases": [
+        "Galaxy Cowboy Hat",
+        "galaxy_cowboy_hat",
+        "galaxy-cowboy-hat",
+        "galaxycowboyhat"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Galaxy_Cowboy_Hat",
+      "imageUrl": "https://kintara.wiki/images/c/cb/Cosmetic_galaxy_cowboy_hat.png"
+    },
+    {
+      "id": "galaxy-shorts",
+      "name": "Galaxy Shorts",
+      "slug": "galaxy-shorts",
+      "category": "cosmetic",
+      "aliases": [
+        "Galaxy Shorts",
+        "galaxy_shorts",
+        "galaxy-shorts",
+        "galaxyshorts"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Galaxy_Shorts",
+      "imageUrl": "https://kintara.wiki/images/0/0d/Cosmetic_galaxy_shorts.png"
+    },
+    {
+      "id": "galaxy-tank-top",
+      "name": "Galaxy Tank Top",
+      "slug": "galaxy-tank-top",
+      "category": "cosmetic",
+      "aliases": [
+        "Galaxy Tank Top",
+        "galaxy_tank_top",
+        "galaxy-tank-top",
+        "galaxytanktop"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Galaxy_Tank_Top",
+      "imageUrl": "https://kintara.wiki/images/e/ed/Cosmetic_galaxy_tank_top.png"
+    },
+    {
+      "id": "giraffe-mount",
+      "name": "Giraffe Mount",
+      "slug": "giraffe-mount",
+      "category": "mount",
+      "aliases": [
+        "Giraffe Mount",
+        "giraffe_mount",
+        "giraffe-mount",
+        "giraffemount"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Giraffe_Mount",
+      "imageUrl": "https://kintara.wiki/images/6/60/Giraffe.png"
+    },
+    {
+      "id": "gold",
+      "name": "Gold",
+      "slug": "gold",
+      "category": "resource",
+      "aliases": [
+        "Gold",
+        "gold"
+      ],
+      "isFavoriteDefault": true,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Gold",
+      "imageUrl": "https://kintara.wiki/images/1/10/Gold.png"
+    },
+    {
+      "id": "gold-aura",
+      "name": "Gold Aura",
+      "slug": "gold-aura",
+      "category": "cosmetic",
+      "aliases": [
+        "Gold Aura",
+        "gold_aura",
+        "gold-aura",
+        "goldaura"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Gold_Aura",
+      "imageUrl": "https://kintara.wiki/images/3/35/Cosmetic_gold_aura.png"
+    },
+    {
+      "id": "gold-key",
+      "name": "Gold Key",
+      "slug": "gold-key",
+      "category": "key",
+      "aliases": [
+        "Gold Key",
+        "gold_key",
+        "gold-key",
+        "goldkey"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Gold_Key",
+      "imageUrl": "https://kintara.wiki/images/a/a8/Goldkey.png"
+    },
+    {
+      "id": "gold-whale-mount",
+      "name": "Gold Whale Mount",
+      "slug": "gold-whale-mount",
+      "category": "mount",
+      "aliases": [
+        "Gold Whale Mount",
+        "gold_whale_mount",
+        "gold-whale-mount",
+        "goldwhalemount"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Gold_Whale_Mount",
+      "imageUrl": "https://kintara.wiki/images/4/4a/Whale_gold.png"
+    },
+    {
+      "id": "golden-crown",
+      "name": "Golden Crown",
+      "slug": "golden-crown",
+      "category": "cosmetic",
+      "aliases": [
+        "Golden Crown",
+        "golden_crown",
+        "golden-crown",
+        "goldencrown"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Golden_Crown",
+      "imageUrl": "https://kintara.wiki/images/9/9a/Cosmetic_golden_crown.png"
+    },
+    {
+      "id": "golden-halo",
+      "name": "Golden Halo",
+      "slug": "golden-halo",
+      "category": "cosmetic",
+      "aliases": [
+        "Golden Halo",
+        "golden_halo",
+        "golden-halo",
+        "goldenhalo"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Golden_Halo",
+      "imageUrl": "https://kintara.wiki/images/5/5b/Cosmetic_golden_halo.png"
+    },
+    {
+      "id": "golden-puppy",
+      "name": "Golden Puppy",
+      "slug": "golden-puppy",
+      "category": "pet",
+      "aliases": [
+        "Golden Puppy",
+        "golden_puppy",
+        "golden-puppy",
+        "goldenpuppy"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Golden_Puppy",
+      "imageUrl": "https://kintara.wiki/images/3/33/Pet_golden_puppy.png"
+    },
+    {
+      "id": "golden-slippers",
+      "name": "Golden Slippers",
+      "slug": "golden-slippers",
+      "category": "cosmetic",
+      "aliases": [
+        "Golden Slippers",
+        "golden_slippers",
+        "golden-slippers",
+        "goldenslippers"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Golden_Slippers",
+      "imageUrl": "https://kintara.wiki/images/c/c2/Cosmetic_golden_slippers.png"
+    },
+    {
+      "id": "green-aura",
+      "name": "Green Aura",
+      "slug": "green-aura",
+      "category": "cosmetic",
+      "aliases": [
+        "Green Aura",
+        "green_aura",
+        "green-aura",
+        "greenaura"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Green_Aura",
+      "imageUrl": "https://kintara.wiki/images/a/a3/Cosmetic_green_aura.png"
+    },
+    {
+      "id": "green-cape",
+      "name": "Green Cape",
+      "slug": "green-cape",
+      "category": "cosmetic",
+      "aliases": [
+        "Green Cape",
+        "green_cape",
+        "green-cape",
+        "greencape"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Green_Cape",
+      "imageUrl": "https://kintara.wiki/images/7/75/Cosmetic_green_cape.png"
+    },
+    {
+      "id": "green-party-hat",
+      "name": "Green Party Hat",
+      "slug": "green-party-hat",
+      "category": "cosmetic",
+      "aliases": [
+        "Green Party Hat",
+        "green_party_hat",
+        "green-party-hat",
+        "greenpartyhat"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Green_Party_Hat",
+      "imageUrl": "https://kintara.wiki/images/2/2f/Cosmetic_green_party_hat.png"
+    },
+    {
+      "id": "grimjaw",
+      "name": "Grimjaw",
+      "slug": "grimjaw",
+      "category": "other",
+      "aliases": [
+        "Grimjaw",
+        "grimjaw"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Grimjaw"
+    },
+    {
+      "id": "hammer",
+      "name": "Hammer",
+      "slug": "hammer",
+      "category": "tool",
+      "aliases": [
+        "Hammer",
+        "hammer"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Hammer",
+      "imageUrl": "https://kintara.wiki/images/8/81/Hammer.png"
+    },
+    {
+      "id": "harambe-mount",
+      "name": "Harambe Mount",
+      "slug": "harambe-mount",
+      "category": "mount",
+      "aliases": [
+        "Harambe Mount",
+        "harambe_mount",
+        "harambe-mount",
+        "harambemount"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Harambe_Mount",
+      "imageUrl": "https://kintara.wiki/images/e/e4/Harambe.png"
+    },
+    {
+      "id": "health-potion",
+      "name": "Health Potion",
+      "slug": "health-potion",
+      "category": "potion",
+      "aliases": [
+        "Health Potion",
+        "health_potion",
+        "health-potion",
+        "healthpotion"
+      ],
+      "isFavoriteDefault": true,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Health_Potion",
+      "imageUrl": "https://kintara.wiki/images/9/94/Health.png"
+    },
+    {
+      "id": "holy-cross",
+      "name": "Holy Cross",
+      "slug": "holy-cross",
+      "category": "cosmetic",
+      "aliases": [
+        "Holy Cross",
+        "holy_cross",
+        "holy-cross",
+        "holycross"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Holy_Cross",
+      "imageUrl": "https://kintara.wiki/images/9/92/Cosmetic_holy_cross.png"
+    },
+    {
+      "id": "jester-hat",
+      "name": "Jester Hat",
+      "slug": "jester-hat",
+      "category": "cosmetic",
+      "aliases": [
+        "Jester Hat",
+        "jester_hat",
+        "jester-hat",
+        "jesterhat"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Jester_Hat",
+      "imageUrl": "https://kintara.wiki/images/d/d7/Cosmetic_jester_hat.png"
+    },
+    {
+      "id": "jotchua",
+      "name": "Jotchua",
+      "slug": "jotchua",
+      "category": "cosmetic",
+      "aliases": [
+        "Jotchua",
+        "jotchua"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Jotchua"
+    },
+    {
+      "id": "json-helmet",
+      "name": "Json Helmet",
+      "slug": "json-helmet",
+      "category": "cosmetic",
+      "aliases": [
+        "Json Helmet",
+        "json_helmet",
+        "json-helmet",
+        "jsonhelmet"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Json_Helmet",
+      "imageUrl": "https://kintara.wiki/images/b/b8/Cosmetic_json_helmet.png"
+    },
+    {
+      "id": "lightning-cape",
+      "name": "Lightning Cape",
+      "slug": "lightning-cape",
+      "category": "cosmetic",
+      "aliases": [
+        "Lightning Cape",
+        "lightning_cape",
+        "lightning-cape",
+        "lightningcape"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Lightning_Cape",
+      "imageUrl": "https://kintara.wiki/images/9/9e/Cosmetic_lightning_cape.png"
+    },
+    {
+      "id": "lmao",
+      "name": "LMAO!",
+      "slug": "lmao",
+      "category": "pet",
+      "aliases": [
+        "LMAO!",
+        "lmao",
+        "lmao!"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/LMAO!",
+      "imageUrl": "https://kintara.wiki/images/1/1b/Pet_lmao.png"
+    },
+    {
+      "id": "lvl-2-axe",
+      "name": "Lvl 2 Axe",
+      "slug": "lvl-2-axe",
+      "category": "tool",
+      "aliases": [
+        "Lvl 2 Axe",
+        "lvl_2_axe",
+        "lvl-2-axe",
+        "lvl2axe"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Lvl_2_Axe",
+      "imageUrl": "https://kintara.wiki/images/f/fe/Axelvl2.png"
+    },
+    {
+      "id": "lvl-2-pickaxe",
+      "name": "Lvl 2 Pickaxe",
+      "slug": "lvl-2-pickaxe",
+      "category": "tool",
+      "aliases": [
+        "Lvl 2 Pickaxe",
+        "lvl_2_pickaxe",
+        "lvl-2-pickaxe",
+        "lvl2pickaxe"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Lvl_2_Pickaxe",
+      "imageUrl": "https://kintara.wiki/images/a/a2/Pickaxelvl2.png"
+    },
+    {
+      "id": "lvl-2-sword",
+      "name": "Lvl 2 Sword",
+      "slug": "lvl-2-sword",
+      "category": "tool",
+      "aliases": [
+        "Lvl 2 Sword",
+        "lvl_2_sword",
+        "lvl-2-sword",
+        "lvl2sword"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Lvl_2_Sword",
+      "imageUrl": "https://kintara.wiki/images/6/6a/Swordlvl2.png"
+    },
+    {
+      "id": "magma-brute-pet",
+      "name": "Magma Brute Pet",
+      "slug": "magma-brute-pet",
+      "category": "pet",
+      "aliases": [
+        "Magma Brute Pet",
+        "magma_brute_pet",
+        "magma-brute-pet",
+        "magmabrutepet"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Magma_Brute_Pet",
+      "imageUrl": "https://kintara.wiki/images/9/92/Magma_Brute.png"
+    },
+    {
+      "id": "magma-crocodile-mount",
+      "name": "Magma Crocodile Mount",
+      "slug": "magma-crocodile-mount",
+      "category": "mount",
+      "aliases": [
+        "Magma Crocodile Mount",
+        "magma_crocodile_mount",
+        "magma-crocodile-mount",
+        "magmacrocodilemount"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Magma_Crocodile_Mount",
+      "imageUrl": "https://kintara.wiki/images/1/10/Magma_crocodile.png"
+    },
+    {
+      "id": "metal",
+      "name": "Metal",
+      "slug": "metal",
+      "category": "resource",
+      "aliases": [
+        "Metal",
+        "metal"
+      ],
+      "isFavoriteDefault": true,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Metal",
+      "imageUrl": "https://kintara.wiki/images/e/e1/Metal.png"
+    },
+    {
+      "id": "mexico-jersey",
+      "name": "Mexico Jersey",
+      "slug": "mexico-jersey",
+      "category": "cosmetic",
+      "aliases": [
+        "Mexico Jersey",
+        "mexico_jersey",
+        "mexico-jersey",
+        "mexicojersey"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Mexico_Jersey",
+      "imageUrl": "https://kintara.wiki/images/6/60/Cosmetic_mexico_jersey.png"
+    },
+    {
+      "id": "mitch-face",
+      "name": "Mitch Face",
+      "slug": "mitch-face",
+      "category": "cosmetic",
+      "aliases": [
+        "Mitch Face",
+        "mitch_face",
+        "mitch-face",
+        "mitchface"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Mitch_Face",
+      "imageUrl": "https://kintara.wiki/images/a/a9/Cosmetic_mitch_face.png"
+    },
+    {
+      "id": "mog-pit-vipers",
+      "name": "MOG Pit Vipers",
+      "slug": "mog-pit-vipers",
+      "category": "cosmetic",
+      "aliases": [
+        "MOG Pit Vipers",
+        "mog_pit_vipers",
+        "mog-pit-vipers",
+        "mogpitvipers"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/MOG_Pit_Vipers",
+      "imageUrl": "https://kintara.wiki/images/7/79/Cosmetic_mog_glasses.png"
+    },
+    {
+      "id": "molten-backwards-cap",
+      "name": "Molten Backwards Cap",
+      "slug": "molten-backwards-cap",
+      "category": "cosmetic",
+      "aliases": [
+        "Molten Backwards Cap",
+        "molten_backwards_cap",
+        "molten-backwards-cap",
+        "moltenbackwardscap"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Molten_Backwards_Cap",
+      "imageUrl": "https://kintara.wiki/images/e/e1/Cosmetic_lava_backward_cap.png"
+    },
+    {
+      "id": "molten-pants",
+      "name": "Molten Pants",
+      "slug": "molten-pants",
+      "category": "cosmetic",
+      "aliases": [
+        "Molten Pants",
+        "molten_pants",
+        "molten-pants",
+        "moltenpants"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Molten_Pants",
+      "imageUrl": "https://kintara.wiki/images/6/60/Cosmetic_lava_pants.png"
+    },
+    {
+      "id": "molten-phoenix-mount",
+      "name": "Molten Phoenix Mount",
+      "slug": "molten-phoenix-mount",
+      "category": "mount",
+      "aliases": [
+        "Molten Phoenix Mount",
+        "molten_phoenix_mount",
+        "molten-phoenix-mount",
+        "moltenphoenixmount"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Molten_Phoenix_Mount",
+      "imageUrl": "https://kintara.wiki/images/c/c3/Molten_phoenix.png"
+    },
+    {
+      "id": "molten-rock",
+      "name": "Molten Rock",
+      "slug": "molten-rock",
+      "category": "resource",
+      "aliases": [
+        "Molten Rock",
+        "molten_rock",
+        "molten-rock",
+        "moltenrock"
+      ],
+      "isFavoriteDefault": true,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Molten_Rock",
+      "imageUrl": "https://kintara.wiki/images/1/16/Molten_rock.png"
+    },
+    {
+      "id": "molten-shoes",
+      "name": "Molten Shoes",
+      "slug": "molten-shoes",
+      "category": "cosmetic",
+      "aliases": [
+        "Molten Shoes",
+        "molten_shoes",
+        "molten-shoes",
+        "moltenshoes"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Molten_Shoes",
+      "imageUrl": "https://kintara.wiki/images/b/b3/Cosmetic_lava_boots.png"
+    },
+    {
+      "id": "molten-t-shirt",
+      "name": "Molten T-shirt",
+      "slug": "molten-t-shirt",
+      "category": "cosmetic",
+      "aliases": [
+        "Molten T-shirt",
+        "molten_t_shirt",
+        "molten-t-shirt",
+        "molten_t-shirt",
+        "moltent-shirt"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Molten_T-shirt",
+      "imageUrl": "https://kintara.wiki/images/7/74/Cosmetic_lava_tshirt.png"
+    },
+    {
+      "id": "neet-hat",
+      "name": "NEET Hat",
+      "slug": "neet-hat",
+      "category": "cosmetic",
+      "aliases": [
+        "NEET Hat",
+        "neet_hat",
+        "neet-hat",
+        "neethat"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/NEET_Hat",
+      "imageUrl": "https://kintara.wiki/images/e/e0/Cosmetic_neet_hat.png"
+    },
+    {
+      "id": "nietzschean-penguin",
+      "name": "Nietzschean Penguin",
+      "slug": "nietzschean-penguin",
+      "category": "pet",
+      "aliases": [
+        "Nietzschean Penguin",
+        "nietzschean_penguin",
+        "nietzschean-penguin",
+        "nietzscheanpenguin"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Nietzschean_Penguin",
+      "imageUrl": "https://kintara.wiki/images/b/ba/Pet_nietzschean_penguin.png"
+    },
+    {
+      "id": "night-skull-hoodie",
+      "name": "Night Skull Hoodie",
+      "slug": "night-skull-hoodie",
+      "category": "cosmetic",
+      "aliases": [
+        "Night Skull Hoodie",
+        "night_skull_hoodie",
+        "night-skull-hoodie",
+        "nightskullhoodie"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Night_Skull_Hoodie"
+    },
+    {
+      "id": "octopus-mount",
+      "name": "Octopus Mount",
+      "slug": "octopus-mount",
+      "category": "mount",
+      "aliases": [
+        "Octopus Mount",
+        "octopus_mount",
+        "octopus-mount",
+        "octopusmount"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Octopus_Mount",
+      "imageUrl": "https://kintara.wiki/images/a/a9/Octopus_Mount.png"
+    },
+    {
+      "id": "pajama-pants",
+      "name": "Pajama Pants",
+      "slug": "pajama-pants",
+      "category": "cosmetic",
+      "aliases": [
+        "Pajama Pants",
+        "pajama_pants",
+        "pajama-pants",
+        "pajamapants"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Pajama_Pants",
+      "imageUrl": "https://kintara.wiki/images/7/74/Cosmetic_pajama_pants.png"
+    },
+    {
+      "id": "pepe-the-frog",
+      "name": "Pepe the Frog",
+      "slug": "pepe-the-frog",
+      "category": "pet",
+      "aliases": [
+        "Pepe the Frog",
+        "pepe_the_frog",
+        "pepe-the-frog",
+        "pepethefrog"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Pepe_the_Frog",
+      "imageUrl": "https://kintara.wiki/images/e/ed/Pet_pepe_the_frog.png"
+    },
+    {
+      "id": "phantom",
+      "name": "Phantom",
+      "slug": "phantom",
+      "category": "pet",
+      "aliases": [
+        "Phantom",
+        "phantom"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Phantom",
+      "imageUrl": "https://kintara.wiki/images/d/da/Pet_phantom.png"
+    },
+    {
+      "id": "phantom-t-shirt",
+      "name": "Phantom T-shirt",
+      "slug": "phantom-t-shirt",
+      "category": "cosmetic",
+      "aliases": [
+        "Phantom T-shirt",
+        "phantom_t_shirt",
+        "phantom-t-shirt",
+        "phantom_t-shirt",
+        "phantomt-shirt"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Phantom_T-shirt",
+      "imageUrl": "https://kintara.wiki/images/e/eb/Cosmetic_phantom_tshirt.png"
+    },
+    {
+      "id": "pickaxe",
+      "name": "Pickaxe",
+      "slug": "pickaxe",
+      "category": "tool",
+      "aliases": [
+        "Pickaxe",
+        "pickaxe"
+      ],
+      "isFavoriteDefault": true,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Pickaxe",
+      "imageUrl": "https://kintara.wiki/images/b/b7/Pickaxe.png"
+    },
+    {
+      "id": "poison-potion",
+      "name": "Poison Potion",
+      "slug": "poison-potion",
+      "category": "potion",
+      "aliases": [
+        "Poison Potion",
+        "poison_potion",
+        "poison-potion",
+        "poisonpotion"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Poison_Potion",
+      "imageUrl": "https://kintara.wiki/images/5/53/Poison.svg"
+    },
+    {
+      "id": "pump-pill",
+      "name": "Pump Pill",
+      "slug": "pump-pill",
+      "category": "pet",
+      "aliases": [
+        "Pump Pill",
+        "pump_pill",
+        "pump-pill",
+        "pumppill"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Pump_Pill",
+      "imageUrl": "https://kintara.wiki/images/3/37/Pet_pump_pill.png"
+    },
+    {
+      "id": "pump-fun-hoodie",
+      "name": "Pump.fun Hoodie",
+      "slug": "pump-fun-hoodie",
+      "category": "cosmetic",
+      "aliases": [
+        "Pump.fun Hoodie",
+        "pump_fun_hoodie",
+        "pump-fun-hoodie",
+        "pump.fun_hoodie",
+        "pump.funhoodie"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Pump.fun_Hoodie",
+      "imageUrl": "https://kintara.wiki/images/d/d3/Cosmetic_pump_fun_hoodie.png"
+    },
+    {
+      "id": "purple-aura",
+      "name": "Purple Aura",
+      "slug": "purple-aura",
+      "category": "cosmetic",
+      "aliases": [
+        "Purple Aura",
+        "purple_aura",
+        "purple-aura",
+        "purpleaura"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Purple_Aura",
+      "imageUrl": "https://kintara.wiki/images/8/84/Cosmetic_purple_aura.png"
+    },
+    {
+      "id": "purple-dragon",
+      "name": "Purple Dragon",
+      "slug": "purple-dragon",
+      "category": "mount",
+      "aliases": [
+        "Purple Dragon",
+        "purple_dragon",
+        "purple-dragon",
+        "purpledragon"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Purple_Dragon",
+      "imageUrl": "https://kintara.wiki/images/2/26/Pet_purple_dragon.png"
+    },
+    {
+      "id": "purple-party-hat",
+      "name": "Purple Party Hat",
+      "slug": "purple-party-hat",
+      "category": "cosmetic",
+      "aliases": [
+        "Purple Party Hat",
+        "purple_party_hat",
+        "purple-party-hat",
+        "purplepartyhat"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Purple_Party_Hat",
+      "imageUrl": "https://kintara.wiki/images/7/77/Cosmetic_purple_party_hat.png"
+    },
+    {
+      "id": "rainbow-boots",
+      "name": "Rainbow Boots",
+      "slug": "rainbow-boots",
+      "category": "cosmetic",
+      "aliases": [
+        "Rainbow Boots",
+        "rainbow_boots",
+        "rainbow-boots",
+        "rainbowboots"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Rainbow_Boots",
+      "imageUrl": "https://kintara.wiki/images/b/b4/Cosmetic_rainbow_boots.png"
+    },
+    {
+      "id": "rainbow-dragon",
+      "name": "Rainbow Dragon",
+      "slug": "rainbow-dragon",
+      "category": "mount",
+      "aliases": [
+        "Rainbow Dragon",
+        "rainbow_dragon",
+        "rainbow-dragon",
+        "rainbowdragon"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Rainbow_Dragon",
+      "imageUrl": "https://kintara.wiki/images/6/66/Pet_rainbow_dragon.png"
+    },
+    {
+      "id": "rainbow-pants",
+      "name": "Rainbow Pants",
+      "slug": "rainbow-pants",
+      "category": "cosmetic",
+      "aliases": [
+        "Rainbow Pants",
+        "rainbow_pants",
+        "rainbow-pants",
+        "rainbowpants"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Rainbow_Pants",
+      "imageUrl": "https://kintara.wiki/images/b/bf/Cosmetic_rainbow_pants.png"
+    },
+    {
+      "id": "rainbow-t-shirt",
+      "name": "Rainbow T-shirt",
+      "slug": "rainbow-t-shirt",
+      "category": "cosmetic",
+      "aliases": [
+        "Rainbow T-shirt",
+        "rainbow_t_shirt",
+        "rainbow-t-shirt",
+        "rainbow_t-shirt",
+        "rainbowt-shirt"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Rainbow_T-shirt",
+      "imageUrl": "https://kintara.wiki/images/1/18/Cosmetic_rainbow_tshirt.png"
+    },
+    {
+      "id": "rainbow-top-hat",
+      "name": "Rainbow Top Hat",
+      "slug": "rainbow-top-hat",
+      "category": "cosmetic",
+      "aliases": [
+        "Rainbow Top Hat",
+        "rainbow_top_hat",
+        "rainbow-top-hat",
+        "rainbowtophat"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Rainbow_Top_Hat",
+      "imageUrl": "https://kintara.wiki/images/a/a0/Cosmetic_rainbow_top_hat.png"
+    },
+    {
+      "id": "raw-chicken",
+      "name": "Raw Chicken",
+      "slug": "raw-chicken",
+      "category": "resource",
+      "aliases": [
+        "Raw Chicken",
+        "raw_chicken",
+        "raw-chicken",
+        "rawchicken"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Raw_Chicken",
+      "imageUrl": "https://kintara.wiki/images/6/6e/Rawchicken.png"
+    },
+    {
+      "id": "red-aura",
+      "name": "Red Aura",
+      "slug": "red-aura",
+      "category": "cosmetic",
+      "aliases": [
+        "Red Aura",
+        "red_aura",
+        "red-aura",
+        "redaura"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Red_Aura",
+      "imageUrl": "https://kintara.wiki/images/3/3f/Cosmetic_red_aura.png"
+    },
+    {
+      "id": "red-laser-eyes",
+      "name": "Red Laser Eyes",
+      "slug": "red-laser-eyes",
+      "category": "cosmetic",
+      "aliases": [
+        "Red Laser Eyes",
+        "red_laser_eyes",
+        "red-laser-eyes",
+        "redlasereyes"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Red_Laser_Eyes"
+    },
+    {
+      "id": "red-lesser-eyes",
+      "name": "Red Lesser Eyes",
+      "slug": "red-lesser-eyes",
+      "category": "cosmetic",
+      "aliases": [
+        "Red Lesser Eyes",
+        "red_lesser_eyes",
+        "red-lesser-eyes",
+        "redlessereyes"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Red_Lesser_Eyes",
+      "imageUrl": "https://kintara.wiki/images/d/df/Cosmetic_red_lesser_eyes.png"
+    },
+    {
+      "id": "red-party-hat",
+      "name": "Red Party Hat",
+      "slug": "red-party-hat",
+      "category": "cosmetic",
+      "aliases": [
+        "Red Party Hat",
+        "red_party_hat",
+        "red-party-hat",
+        "redpartyhat"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Red_Party_Hat",
+      "imageUrl": "https://kintara.wiki/images/1/17/Cosmetic_red_party_hat.png"
+    },
+    {
+      "id": "rocket-boots",
+      "name": "Rocket Boots",
+      "slug": "rocket-boots",
+      "category": "cosmetic",
+      "aliases": [
+        "Rocket Boots",
+        "rocket_boots",
+        "rocket-boots",
+        "rocketboots"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Rocket_Boots",
+      "imageUrl": "https://kintara.wiki/images/f/f4/Cosmetic_rocket_boots.png"
+    },
+    {
+      "id": "shark-head",
+      "name": "Shark Head",
+      "slug": "shark-head",
+      "category": "cosmetic",
+      "aliases": [
+        "Shark Head",
+        "shark_head",
+        "shark-head",
+        "sharkhead"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Shark_Head",
+      "imageUrl": "https://kintara.wiki/images/9/99/Shark_head.png"
+    },
+    {
+      "id": "shield-potion",
+      "name": "Shield Potion",
+      "slug": "shield-potion",
+      "category": "potion",
+      "aliases": [
+        "Shield Potion",
+        "shield_potion",
+        "shield-potion",
+        "shieldpotion"
+      ],
+      "isFavoriteDefault": true,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Shield_Potion",
+      "imageUrl": "https://kintara.wiki/images/8/80/Shield.svg"
+    },
+    {
+      "id": "silver-key",
+      "name": "Silver Key",
+      "slug": "silver-key",
+      "category": "key",
+      "aliases": [
+        "Silver Key",
+        "silver_key",
+        "silver-key",
+        "silverkey"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Silver_Key",
+      "imageUrl": "https://kintara.wiki/images/f/f0/Silverkey.png"
+    },
+    {
+      "id": "smoky-cat",
+      "name": "Smoky Cat",
+      "slug": "smoky-cat",
+      "category": "pet",
+      "aliases": [
+        "Smoky Cat",
+        "smoky_cat",
+        "smoky-cat",
+        "smokycat"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Smoky_Cat"
+    },
+    {
+      "id": "snake-mount",
+      "name": "Snake Mount",
+      "slug": "snake-mount",
+      "category": "mount",
+      "aliases": [
+        "Snake Mount",
+        "snake_mount",
+        "snake-mount",
+        "snakemount"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Snake_Mount",
+      "imageUrl": "https://kintara.wiki/images/5/5a/Snake.png"
+    },
+    {
+      "id": "solana-t-shirt",
+      "name": "Solana T-shirt",
+      "slug": "solana-t-shirt",
+      "category": "cosmetic",
+      "aliases": [
+        "Solana T-shirt",
+        "solana_t_shirt",
+        "solana-t-shirt",
+        "solana_t-shirt",
+        "solanat-shirt"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Solana_T-shirt"
+    },
+    {
+      "id": "spain-jersey",
+      "name": "Spain Jersey",
+      "slug": "spain-jersey",
+      "category": "cosmetic",
+      "aliases": [
+        "Spain Jersey",
+        "spain_jersey",
+        "spain-jersey",
+        "spainjersey"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Spain_Jersey"
+    },
+    {
+      "id": "spider-mount",
+      "name": "Spider Mount",
+      "slug": "spider-mount",
+      "category": "mount",
+      "aliases": [
+        "Spider Mount",
+        "spider_mount",
+        "spider-mount",
+        "spidermount"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Spider_Mount",
+      "imageUrl": "https://kintara.wiki/images/8/84/Spider.png"
+    },
+    {
+      "id": "stone",
+      "name": "Stone",
+      "slug": "stone",
+      "category": "resource",
+      "aliases": [
+        "Stone",
+        "stone"
+      ],
+      "isFavoriteDefault": true,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Stone",
+      "imageUrl": "https://kintara.wiki/images/d/d4/Stone.png"
+    },
+    {
+      "id": "strength-potion",
+      "name": "Strength Potion",
+      "slug": "strength-potion",
+      "category": "potion",
+      "aliases": [
+        "Strength Potion",
+        "strength_potion",
+        "strength-potion",
+        "strengthpotion"
+      ],
+      "isFavoriteDefault": true,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Strength_Potion",
+      "imageUrl": "https://kintara.wiki/images/7/7d/Strength.svg"
+    },
+    {
+      "id": "sword",
+      "name": "Sword",
+      "slug": "sword",
+      "category": "tool",
+      "aliases": [
+        "Sword",
+        "sword"
+      ],
+      "isFavoriteDefault": true,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Sword",
+      "imageUrl": "https://kintara.wiki/images/8/89/Sword.png"
+    },
+    {
+      "id": "t-rex-mount",
+      "name": "T-Rex Mount",
+      "slug": "t-rex-mount",
+      "category": "mount",
+      "aliases": [
+        "T-Rex Mount",
+        "t_rex_mount",
+        "t-rex-mount",
+        "t-rex_mount",
+        "t-rexmount"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/T-Rex_Mount",
+      "imageUrl": "https://kintara.wiki/images/1/1f/Trex.png"
+    },
+    {
+      "id": "tiger-mount",
+      "name": "Tiger Mount",
+      "slug": "tiger-mount",
+      "category": "mount",
+      "aliases": [
+        "Tiger Mount",
+        "tiger_mount",
+        "tiger-mount",
+        "tigermount"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Tiger_Mount",
+      "imageUrl": "https://kintara.wiki/images/a/ae/Tiger.png"
+    },
+    {
+      "id": "tokabu",
+      "name": "Tokabu",
+      "slug": "tokabu",
+      "category": "pet",
+      "aliases": [
+        "Tokabu",
+        "tokabu"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Tokabu",
+      "imageUrl": "https://kintara.wiki/images/9/95/Pet_tokabu.png"
+    },
+    {
+      "id": "tralalero-tralala-mount",
+      "name": "Tralalero Tralala Mount",
+      "slug": "tralalero-tralala-mount",
+      "category": "mount",
+      "aliases": [
+        "Tralalero Tralala Mount",
+        "tralalero_tralala_mount",
+        "tralalero-tralala-mount",
+        "tralalerotralalamount"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Tralalero_Tralala_Mount",
+      "imageUrl": "https://kintara.wiki/images/2/28/Tralalero_tralala.png"
+    },
+    {
+      "id": "troll-hoodie",
+      "name": "Troll Hoodie",
+      "slug": "troll-hoodie",
+      "category": "cosmetic",
+      "aliases": [
+        "Troll Hoodie",
+        "troll_hoodie",
+        "troll-hoodie",
+        "trollhoodie"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Troll_Hoodie",
+      "imageUrl": "https://kintara.wiki/images/c/c0/Cosmetic_troll_hoodie.png"
+    },
+    {
+      "id": "tung-sahur",
+      "name": "Tung Sahur",
+      "slug": "tung-sahur",
+      "category": "pet",
+      "aliases": [
+        "Tung Sahur",
+        "tung_sahur",
+        "tung-sahur",
+        "tungsahur"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Tung_Sahur",
+      "imageUrl": "https://kintara.wiki/images/e/e9/Pet_tung_sahur.png"
+    },
+    {
+      "id": "unc-glasses",
+      "name": "Unc Glasses",
+      "slug": "unc-glasses",
+      "category": "cosmetic",
+      "aliases": [
+        "Unc Glasses",
+        "unc_glasses",
+        "unc-glasses",
+        "uncglasses"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Unc_Glasses",
+      "imageUrl": "https://kintara.wiki/images/a/af/Cosmetic_unc_glasses.png"
+    },
+    {
+      "id": "unc-sandals",
+      "name": "Unc Sandals",
+      "slug": "unc-sandals",
+      "category": "cosmetic",
+      "aliases": [
+        "Unc Sandals",
+        "unc_sandals",
+        "unc-sandals",
+        "uncsandals"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Unc_Sandals",
+      "imageUrl": "https://kintara.wiki/images/1/1b/Cosmetic_unc_sandals.png"
+    },
+    {
+      "id": "unc-shorts",
+      "name": "Unc Shorts",
+      "slug": "unc-shorts",
+      "category": "cosmetic",
+      "aliases": [
+        "Unc Shorts",
+        "unc_shorts",
+        "unc-shorts",
+        "uncshorts"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Unc_Shorts",
+      "imageUrl": "https://kintara.wiki/images/d/d6/Cosmetic_unc_shorts.png"
+    },
+    {
+      "id": "unc-tanline",
+      "name": "Unc Tanline",
+      "slug": "unc-tanline",
+      "category": "cosmetic",
+      "aliases": [
+        "Unc Tanline",
+        "unc_tanline",
+        "unc-tanline",
+        "unctanline"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Unc_Tanline",
+      "imageUrl": "https://kintara.wiki/images/0/05/Cosmetic_tan_line.png"
+    },
+    {
+      "id": "unicorn-mount",
+      "name": "Unicorn Mount",
+      "slug": "unicorn-mount",
+      "category": "mount",
+      "aliases": [
+        "Unicorn Mount",
+        "unicorn_mount",
+        "unicorn-mount",
+        "unicornmount"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.642Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Unicorn_Mount",
+      "imageUrl": "https://kintara.wiki/images/7/7e/Unicorn.png"
+    },
+    {
+      "id": "usa-jersey",
+      "name": "USA Jersey",
+      "slug": "usa-jersey",
+      "category": "cosmetic",
+      "aliases": [
+        "USA Jersey",
+        "usa_jersey",
+        "usa-jersey",
+        "usajersey"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.643Z",
+      "wikiUrl": "https://kintara.wiki/wiki/USA_Jersey",
+      "imageUrl": "https://kintara.wiki/images/3/34/Cosmetic_usa_jersey.png"
+    },
+    {
+      "id": "uwu-unicorn",
+      "name": "UwU Unicorn",
+      "slug": "uwu-unicorn",
+      "category": "mount",
+      "aliases": [
+        "UwU Unicorn",
+        "uwu_unicorn",
+        "uwu-unicorn",
+        "uwuunicorn"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.643Z",
+      "wikiUrl": "https://kintara.wiki/wiki/UwU_Unicorn",
+      "imageUrl": "https://kintara.wiki/images/4/45/Uwu_unicorn.png"
+    },
+    {
+      "id": "venomweaver-boots",
+      "name": "Venomweaver Boots",
+      "slug": "venomweaver-boots",
+      "category": "cosmetic",
+      "aliases": [
+        "Venomweaver Boots",
+        "venomweaver_boots",
+        "venomweaver-boots",
+        "venomweaverboots"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.643Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Venomweaver_Boots",
+      "imageUrl": "https://kintara.wiki/images/9/9a/Cosmetic_venomweaver_shoes.png"
+    },
+    {
+      "id": "venomweaver-chestplate",
+      "name": "Venomweaver Chestplate",
+      "slug": "venomweaver-chestplate",
+      "category": "cosmetic",
+      "aliases": [
+        "Venomweaver Chestplate",
+        "venomweaver_chestplate",
+        "venomweaver-chestplate",
+        "venomweaverchestplate"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.643Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Venomweaver_Chestplate",
+      "imageUrl": "https://kintara.wiki/images/7/72/Cosmetic_venomweaver_top.png"
+    },
+    {
+      "id": "venomweaver-helm",
+      "name": "Venomweaver Helm",
+      "slug": "venomweaver-helm",
+      "category": "cosmetic",
+      "aliases": [
+        "Venomweaver Helm",
+        "venomweaver_helm",
+        "venomweaver-helm",
+        "venomweaverhelm"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.643Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Venomweaver_Helm",
+      "imageUrl": "https://kintara.wiki/images/d/de/Cosmetic_venomweaver_hat.png"
+    },
+    {
+      "id": "venomweaver-legguards",
+      "name": "Venomweaver Legguards",
+      "slug": "venomweaver-legguards",
+      "category": "pet",
+      "aliases": [
+        "Venomweaver Legguards",
+        "venomweaver_legguards",
+        "venomweaver-legguards",
+        "venomweaverlegguards"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.643Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Venomweaver_Legguards",
+      "imageUrl": "https://kintara.wiki/images/0/01/Cosmetic_venomweaver_pants.png"
+    },
+    {
+      "id": "venomweaver-mount",
+      "name": "Venomweaver Mount",
+      "slug": "venomweaver-mount",
+      "category": "mount",
+      "aliases": [
+        "Venomweaver Mount",
+        "venomweaver_mount",
+        "venomweaver-mount",
+        "venomweavermount"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.643Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Venomweaver_Mount",
+      "imageUrl": "https://kintara.wiki/images/5/5d/Venomweaver_mount.png"
+    },
+    {
+      "id": "whale-mount",
+      "name": "Whale Mount",
+      "slug": "whale-mount",
+      "category": "mount",
+      "aliases": [
+        "Whale Mount",
+        "whale_mount",
+        "whale-mount",
+        "whalemount"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.643Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Whale_Mount",
+      "imageUrl": "https://kintara.wiki/images/c/c6/Whale.png"
+    },
+    {
+      "id": "white-cape",
+      "name": "White Cape",
+      "slug": "white-cape",
+      "category": "cosmetic",
+      "aliases": [
+        "White Cape",
+        "white_cape",
+        "white-cape",
+        "whitecape"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.643Z",
+      "wikiUrl": "https://kintara.wiki/wiki/White_Cape",
+      "imageUrl": "https://kintara.wiki/images/5/52/Cosmetic_white_cape.png"
+    },
+    {
+      "id": "white-i-love-kins",
+      "name": "White I Love KINS",
+      "slug": "white-i-love-kins",
+      "category": "cosmetic",
+      "aliases": [
+        "White I Love KINS",
+        "white_i_love_kins",
+        "white-i-love-kins",
+        "whiteilovekins"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.643Z",
+      "wikiUrl": "https://kintara.wiki/wiki/White_I_Love_KINS"
+    },
+    {
+      "id": "white-party-hat",
+      "name": "White Party Hat",
+      "slug": "white-party-hat",
+      "category": "cosmetic",
+      "aliases": [
+        "White Party Hat",
+        "white_party_hat",
+        "white-party-hat",
+        "whitepartyhat"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.643Z",
+      "wikiUrl": "https://kintara.wiki/wiki/White_Party_Hat",
+      "imageUrl": "https://kintara.wiki/images/6/63/Cosmetic_white_party_hat.png"
+    },
+    {
+      "id": "wif-hat",
+      "name": "WIF Hat",
+      "slug": "wif-hat",
+      "category": "cosmetic",
+      "aliases": [
+        "WIF Hat",
+        "wif_hat",
+        "wif-hat",
+        "wifhat"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.643Z",
+      "wikiUrl": "https://kintara.wiki/wiki/WIF_Hat",
+      "imageUrl": "https://kintara.wiki/images/3/37/Cosmetic_wif_hat.png"
+    },
+    {
+      "id": "wild-wolf",
+      "name": "Wild Wolf",
+      "slug": "wild-wolf",
+      "category": "mount",
+      "aliases": [
+        "Wild Wolf",
+        "wild_wolf",
+        "wild-wolf",
+        "wildwolf"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.643Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Wild_Wolf",
+      "imageUrl": "https://kintara.wiki/images/c/c8/Wolf.png"
+    },
+    {
+      "id": "willow",
+      "name": "Willow",
+      "slug": "willow",
+      "category": "pet",
+      "aliases": [
+        "Willow",
+        "willow"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.643Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Willow",
+      "imageUrl": "https://kintara.wiki/images/b/b2/Willow.png"
+    },
+    {
+      "id": "wolf-mount",
+      "name": "Wolf Mount",
+      "slug": "wolf-mount",
+      "category": "mount",
+      "aliases": [
+        "Wolf Mount",
+        "wolf_mount",
+        "wolf-mount",
+        "wolfmount"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.643Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Wolf_Mount",
+      "imageUrl": "https://kintara.wiki/images/c/c8/Wolf.png"
+    },
+    {
+      "id": "wood",
+      "name": "Wood",
+      "slug": "wood",
+      "category": "resource",
+      "aliases": [
+        "Wood",
+        "wood"
+      ],
+      "isFavoriteDefault": true,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.643Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Wood",
+      "imageUrl": "https://kintara.wiki/images/d/df/Wood.png"
+    },
+    {
+      "id": "wooly-mammoth-mount",
+      "name": "Wooly Mammoth Mount",
+      "slug": "wooly-mammoth-mount",
+      "category": "mount",
+      "aliases": [
+        "Wooly Mammoth Mount",
+        "wooly_mammoth_mount",
+        "wooly-mammoth-mount",
+        "woolymammothmount"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.643Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Wooly_Mammoth_Mount",
+      "imageUrl": "https://kintara.wiki/images/f/f8/Wooly_mammoth.png"
+    },
+    {
+      "id": "yellow-party-hat",
+      "name": "Yellow Party Hat",
+      "slug": "yellow-party-hat",
+      "category": "cosmetic",
+      "aliases": [
+        "Yellow Party Hat",
+        "yellow_party_hat",
+        "yellow-party-hat",
+        "yellowpartyhat"
+      ],
+      "isFavoriteDefault": false,
+      "isTradeable": true,
+      "source": "wiki",
+      "updatedAt": "2026-07-15T03:52:42.643Z",
+      "wikiUrl": "https://kintara.wiki/wiki/Yellow_Party_Hat",
+      "imageUrl": "https://kintara.wiki/images/e/ed/Cosmetic_yellow_party_hat.png"
+    }
+  ]
+}

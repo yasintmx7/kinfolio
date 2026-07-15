@@ -11,25 +11,25 @@ type Props = {
   imageUrl?: string;
   size?: number;
   className?: string;
+  /** Larger, clearer art presentation */
+  clear?: boolean;
 };
 
 /**
- * Item artwork from kintara.wiki with graceful letter fallback.
+ * Item artwork from kintara.wiki with letter fallback.
  */
 export function ItemIcon({
   itemId,
   name,
   aliases = [],
   imageUrl,
-  size = 40,
+  size = 48,
   className,
+  clear = false,
 }: Props) {
   const resolved =
     imageUrl ||
-    resolveWikiItemImage(itemId, [
-      ...(name ? [name] : []),
-      ...aliases,
-    ]) ||
+    resolveWikiItemImage(itemId, [...(name ? [name] : []), ...aliases]) ||
     resolveWikiItemImage(name ?? null);
 
   const [failed, setFailed] = useState(false);
@@ -43,13 +43,18 @@ export function ItemIcon({
     .join("")
     .slice(0, 2);
 
+  const box = clear ? Math.max(size, 56) : size;
+
   return (
     <div
       className={cn(
-        "relative flex shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border/80 bg-surface-2",
+        "relative flex shrink-0 items-center justify-center overflow-hidden bg-surface-2",
+        clear
+          ? "rounded-2xl border border-border/50 shadow-inner"
+          : "rounded-xl border border-border/70",
         className,
       )}
-      style={{ width: size, height: size }}
+      style={{ width: box, height: box }}
       title={name || itemId}
     >
       {showImg ? (
@@ -57,16 +62,25 @@ export function ItemIcon({
         <img
           src={resolved}
           alt={name || itemId || "item"}
-          width={size}
-          height={size}
+          width={box}
+          height={box}
           loading="lazy"
           decoding="async"
           referrerPolicy="no-referrer"
-          className="h-full w-full object-contain p-1"
+          className={cn(
+            "h-full w-full object-contain",
+            clear ? "p-1.5" : "p-1",
+          )}
+          style={{ imageRendering: "auto" }}
           onError={() => setFailed(true)}
         />
       ) : (
-        <span className="text-[11px] font-semibold tracking-wide text-sky">
+        <span
+          className={cn(
+            "font-semibold tracking-wide text-sky",
+            clear ? "text-sm" : "text-[11px]",
+          )}
+        >
           {initials || "?"}
         </span>
       )}

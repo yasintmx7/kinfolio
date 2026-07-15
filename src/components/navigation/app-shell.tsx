@@ -6,6 +6,7 @@ import { Suspense, useState } from "react";
 import {
   Activity,
   Calculator,
+  Grid3X3,
   Layers,
   MoreHorizontal,
   Settings,
@@ -15,10 +16,10 @@ import {
 import { cn } from "@/lib/utils";
 import { Logo } from "@/components/brand/logo";
 
-/** Minimal nav — market first, tools almost hidden */
 const NAV = [
   { href: "/market?tab=sales", tab: "sales", label: "Live", icon: Activity },
   { href: "/market?tab=floors", tab: "floors", label: "Floors", icon: Layers },
+  { href: "/items", tab: null, label: "Items", icon: Grid3X3 },
   { href: "/market?tab=watch", tab: "watch", label: "Watch", icon: Star },
 ] as const;
 
@@ -33,10 +34,10 @@ function ShellInner({ children }: { children: React.ReactNode }) {
   const tab = searchParams.get("tab") ?? "sales";
   const [moreOpen, setMoreOpen] = useState(false);
   const onMarket = pathname.startsWith("/market");
+  const onItems = pathname.startsWith("/items");
 
   return (
     <div className="min-h-dvh bg-app text-primary">
-      {/* Slim desktop side rail */}
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-[13.5rem] border-r border-border/50 bg-surface/80 md:flex md:flex-col">
         <div className="px-4 py-5">
           <Link href="/market?tab=sales">
@@ -45,7 +46,10 @@ function ShellInner({ children }: { children: React.ReactNode }) {
         </div>
         <nav className="flex-1 space-y-1 px-2">
           {NAV.map((item) => {
-            const active = onMarket && tab === item.tab;
+            const active =
+              item.tab === null
+                ? onItems
+                : onMarket && tab === item.tab;
             const Icon = item.icon;
             return (
               <Link
@@ -85,7 +89,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
           })}
         </nav>
         <p className="px-4 py-4 text-[10px] leading-relaxed text-muted/70">
-          Read-only market · not official
+          All items A–Z · wiki photos
         </p>
       </aside>
 
@@ -100,11 +104,13 @@ function ShellInner({ children }: { children: React.ReactNode }) {
         </main>
       </div>
 
-      {/* Mobile: 3 market tabs + more */}
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border/50 bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden">
-        <div className="grid grid-cols-4 px-1 py-1">
+        <div className="grid grid-cols-5 px-0.5 py-1">
           {NAV.map((item) => {
-            const active = onMarket && tab === item.tab;
+            const active =
+              item.tab === null
+                ? onItems
+                : onMarket && tab === item.tab;
             const Icon = item.icon;
             return (
               <Link
@@ -129,7 +135,11 @@ function ShellInner({ children }: { children: React.ReactNode }) {
               moreOpen ? "text-sky-hi" : "text-muted",
             )}
           >
-            {moreOpen ? <X className="h-5 w-5" /> : <MoreHorizontal className="h-5 w-5" />}
+            {moreOpen ? (
+              <X className="h-5 w-5" />
+            ) : (
+              <MoreHorizontal className="h-5 w-5" />
+            )}
             More
           </button>
         </div>

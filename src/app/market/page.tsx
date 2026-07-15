@@ -272,7 +272,12 @@ function LiveList({
                 onClick={() => onOpen(r.itemType)}
                 className="flex min-w-0 flex-1 items-center gap-3 text-left"
               >
-                <ItemIcon itemId={r.itemType} name={r.name} size={42} />
+                <ItemIcon
+                  itemId={r.itemType}
+                  name={r.name}
+                  size={52}
+                  clear
+                />
                 <div className="min-w-0">
                   {/* 5k Wood */}
                   <div className="truncate text-[16px] font-semibold tracking-tight">
@@ -371,7 +376,7 @@ function FloorList({
                 onClick={() => onOpen(row.id)}
                 className="flex min-w-0 flex-1 items-center gap-3 text-left"
               >
-                <ItemIcon itemId={row.id} name={row.name} size={42} />
+                <ItemIcon itemId={row.id} name={row.name} size={52} clear />
                 <div className="min-w-0">
                   <div className="truncate text-[16px] font-semibold">
                     {qtyLabel ? (
@@ -449,7 +454,7 @@ function DetailSheet({
       />
       <div className="relative z-10 flex max-h-[88dvh] w-full max-w-md flex-col rounded-t-3xl border border-border bg-surface shadow-2xl sm:mr-4 sm:max-h-[90dvh] sm:rounded-3xl">
         <div className="flex items-start gap-3 border-b border-border/40 p-5">
-          <ItemIcon itemId={itemId} name={name} size={48} />
+          <ItemIcon itemId={itemId} name={name} size={64} clear />
           <div className="min-w-0 flex-1">
             <h2 className="text-lg font-semibold">{name}</h2>
             <p className="text-sm text-muted">

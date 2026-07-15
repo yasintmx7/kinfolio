@@ -81,7 +81,7 @@ export function ItemPicker({
                 className={cn(
                   "min-h-9 rounded-full px-3 text-xs font-medium transition-colors",
                   value === item.id
-                    ? "bg-gold text-[#1a1205]"
+                    ? "bg-sky text-[#0a121c]"
                     : "bg-raised text-muted hover:text-primary",
                 )}
               >
@@ -110,7 +110,7 @@ export function ItemPicker({
                 className={cn(
                   "min-h-9 rounded-full border border-border px-3 text-xs transition-colors",
                   value === item.id
-                    ? "border-gold/50 bg-gold/15 text-gold"
+                    ? "border-sky/50 bg-sky/15 text-sky"
                     : "bg-surface-2 text-muted hover:text-primary",
                 )}
               >
@@ -147,7 +147,7 @@ export function ItemPicker({
               type="button"
               className={cn(
                 "flex min-h-11 w-full items-center justify-between px-3 text-left text-sm hover:bg-raised",
-                value === item.id && "bg-raised text-gold",
+                value === item.id && "bg-raised text-sky",
               )}
               onClick={() => {
                 onChange(item.id);

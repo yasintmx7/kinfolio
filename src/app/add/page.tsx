@@ -389,7 +389,7 @@ export default function AddEntryPage() {
                 <div>
                   <CardTitle>
                     #{idx + 1} ·{" "}
-                    <span className="capitalize text-gold">{p.direction}</span>
+                    <span className="capitalize text-sky">{p.direction}</span>
                   </CardTitle>
                   <p className="mt-1 font-mono text-xs text-muted">
                     {p.direction === "buy" || p.direction === "mixed"
@@ -483,7 +483,7 @@ export default function AddEntryPage() {
             onClick={() => setTab(id)}
             className={`min-h-11 rounded-lg px-4 text-sm font-medium ${
               tab === id
-                ? "bg-gold text-[#1a1205]"
+                ? "bg-sky text-[#0a121c]"
                 : "bg-raised text-muted hover:text-primary"
             }`}
           >
@@ -539,7 +539,7 @@ export default function AddEntryPage() {
           </div>
           {plain && plain.direction !== "unknown" && (
             <div className="mt-3 rounded-lg border border-border bg-surface-2 p-3 text-sm">
-              <div className="font-medium text-gold">Detected</div>
+              <div className="font-medium text-sky">Detected</div>
               <ul className="mt-2 space-y-1 font-mono text-xs text-muted">
                 <li className="capitalize">Type: {plain.direction}</li>
                 <li>
@@ -551,7 +551,7 @@ export default function AddEntryPage() {
                 </li>
               </ul>
               {parsed?.warnings.map((w) => (
-                <p key={w} className="mt-1 text-xs text-gold-hi">
+                <p key={w} className="mt-1 text-xs text-sky-hi">
                   {w}
                 </p>
               ))}
@@ -577,7 +577,7 @@ export default function AddEntryPage() {
             {tab === "sell" && d(available).gt(0) && (
               <button
                 type="button"
-                className="text-xs font-medium text-gold"
+                className="text-xs font-medium text-sky"
                 onClick={() => setQuantity(available)}
               >
                 Sell all ({available})
@@ -657,7 +657,7 @@ export default function AddEntryPage() {
 
         {tab === "sell" && sellPreview && !("error" in sellPreview) && (
           <div className="rounded-lg border border-border bg-raised p-3 text-sm">
-            <div className="font-medium text-gold">You&apos;ll keep ~</div>
+            <div className="font-medium text-sky">You&apos;ll keep ~</div>
             <p className={`mt-1 font-mono text-lg tabular-nums ${signedClass(sellPreview.realizedUsdProfit)}`}>
               {formatUsd(sellPreview.realizedUsdProfit)}{" "}
               <span className="text-sm text-muted">
@@ -739,7 +739,7 @@ export default function AddEntryPage() {
       </Card>
 
       {pendingDup && (
-        <label className="flex items-center gap-2 rounded-lg border border-gold/40 bg-gold/10 px-3 py-2 text-sm text-gold-hi">
+        <label className="flex items-center gap-2 rounded-lg border border-sky/40 bg-sky/10 px-3 py-2 text-sm text-sky-hi">
           <input
             type="checkbox"
             checked={forceDuplicate}

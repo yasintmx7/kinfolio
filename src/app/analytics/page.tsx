@@ -86,7 +86,7 @@ export default function AnalyticsPage() {
               type="button"
               onClick={() => setRange(r)}
               className={`min-h-10 rounded-lg px-3 text-xs ${
-                range === r ? "bg-gold text-[#1a1205]" : "bg-raised text-muted"
+                range === r ? "bg-sky text-[#0a121c]" : "bg-raised text-muted"
               }`}
             >
               {r}

@@ -147,33 +147,54 @@ export default function DashboardPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Home</h1>
+          <p className="text-xs font-medium uppercase tracking-[0.14em] text-sky">
+            Portfolio
+          </p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight">
+            Your holdings
+          </h1>
           <p className="mt-1 text-sm text-muted">
-            Your trades & profit — saved only on this device
+            Local profit ledger · market tracker is on{" "}
+            <Link href="/market" className="text-sky underline underline-offset-2">
+              Market
+            </Link>
           </p>
           <div className="mt-1">
             <CalcDrawer />
           </div>
         </div>
-        <Link href="/add">
-          <Button>Add entry</Button>
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/calculator">
+            <Button variant="secondary">Calculator</Button>
+          </Link>
+          <Link href="/add">
+            <Button>Log trade</Button>
+          </Link>
+        </div>
       </div>
 
       {showOnboarding && (
-        <Card className="border-gold/30 bg-gradient-to-br from-raised to-surface">
-          <h2 className="text-lg font-semibold text-gold">Welcome — 3 quick steps</h2>
+        <Card className="border-sky/25 bg-gradient-to-br from-sky/10 via-surface to-surface">
+          <h2 className="text-lg font-semibold text-sky-hi">
+            Welcome to Kinfolio
+          </h2>
+          <p className="mt-1 text-sm text-muted">
+            Market tracker first · calculator for quick math · portfolio for your books
+          </p>
           <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-muted">
-            <li>Paste a buy/sell alert (or load the demo)</li>
-            <li>Confirm item & quantity, then save</li>
-            <li>Export a backup from Settings later</li>
+            <li>Check live floors on Market</li>
+            <li>Run break-even on Calculator</li>
+            <li>Log trades to track real profit (optional demo below)</li>
           </ol>
           <div className="mt-4 flex flex-wrap gap-2">
-            <Link href="/add">
-              <Button>Paste first alert</Button>
+            <Link href="/market">
+              <Button>Open market</Button>
+            </Link>
+            <Link href="/calculator">
+              <Button variant="secondary">Calculator</Button>
             </Link>
             <Button
-              variant="secondary"
+              variant="ghost"
               onClick={async () => {
                 await loadDemo();
                 await patchSettings({ onboardingComplete: true });
@@ -181,9 +202,6 @@ export default function DashboardPage() {
             >
               Load demo portfolio
             </Button>
-            <Link href="/settings">
-              <Button variant="ghost">Import backup</Button>
-            </Link>
           </div>
         </Card>
       )}
@@ -347,7 +365,7 @@ export default function DashboardPage() {
       </div>
 
       {unrealized && unrealized.unpriced > 0 && (
-        <div className="rounded-lg border border-gold/30 bg-gold/10 px-3 py-2 text-sm text-gold-hi">
+        <div className="rounded-lg border border-sky/30 bg-sky/10 px-3 py-2 text-sm text-sky-hi">
           {unrealized.unpriced} item(s) need a price for estimates.{" "}
           <Link href="/inventory" className="underline">
             Set prices in Inventory

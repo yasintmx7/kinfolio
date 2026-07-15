@@ -10,7 +10,7 @@ export function Card({
   return (
     <div
       className={cn(
-        "rounded-xl border border-border bg-surface p-4 shadow-sm",
+        "card-quiet rounded-2xl p-4 transition-colors",
         className,
       )}
     >
@@ -27,7 +27,14 @@ export function CardTitle({
   className?: string;
 }) {
   return (
-    <h3 className={cn("text-sm font-medium text-muted", className)}>{children}</h3>
+    <h3
+      className={cn(
+        "text-[13px] font-medium tracking-wide text-muted",
+        className,
+      )}
+    >
+      {children}
+    </h3>
   );
 }
 
@@ -39,7 +46,12 @@ export function StatValue({
   className?: string;
 }) {
   return (
-    <div className={cn("mt-1 font-mono text-xl font-semibold tabular-nums text-primary", className)}>
+    <div
+      className={cn(
+        "mt-1.5 font-mono text-xl font-semibold tabular-nums tracking-tight text-primary",
+        className,
+      )}
+    >
       {children}
     </div>
   );

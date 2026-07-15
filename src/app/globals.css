@@ -1,18 +1,24 @@
 @import "tailwindcss";
 
+/* Kintara.com–inspired palette: deep navy, sky blue, soft forest green */
 :root {
-  --app: #070a12;
-  --surface: #0f1422;
-  --surface-2: #121826;
-  --raised: #181f2d;
-  --border: #273142;
-  --primary: #f5f7fb;
-  --muted: #95a1b3;
-  --gold: #f2b84b;
-  --gold-hi: #ffd978;
-  --profit: #24c16b;
-  --info: #52a7ff;
-  --loss: #ff647c;
+  --app: #0a121c;
+  --surface: #122033;
+  --surface-2: #172a40;
+  --raised: #1c334c;
+  --border: #2a4663;
+  --primary: #e8f2fa;
+  --muted: #8eabc2;
+  --sky: #5fa1cf;
+  --sky-hi: #7ec4f0;
+  --sky-dim: #3d7aa8;
+  --forest: #3d8f63;
+  --forest-hi: #54b07c;
+  --gold: #c9a45c;
+  --gold-hi: #e0bc72;
+  --profit: #3d8f63;
+  --info: #5fa1cf;
+  --loss: #d96b7a;
 }
 
 @theme inline {
@@ -23,6 +29,11 @@
   --color-border: var(--border);
   --color-primary: var(--primary);
   --color-muted: var(--muted);
+  --color-sky: var(--sky);
+  --color-sky-hi: var(--sky-hi);
+  --color-sky-dim: var(--sky-dim);
+  --color-forest: var(--forest);
+  --color-forest-hi: var(--forest-hi);
   --color-gold: var(--gold);
   --color-gold-hi: var(--gold-hi);
   --color-profit: var(--profit);
@@ -49,29 +60,52 @@ body {
 }
 
 ::selection {
-  background: color-mix(in srgb, var(--gold) 35%, transparent);
+  background: color-mix(in srgb, var(--sky) 40%, transparent);
 }
 
-/* Tabular numerals for money */
 .tabular-nums {
   font-variant-numeric: tabular-nums;
 }
 
-/* Subtle page glow */
+/* Soft sky wash — calm, modern */
 .page-glow {
   background:
-    radial-gradient(ellipse 80% 50% at 50% -20%, color-mix(in srgb, var(--gold) 12%, transparent), transparent),
+    radial-gradient(
+      ellipse 90% 55% at 50% -15%,
+      color-mix(in srgb, var(--sky) 14%, transparent),
+      transparent 55%
+    ),
+    radial-gradient(
+      ellipse 50% 40% at 100% 0%,
+      color-mix(in srgb, var(--forest) 8%, transparent),
+      transparent 50%
+    ),
     var(--app);
 }
 
-/* Scrollbar */
+/* Cards */
+.card-quiet {
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  box-shadow: 0 1px 0 color-mix(in srgb, #fff 4%, transparent) inset;
+}
+
 @media (pointer: fine) {
   ::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
+    width: 8px;
+    height: 8px;
   }
   ::-webkit-scrollbar-thumb {
     background: var(--border);
     border-radius: 999px;
   }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+/* Focus ring */
+:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--sky) 70%, transparent);
+  outline-offset: 2px;
 }

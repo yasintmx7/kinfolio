@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="g" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7EC4F0"/>
+      <stop offset="0.55" stop-color="#5FA1CF"/>
+      <stop offset="1" stop-color="#3D8F63"/>
+    </linearGradient>
+    <linearGradient id="g2" x1="20" y1="14" x2="48" y2="52" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E8F4FC"/>
+      <stop offset="1" stop-color="#A8D4EE"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="#122536"/>
+  <rect x="2" y="2" width="60" height="60" rx="14" stroke="url(#g)" stroke-width="2" opacity="0.9"/>
+  <!-- stylized K chart bars -->
+  <path d="M18 44V20h5.2v9.4L33.6 20H40l-11.2 11.6L40.4 44H33.8l-8.1-9.8-2.5 2.6V44H18z" fill="url(#g2)"/>
+  <path d="M42 44V28.5h4.2V44H42zm0-18.2V20h4.2v5.8H42z" fill="#5FA1CF"/>
+  <circle cx="44.1" cy="24.2" r="2.2" fill="#7EC4F0"/>
+</svg>

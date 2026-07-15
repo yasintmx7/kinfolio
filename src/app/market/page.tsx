@@ -179,40 +179,22 @@ export default function MarketPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold">Market</h1>
-        <p className="mt-1 text-sm text-muted">
-          Floors:{" "}
-          <a
-            href="https://kintaramarket.xyz"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-info underline"
-          >
-            kintaramarket.xyz
-          </a>
-          {" · "}
-          Official stats:{" "}
-          <a
-            href="https://kintara.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-info underline"
-          >
-            kintara.com
-          </a>
-          {" · "}
-          Sales:{" "}
-          <a
-            href="https://www.kintrade.xyz"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-info underline"
-          >
-            kintrade.xyz
-          </a>
-          . Read-only — no buy/reserve.
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-[0.14em] text-sky">
+            Market tracker
+          </p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight">
+            Live floors &amp; sales
+          </h1>
+          <p className="mt-1.5 max-w-xl text-sm text-muted">
+            Floors from kintaramarket · 30d stats from kintara.com · completed sales
+            from kintrade. Read-only — no buy or reserve.
+          </p>
+        </div>
+        <Link href="/calculator">
+          <Button variant="secondary">Open calculator</Button>
+        </Link>
       </div>
 
       <Card>

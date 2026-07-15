@@ -127,7 +127,7 @@ export default function HistoryPage() {
               >
                 <div>
                   <div className="font-medium">
-                    <span className="capitalize text-gold">{t.type}</span> · {name}
+                    <span className="capitalize text-sky">{t.type}</span> · {name}
                   </div>
                   <div className="mt-0.5 text-xs text-muted">
                     {new Date(t.transactionAt).toLocaleString()}

@@ -97,7 +97,7 @@ function Section({
 }) {
   return (
     <div className="rounded-lg border border-border bg-surface-2 p-3">
-      <h3 className="font-medium text-gold">{title}</h3>
+      <h3 className="font-medium text-sky">{title}</h3>
       <p className="mt-1 leading-relaxed">{children}</p>
     </div>
   );

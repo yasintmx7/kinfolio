@@ -1,11 +1,11 @@
 {
-  "name": "Kintara Portfolio",
-  "short_name": "Kintara",
-  "description": "Track Kintara trades, mining, inventory, and real profit.",
-  "start_url": "/dashboard",
+  "name": "Kinfolio",
+  "short_name": "Kinfolio",
+  "description": "Kintara market tracker and profit calculator",
+  "start_url": "/market",
   "display": "standalone",
-  "background_color": "#070A12",
-  "theme_color": "#070A12",
+  "background_color": "#0a121c",
+  "theme_color": "#0a121c",
   "orientation": "any",
   "icons": [
     {

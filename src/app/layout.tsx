@@ -5,7 +5,7 @@ import { PortfolioProvider } from "@/components/providers/portfolio-provider";
 import { ToastProvider } from "@/components/feedback/toast";
 import { AppShell } from "@/components/navigation/app-shell";
 import { RegisterServiceWorker } from "@/components/pwa/register-sw";
-import { APP_NAME } from "@/config/kintara";
+import { APP_NAME, APP_TAGLINE } from "@/config/kintara";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -18,11 +18,21 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: `${APP_NAME} — Track trades, mining, and real profit`,
+  title: {
+    default: `${APP_NAME} — ${APP_TAGLINE}`,
+    template: `%s · ${APP_NAME}`,
+  },
   description:
-    "Paste Kintara buy/sell alerts, track inventory, weighted-average cost, realized and unrealized profit in KINS and USD. Local-first portfolio tool.",
+    "Kinfolio is a clean Kintara market tracker and profit calculator. Live floors, recent sales, break-even math, and local portfolio accounting.",
   applicationName: APP_NAME,
   manifest: "/manifest.webmanifest",
+  icons: {
+    icon: [
+      { url: "/brand/logo-mark.svg", type: "image/svg+xml" },
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+    ],
+    apple: [{ url: "/icons/icon-192.png", sizes: "192x192" }],
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
@@ -34,7 +44,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#070A12",
+  themeColor: "#0a121c",
   width: "device-width",
   initialScale: 1,
   maximumScale: 5,

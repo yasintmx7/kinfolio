@@ -19,19 +19,14 @@ export function Label({
   );
 }
 
+const field =
+  "min-h-11 w-full rounded-xl border border-border bg-surface-2/90 px-3 py-2 text-sm text-primary outline-none transition-shadow placeholder:text-muted/60 focus:border-sky/40 focus:ring-2 focus:ring-sky/25";
+
 export function Input({
   className,
   ...props
 }: React.InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <input
-      className={cn(
-        "min-h-11 w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm text-primary outline-none ring-gold/30 placeholder:text-muted/70 focus:ring-2",
-        className,
-      )}
-      {...props}
-    />
-  );
+  return <input className={cn(field, className)} {...props} />;
 }
 
 export function Textarea({
@@ -39,13 +34,7 @@ export function Textarea({
   ...props
 }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return (
-    <textarea
-      className={cn(
-        "min-h-32 w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm text-primary outline-none ring-gold/30 placeholder:text-muted/70 focus:ring-2",
-        className,
-      )}
-      {...props}
-    />
+    <textarea className={cn(field, "min-h-32", className)} {...props} />
   );
 }
 
@@ -55,13 +44,7 @@ export function Select({
   ...props
 }: React.SelectHTMLAttributes<HTMLSelectElement>) {
   return (
-    <select
-      className={cn(
-        "min-h-11 w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm text-primary outline-none ring-gold/30 focus:ring-2",
-        className,
-      )}
-      {...props}
-    >
+    <select className={cn(field, className)} {...props}>
       {children}
     </select>
   );

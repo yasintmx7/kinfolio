@@ -1,8 +1,8 @@
-# Kintara Portfolio
+# Kinfolio
 
-**Track trades, mining, inventory, and real profit.**
+**Market tracker & profit calculator for Kintara**
 
-Community-built, local-first portfolio tool for Kintara players. Paste buy/sell transaction alerts, select item and quantity, and get deterministic KINS + USD accounting with weighted-average cost.
+Community-built, local-first tool: live floors & sales, break-even calculator, and portfolio books from pasted alerts (weighted-average cost in KINS + USD).
 
 > Not affiliated with Kintara. Market values are estimates, not guaranteed sale prices.  
 > No wallet signing, seed phrases, private keys, or personal game cookies.

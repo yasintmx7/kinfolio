@@ -108,7 +108,7 @@ export default function InventoryPage() {
             onClick={() => setFilter(id)}
             className={`min-h-10 rounded-full px-3 text-xs ${
               filter === id
-                ? "bg-gold text-[#1a1205]"
+                ? "bg-sky text-[#0a121c]"
                 : "bg-raised text-muted hover:text-primary"
             }`}
           >
@@ -128,7 +128,7 @@ export default function InventoryPage() {
           <Card key={pos.itemId} className="space-y-2">
             <div className="flex items-start justify-between gap-2">
               <div className="flex items-center gap-3">
-                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-raised text-xs font-semibold text-gold">
+                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-raised text-xs font-semibold text-sky">
                   {(item?.name ?? pos.itemId).slice(0, 2).toUpperCase()}
                 </div>
                 <div>

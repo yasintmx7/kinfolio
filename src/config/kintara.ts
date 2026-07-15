@@ -3,7 +3,9 @@ export const KINS_MINT =
   process.env.KINS_MINT ??
   "Tqj8yFmagrg7oorpQkVGYR52r96RFTamvWfth9bpump";
 
-export const APP_NAME = process.env.NEXT_PUBLIC_APP_NAME ?? "Kintara Portfolio";
+export const APP_NAME = process.env.NEXT_PUBLIC_APP_NAME ?? "Kinfolio";
+export const APP_TAGLINE =
+  process.env.NEXT_PUBLIC_APP_TAGLINE ?? "Market tracker & profit calculator";
 
 export const DEFAULT_SELL_FEE_PERCENT = "5";
 

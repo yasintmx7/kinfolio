@@ -202,7 +202,7 @@ export default function SettingsPage() {
               <button
                 key={id}
                 type="button"
-                className="rounded-full bg-raised px-3 py-1 text-xs text-gold"
+                className="rounded-full bg-raised px-3 py-1 text-xs text-sky"
                 onClick={() =>
                   patchSettings({
                     favoriteItemIds: settings.favoriteItemIds.filter((x) => x !== id),

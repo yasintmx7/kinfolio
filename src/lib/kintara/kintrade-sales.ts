@@ -145,7 +145,8 @@ export async function fetchRecentSales(options?: {
         new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
     );
     all = out;
-    setCache(cacheKey, all, 20);
+    // Short TTL so ~5s client poll gets fresh sold activity
+    setCache(cacheKey, all, 4);
   }
 
   return filterSales(all, options);

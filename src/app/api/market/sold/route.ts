@@ -60,7 +60,7 @@ export async function GET(request: Request) {
       {
         source: "marketplace-sales",
         updatedAt: new Date().toISOString(),
-        cacheControl: "public, s-maxage=15, stale-while-revalidate=30",
+        cacheControl: "public, s-maxage=4, stale-while-revalidate=10",
       },
     );
   } catch (e) {

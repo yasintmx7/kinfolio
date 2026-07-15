@@ -337,7 +337,7 @@ function enrichSold(
 /**
  * Default poll: 5s for listings (locks / prices).
  * Overlapping fetches are skipped via listingsInFlight.
- * Floors stay slower (max(poll×4, 60s)); sold ~poll×1.5.
+ * Floors stay slower (≥45s). Sold polls with listings (5s).
  */
 export function useMarketHub(pollMs = 5_000) {
   const [data, setData] = useState<MarketHubData>(empty);
@@ -574,11 +574,8 @@ export function useMarketHub(pollMs = 5_000) {
       () => void reloadListings({ silent: true }),
       pollMs,
     );
-    // Sold: a bit slower than listings (on-chain feed)
-    const soldId = setInterval(
-      () => void reloadSold(),
-      Math.max(pollMs * 2, 10_000),
-    );
+    // Sold: same cadence as listings so Activity stays live
+    const soldId = setInterval(() => void reloadSold(), pollMs);
     // Floors: expensive aggregate — keep ≥45s even if listings are 5s
     const floorsId = setInterval(
       () => void reloadFloors(),

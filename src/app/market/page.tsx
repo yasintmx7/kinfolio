@@ -283,10 +283,10 @@ function MarketHubInner() {
     if (query) list = list.filter((s) => searchMatch(s, query));
 
     list.sort((a, b) => {
-      // Open listings first unless user is looking at locks
+      // When showing locks, pin reserved rows to the top so they are obvious live
       if (!hideLocked) {
-        const la = isLocked(a) ? 1 : 0;
-        const lb = isLocked(b) ? 1 : 0;
+        const la = isLocked(a) ? 0 : 1;
+        const lb = isLocked(b) ? 0 : 1;
         if (la !== lb) return la - lb;
       }
       if (sortFilter === "new") {
@@ -455,8 +455,7 @@ function MarketHubInner() {
     push(next.includes(id) ? "Watching" : "Removed", "ok");
   }
 
-  const advancedActive =
-    !hideLocked || categoryFilter !== "all" || sortFilter === "qty";
+  const advancedActive = categoryFilter !== "all" || sortFilter === "qty";
 
   const pageTitle =
     tab === "market" ? "Market" : tab === "floors" ? "Floors" : "Watchlist";
@@ -582,6 +581,28 @@ function MarketHubInner() {
                   {label}
                 </button>
               ))}
+              {/* Locked are live in the feed — this only toggles visibility */}
+              <button
+                type="button"
+                onClick={() => setHideLocked((v) => !v)}
+                className={cn(
+                  "chip min-h-9 inline-flex items-center gap-1.5",
+                  !hideLocked
+                    ? "bg-amber-500/20 text-amber-100 ring-1 ring-amber-400/40"
+                    : "text-muted",
+                )}
+                title={
+                  hideLocked
+                    ? "Show reserved/locked listings (live in feed)"
+                    : "Hide reserved/locked listings"
+                }
+              >
+                <Lock className="h-3.5 w-3.5" />
+                Locked
+                <span className="font-mono tabular-nums text-[11px]">
+                  {filterCounts.locked}
+                </span>
+              </button>
               <button
                 type="button"
                 onClick={() => setFiltersOpen((v) => !v)}
@@ -620,19 +641,6 @@ function MarketHubInner() {
               >
                 Qty
               </button>
-              <button
-                type="button"
-                onClick={() => setHideLocked((v) => !v)}
-                className={cn(
-                  "chip min-h-8 inline-flex items-center gap-1.5",
-                  hideLocked && "chip-soft-active",
-                )}
-              >
-                <Lock className="h-3 w-3" />
-                {hideLocked
-                  ? `Hide locked (${filterCounts.locked})`
-                  : `Show locked (${filterCounts.locked})`}
-              </button>
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
               {CATEGORY_CHIPS.map(({ id, label }) => (
@@ -668,12 +676,23 @@ function MarketHubInner() {
                   <p className="truncate font-mono text-[11px] tabular-nums text-muted">
                     <span className="text-sky-hi">{openCount}</span> open
                     <span className="text-muted/50"> · </span>
-                    <span className="text-amber-200/90">{lockedCount}</span>{" "}
-                    locked
+                    <button
+                      type="button"
+                      onClick={() => setHideLocked(false)}
+                      className={cn(
+                        "tabular-nums",
+                        hideLocked
+                          ? "text-amber-200/90 underline decoration-amber-400/40 underline-offset-2 hover:text-amber-100"
+                          : "text-amber-200",
+                      )}
+                      title="Show locked listings"
+                    >
+                      {lockedCount} locked
+                    </button>
                     <span className="text-muted/50"> · </span>
                     {listingRows.length} shown
                     {currencyFilter !== "all" ? ` · ${currencyFilter}` : ""}
-                    {hideLocked ? " · open only" : ""}
+                    {hideLocked ? " · open only" : " · incl. locked"}
                     {categoryFilter !== "all" ? ` · ${categoryFilter}` : ""}
                   </p>
                 </div>

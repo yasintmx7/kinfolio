@@ -92,7 +92,9 @@ const empty: MarketHubData = {
  * Live book is ~500 token + ~500 gold. Must not slice under ~1000 or we drop
  * listings and miss locker-name reverse-map (seller ids never seen).
  */
-const LISTINGS_URL = "/api/market/activity?limit=1200&pages=10&gold=1";
+/** sort=cheap keeps the full price book (locks on older cheap lots stay visible). */
+const LISTINGS_URL =
+  "/api/market/activity?limit=1200&pages=10&gold=1&sort=cheap";
 const SOLD_URL = "/api/market/sold?limit=40";
 
 /**

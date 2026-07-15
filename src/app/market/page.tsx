@@ -43,6 +43,19 @@ export default function MarketPage() {
   const { price } = useKinsPrice();
   const { push } = useToast();
   const [market, setMarket] = useState<MarketState | null>(null);
+  const [sales, setSales] = useState<
+    {
+      id: string;
+      name: string;
+      itemType: string;
+      quantity: string;
+      unitKins: string;
+      usdTotal: string | null;
+      timestamp: string;
+      solscanUrl: string | null;
+    }[]
+  >([]);
+  const [salesNote, setSalesNote] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [applying, setApplying] = useState(false);
   const fee = d(settings?.defaultSellFeePercent ?? "5").div(100);
@@ -80,6 +93,18 @@ export default function MarketPage() {
           message: "Could not reach market API",
         }),
       );
+
+    fetch("/api/market/recent-sales?limit=30")
+      .then((r) => r.json())
+      .then((j) => {
+        if (j.ok) {
+          setSales(j.data.sales ?? []);
+          setSalesNote(j.data.note ?? null);
+        }
+      })
+      .catch(() => {
+        /* optional feed */
+      });
   }, []);
 
   const filtered = useMemo(() => {
@@ -145,7 +170,7 @@ export default function MarketPage() {
       <div>
         <h1 className="text-2xl font-semibold">Market</h1>
         <p className="mt-1 text-sm text-muted">
-          Live floors from{" "}
+          Floors:{" "}
           <a
             href="https://kintaramarket.xyz"
             target="_blank"
@@ -154,7 +179,17 @@ export default function MarketPage() {
           >
             kintaramarket.xyz
           </a>
-          . Estimates only — not guaranteed sale prices.
+          {" · "}
+          Recent sales:{" "}
+          <a
+            href="https://www.kintrade.xyz"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-info underline"
+          >
+            kintrade.xyz
+          </a>
+          . Estimates only — not guaranteed future prices.
         </p>
       </div>
 
@@ -226,6 +261,57 @@ export default function MarketPage() {
                   ? ` · ref ${formatKins(row.unit)} KINS`
                   : " · no ref price"}
               </span>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      <Card>
+        <CardTitle>Recent completed sales</CardTitle>
+        {salesNote && (
+          <p className="mt-1 text-xs text-muted">{salesNote}</p>
+        )}
+        <div className="mt-3 max-h-80 space-y-1.5 overflow-y-auto">
+          {!sales.length && (
+            <p className="text-sm text-muted">Loading sales feed…</p>
+          )}
+          {sales.map((s) => (
+            <div
+              key={s.id}
+              className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-surface-2 px-3 py-2 text-sm"
+            >
+              <div>
+                <div className="font-medium">
+                  {s.name}{" "}
+                  <span className="font-mono text-xs text-muted">
+                    ×{s.quantity}
+                  </span>
+                </div>
+                <div className="text-[11px] text-muted">
+                  {new Date(s.timestamp).toLocaleString()}
+                  {s.solscanUrl && (
+                    <>
+                      {" · "}
+                      <a
+                        href={s.solscanUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-info underline"
+                      >
+                        Solscan
+                      </a>
+                    </>
+                  )}
+                </div>
+              </div>
+              <div className="text-right font-mono text-xs tabular-nums">
+                <div>{formatKins(s.unitKins)} KINS/u</div>
+                {s.usdTotal && (
+                  <div className="text-muted">
+                    {formatUsd(s.usdTotal, { maxDecimals: 6 })} total
+                  </div>
+                )}
+              </div>
             </div>
           ))}
         </div>

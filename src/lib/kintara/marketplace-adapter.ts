@@ -233,6 +233,20 @@ export class ConfigurableMarketplaceAdapter implements KintaraMarketplaceAdapter
 
   async getSoldHistory(itemId: string, _range?: TimeRange): Promise<SoldSample[]> {
     void _range;
+    // Prefer completed sales from kintrade.xyz
+    try {
+      const { fetchRecentSales, salesToSoldSamples } = await import(
+        "@/lib/kintara/kintrade-sales"
+      );
+      const sales = await fetchRecentSales({
+        itemType: itemId,
+        limit: 50,
+      });
+      if (sales.length) return salesToSoldSamples(sales);
+    } catch {
+      // fall through
+    }
+
     const cfg = getKintaraApiConfig();
     if (cfg.provider === "kintaramarket.xyz") {
       const stats = await this.getItemStats(itemId);

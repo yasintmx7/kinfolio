@@ -38,6 +38,24 @@ KINTARA_ITEM_STATS_PATH=/api/market/{itemId}
 
 See `src/lib/kintara/item-type-map.ts` for favorites mapping (`cooked_fish_meat` → `cooked-fish`, etc.).
 
+## kintrade.xyz — completed sales
+
+| Feature | HTTP method | Full URL | Public | Response | Normalizer |
+|--------|-------------|---------|--------|----------|------------|
+| Recent sales | GET | `https://www.kintrade.xyz/api/recent-sales` | Yes | `{ ok, sales: [{ itemType, quantity, kinsTotal, treasuryKins, usd, ts, signature, buyer, seller, … }] }` | **live** |
+
+### Sales fields
+
+- `kinsTotal` — buyer-paid KINS for the lot  
+- `treasuryKins` — ~5% marketplace fee portion  
+- `unitKins` (derived) = `kinsTotal / quantity`  
+- `signature` — Solana tx (Solscan link)
+
+App routes:
+
+- `GET /api/market/recent-sales?itemType=&limit=`
+- Enriches `GET /api/market/items/[itemId]/stats` with median recent sale KINS
+
 ### Intentionally blocked
 
 Any quote/buy/reserve/sign flow (e.g. `{ quoteId, signature }`) is **not** integrated. This app is analytics only.

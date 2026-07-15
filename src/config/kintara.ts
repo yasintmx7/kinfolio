@@ -32,6 +32,8 @@ export const ALLOWED_UPSTREAM_HOSTS = [
   "mainnet.helius-rpc.com",
   "kintara.wiki",
   "kintaramarket.xyz",
+  "www.kintrade.xyz",
+  "kintrade.xyz",
   "fanout.kintara.gg",
   "kintara.com",
 ] as const;

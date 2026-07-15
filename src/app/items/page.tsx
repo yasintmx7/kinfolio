@@ -4,7 +4,8 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { ItemIcon } from "@/components/items/item-icon";
 import { usePortfolioContext } from "@/components/providers/portfolio-provider";
-import { CATALOG_META } from "@/data/static-catalog";
+import { CATALOG_META, STATIC_CATALOG } from "@/data/static-catalog";
+import { portfolioIdToMarketType } from "@/lib/kintara/item-type-map";
 import { cn } from "@/lib/utils";
 
 const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
@@ -126,7 +127,9 @@ export default function ItemsPage() {
             {group.map((item) => (
               <Link
                 key={item.id}
-                href={`/market?tab=floors&item=${encodeURIComponent(item.id)}`}
+                href={`/market?tab=floors&item=${encodeURIComponent(
+                  portfolioIdToMarketType(item.id, STATIC_CATALOG),
+                )}`}
                 className="card-quiet flex flex-col items-center gap-2.5 rounded-3xl p-4 text-center transition-all hover:-translate-y-0.5 hover:border-sky/40 hover:shadow-[0_10px_28px_color-mix(in_srgb,#000_25%,transparent)]"
               >
                 <ItemIcon

@@ -1,6 +1,6 @@
 import { STATIC_CATALOG } from "@/data/static-catalog";
 import { fetchWithTimeout, getCached, setCache } from "@/lib/api/cache";
-import { fail, ok } from "@/lib/api/response";
+import { ok } from "@/lib/api/response";
 import { z } from "zod";
 
 export const runtime = "nodejs";

@@ -18,7 +18,6 @@ import {
   formatUsdShort,
 } from "@/lib/formatting/money";
 import {
-  formatUsdMarket,
   listingPriceLabels,
   normalizeListingPrice,
 } from "@/lib/market/listing-price";
@@ -121,6 +120,14 @@ function isLocked(r: RecentSale): boolean {
   if (r.reserved) return true;
   if (r.reservedUntilMs != null && r.reservedUntilMs > Date.now()) return true;
   return false;
+}
+
+/** Match market type (wood) ↔ portfolio id (cooked-fish-meat) for deep links. */
+function itemIdsMatch(a: string, b: string): boolean {
+  if (a === b) return true;
+  const na = a.replace(/-/g, "_").toLowerCase();
+  const nb = b.replace(/-/g, "_").toLowerCase();
+  return na === nb;
 }
 
 /** Locker display: username when known, else #id */
@@ -389,11 +396,23 @@ function MarketHubInner() {
 
   const selected = useMemo(
     () =>
-      itemFocus ? hub.sales.filter((s) => s.itemType === itemFocus) : [],
+      itemFocus
+        ? hub.sales.filter(
+            (s) =>
+              itemIdsMatch(s.itemType, itemFocus) ||
+              (s.portfolioItemId != null &&
+                itemIdsMatch(s.portfolioItemId, itemFocus)),
+          )
+        : [],
     [hub.sales, itemFocus],
   );
   const selectedFloor = itemFocus
-    ? hub.floors.find((f) => f.id === itemFocus)
+    ? hub.floors.find(
+        (f) =>
+          itemIdsMatch(f.id, itemFocus) ||
+          (f.portfolioItemId != null &&
+            itemIdsMatch(f.portfolioItemId, itemFocus)),
+      )
     : undefined;
 
   const matchSeller = (s: RecentSale) => {
@@ -791,7 +810,12 @@ function MarketHubInner() {
           }
           itemId={itemFocus}
           rows={selected}
-          soldRows={(hub.sold ?? []).filter((s) => s.itemType === itemFocus)}
+          soldRows={(hub.sold ?? []).filter(
+            (s) =>
+              itemIdsMatch(s.itemType, itemFocus) ||
+              (s.portfolioItemId != null &&
+                itemIdsMatch(s.portfolioItemId, itemFocus)),
+          )}
           watching={watch.includes(itemFocus)}
           onClose={closeSheet}
           onWatch={() => onWatch(itemFocus)}

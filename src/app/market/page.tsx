@@ -11,7 +11,11 @@ import {
 } from "@/hooks/use-market-hub";
 import { useKinsPrice } from "@/hooks/use-kins-price";
 import { useToast } from "@/components/feedback/toast";
-import { formatQtyCompact, formatUsdShort } from "@/lib/formatting/money";
+import {
+  formatQtyCompact,
+  formatUsdPer1k,
+  formatUsdShort,
+} from "@/lib/formatting/money";
 import { getWatchlist, toggleWatch } from "@/lib/market/watchlist";
 import { cn } from "@/lib/utils";
 
@@ -537,8 +541,8 @@ function ListingList({
                 </div>
                 {unit$ && (
                   <div className="font-mono text-[12px] tabular-nums text-muted">
-                    avg {formatUsdShort(unit$)}
-                    <span className="text-[10px]">/u</span>
+                    avg {formatUsdPer1k(unit$)}
+                    <span className="text-[10px]">/1k</span>
                   </div>
                 )}
                 {mode === "listings" && locked && (
@@ -797,8 +801,8 @@ function DetailSheet({
                     </div>
                     {s.unitUsd && (
                       <div className="font-mono text-[12px] text-muted">
-                        avg {formatUsdShort(s.unitUsd)}
-                        <span className="text-[10px]">/u</span>
+                        avg {formatUsdPer1k(s.unitUsd)}
+                        <span className="text-[10px]">/1k</span>
                       </div>
                     )}
                   </div>

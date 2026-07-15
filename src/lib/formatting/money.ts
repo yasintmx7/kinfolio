@@ -75,6 +75,16 @@ export function formatUsdShort(
   return `${sign}$${trimTrailingZeros(abs.toFixed(decimals))}`;
 }
 
+/** Unit price as $/1k units (e.g. $0.000026/u → $0.026/1k). */
+export function formatUsdPer1k(
+  unitUsd: string | number | Decimal | null | undefined,
+): string {
+  if (unitUsd === null || unitUsd === undefined || unitUsd === "") return "—";
+  const n = d(unitUsd);
+  if (!n.isFinite()) return "—";
+  return formatUsdShort(n.mul(1000));
+}
+
 function trimTrailingZeros(s: string): string {
   if (!s.includes(".")) return s;
   return s.replace(/\.?0+$/, "");

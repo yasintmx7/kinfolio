@@ -19,7 +19,8 @@ import {
 import { getWatchlist, toggleWatch } from "@/lib/market/watchlist";
 import { cn } from "@/lib/utils";
 
-type Tab = "listings" | "activity" | "floors" | "watch";
+/** market = both lists at once (default) */
+type Tab = "market" | "floors" | "watch";
 
 type SellerFocus = {
   sellerId: string | null;
@@ -27,12 +28,10 @@ type SellerFocus = {
 };
 
 function parseTab(raw: string | null): Tab {
-  if (raw === "activity" || raw === "sales") return "activity";
   if (raw === "floors") return "floors";
   if (raw === "watch") return "watch";
-  // default + legacy "sales" redirect handled below → listings
-  if (raw === "listings" || !raw || raw === "overview") return "listings";
-  return "listings";
+  // listings / activity / sales / empty → dual market view
+  return "market";
 }
 
 function isLocked(r: RecentSale): boolean {
@@ -50,6 +49,32 @@ function lockLabel(r: RecentSale): string {
     }
   }
   return "Reserved";
+}
+
+/** Lot total for display (always prefer total over unit). */
+function lotTotal(r: RecentSale): string | null {
+  if (r.usdTotal != null && r.usdTotal !== "" && Number.isFinite(Number(r.usdTotal))) {
+    return String(r.usdTotal);
+  }
+  // derive from unit × qty if needed
+  const unit = Number(r.unitUsd);
+  const qty = Number(r.quantity);
+  if (Number.isFinite(unit) && Number.isFinite(qty) && unit > 0 && qty > 0) {
+    return String(unit * qty);
+  }
+  return null;
+}
+
+function unitPrice(r: RecentSale): string | null {
+  if (r.unitUsd != null && r.unitUsd !== "" && Number.isFinite(Number(r.unitUsd))) {
+    return String(r.unitUsd);
+  }
+  const total = Number(r.usdTotal);
+  const qty = Number(r.quantity);
+  if (Number.isFinite(total) && Number.isFinite(qty) && total > 0 && qty > 0) {
+    return String(total / qty);
+  }
+  return null;
 }
 
 function MarketHubInner() {
@@ -71,16 +96,17 @@ function MarketHubInner() {
     setWatch(getWatchlist());
   }, []);
 
-  // Normalize legacy ?tab=sales → listings default home is listings
+  // Normalize legacy tabs → market (dual view)
   useEffect(() => {
-    if (!rawTab || rawTab === "overview" || rawTab === "sales") {
+    if (
+      !rawTab ||
+      rawTab === "overview" ||
+      rawTab === "sales" ||
+      rawTab === "listings" ||
+      rawTab === "activity"
+    ) {
       const p = new URLSearchParams(searchParams.toString());
-      // Keep "sales" URLs as activity; empty/overview → listings
-      if (rawTab === "sales") {
-        p.set("tab", "activity");
-      } else {
-        p.set("tab", "listings");
-      }
+      p.set("tab", "market");
       router.replace(`/market?${p.toString()}`);
     }
   }, [rawTab, router, searchParams]);
@@ -115,7 +141,6 @@ function MarketHubInner() {
     );
   };
 
-  /** Listings: open first, then cheapest unit $ */
   const listingRows = useMemo(() => {
     let list = [...hub.sales];
     const query = q.trim().toLowerCase();
@@ -124,8 +149,8 @@ function MarketHubInner() {
       const la = isLocked(a) ? 1 : 0;
       const lb = isLocked(b) ? 1 : 0;
       if (la !== lb) return la - lb;
-      const ua = Number(a.unitUsd);
-      const ub = Number(b.unitUsd);
+      const ua = Number(unitPrice(a));
+      const ub = Number(unitPrice(b));
       const aOk = Number.isFinite(ua) ? ua : Number.POSITIVE_INFINITY;
       const bOk = Number.isFinite(ub) ? ub : Number.POSITIVE_INFINITY;
       if (aOk !== bOk) return aOk - bOk;
@@ -134,7 +159,6 @@ function MarketHubInner() {
     return list;
   }, [hub.sales, q]);
 
-  /** Activity: newest first */
   const activityRows = useMemo(() => {
     let list = [...hub.sales];
     const query = q.trim().toLowerCase();
@@ -234,20 +258,17 @@ function MarketHubInner() {
   }
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-end justify-between gap-4">
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-[1.65rem] font-semibold tracking-tight">
-            {tab === "listings" && "Listings"}
-            {tab === "activity" && "Activity"}
+            {tab === "market" && "Market"}
             {tab === "floors" && "Floors"}
             {tab === "watch" && "Watchlist"}
           </h1>
           <p className="mt-1 text-sm text-muted">
-            {tab === "listings" &&
-              `${hub.sales.length} listings · ${openCount} open · ${lockedCount} locked`}
-            {tab === "activity" &&
-              `${hub.sales.length} newest first · 10s refresh`}
+            {tab === "market" &&
+              `${hub.sales.length} listings · ${openCount} open · ${lockedCount} locked · 10s`}
             {tab === "floors" && `${hub.floors.length} items · lowest $ each`}
             {tab === "watch" &&
               (watch.length
@@ -291,8 +312,7 @@ function MarketHubInner() {
       <div className="inline-flex flex-wrap rounded-2xl border border-border/40 bg-surface/50 p-1">
         {(
           [
-            ["listings", "Listings"],
-            ["activity", "Activity"],
+            ["market", "Market"],
             ["floors", "Floors"],
             ["watch", "Watch"],
           ] as const
@@ -318,33 +338,44 @@ function MarketHubInner() {
         value={q}
         onChange={(e) => setQ(e.target.value)}
         placeholder={
-          tab === "listings" || tab === "activity"
+          tab === "market"
             ? "Search item, seller, reserved…"
             : "Search items…"
         }
-        className="min-h-12 w-full rounded-2xl border border-border/40 bg-surface/60 px-4 text-sm outline-none placeholder:text-muted/50 focus:border-sky/40 focus:ring-2 focus:ring-sky/15"
+        className="min-h-11 w-full rounded-2xl border border-border/40 bg-surface/60 px-4 text-sm outline-none placeholder:text-muted/50 focus:border-sky/40 focus:ring-2 focus:ring-sky/15"
       />
 
-      {tab === "listings" && (
-        <ListingList
-          rows={listingRows}
-          mode="listings"
-          onOpenItem={openItem}
-          onOpenSeller={openSeller}
-          onWatch={onWatch}
-          watch={watch}
-        />
-      )}
-
-      {tab === "activity" && (
-        <ListingList
-          rows={activityRows}
-          mode="activity"
-          onOpenItem={openItem}
-          onOpenSeller={openSeller}
-          onWatch={onWatch}
-          watch={watch}
-        />
+      {tab === "market" && (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-5">
+          <Panel
+            title="Listings"
+            subtitle={`${listingRows.length} · cheapest · lock status`}
+          >
+            <ListingList
+              rows={listingRows}
+              mode="listings"
+              onOpenItem={openItem}
+              onOpenSeller={openSeller}
+              onWatch={onWatch}
+              watch={watch}
+              compact
+            />
+          </Panel>
+          <Panel
+            title="Activity"
+            subtitle={`${activityRows.length} · newest first`}
+          >
+            <ListingList
+              rows={activityRows}
+              mode="activity"
+              onOpenItem={openItem}
+              onOpenSeller={openSeller}
+              onWatch={onWatch}
+              watch={watch}
+              compact
+            />
+          </Panel>
+        </div>
       )}
 
       {(tab === "floors" || tab === "watch") && (
@@ -404,6 +435,75 @@ function MarketHubInner() {
   );
 }
 
+function Panel({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string;
+  subtitle: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="flex min-h-0 flex-col overflow-hidden rounded-3xl border border-border/40 bg-surface/35">
+      <header className="flex shrink-0 items-baseline justify-between gap-2 border-b border-border/30 px-4 py-3">
+        <h2 className="text-[15px] font-semibold tracking-tight">{title}</h2>
+        <p className="truncate text-[11px] text-muted">{subtitle}</p>
+      </header>
+      <div className="min-h-0 flex-1">{children}</div>
+    </section>
+  );
+}
+
+function PriceBlock({
+  lot$,
+  unit$,
+  locked,
+  compact,
+}: {
+  lot$: string | null;
+  unit$: string | null;
+  locked?: boolean;
+  compact?: boolean;
+}) {
+  const totalLabel = lot$
+    ? formatUsdShort(lot$)
+    : unit$
+      ? formatUsdShort(unit$)
+      : "—";
+  const avgLabel = unit$ ? formatUsdPer1k(unit$) : null;
+
+  return (
+    <div
+      className={cn(
+        "shrink-0 text-right",
+        compact ? "min-w-[4.75rem] sm:min-w-[5.5rem]" : "min-w-[5.5rem]",
+      )}
+    >
+      <div
+        className={cn(
+          "font-mono font-semibold tabular-nums leading-tight",
+          compact ? "text-[15px] sm:text-[16px]" : "text-[17px]",
+          locked ? "text-muted" : "text-sky-hi",
+        )}
+      >
+        {totalLabel}
+      </div>
+      {avgLabel && (
+        <div
+          className={cn(
+            "font-mono tabular-nums leading-tight text-muted",
+            compact ? "text-[11px]" : "text-[12px]",
+          )}
+        >
+          {avgLabel}
+          <span className="text-[10px]">/1k</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ListingList({
   rows,
   mode,
@@ -411,6 +511,7 @@ function ListingList({
   onOpenSeller,
   onWatch,
   watch,
+  compact = false,
 }: {
   rows: RecentSale[];
   mode: "listings" | "activity";
@@ -418,157 +519,147 @@ function ListingList({
   onOpenSeller: (row: RecentSale) => void;
   onWatch: (id: string) => void;
   watch: string[];
+  compact?: boolean;
 }) {
   if (!rows.length) {
     return (
-      <div className="rounded-3xl border border-border/40 bg-surface/40 px-6 py-16 text-center text-sm text-muted">
+      <div className="px-6 py-14 text-center text-sm text-muted">
         {mode === "listings" ? "No listings…" : "Waiting for activity…"}
       </div>
     );
   }
 
   return (
-    <div className="overflow-hidden rounded-3xl border border-border/40 bg-surface/35">
-      <div className="max-h-[calc(100dvh-15rem)] divide-y divide-border/25 overflow-y-auto">
-        {rows.map((r) => {
-          const seller = (r.sellerName ?? r.seller ?? "").trim() || "Unknown";
-          const unit$ = r.unitUsd ?? null;
-          const lot$ = r.usdTotal ?? null;
-          const qtyLabel = formatQtyCompact(r.quantity);
-          const locked = isLocked(r);
-          const canOpenSeller = Boolean(
-            (r.sellerName ?? r.seller ?? "").trim() || r.sellerId != null,
-          );
+    <div
+      className={cn(
+        "divide-y divide-border/25 overflow-y-auto",
+        compact
+          ? "max-h-[min(70dvh,36rem)] lg:max-h-[calc(100dvh-16rem)]"
+          : "max-h-[calc(100dvh-15rem)]",
+      )}
+    >
+      {rows.map((r) => {
+        const seller = (r.sellerName ?? r.seller ?? "").trim() || "Unknown";
+        const unit$ = unitPrice(r);
+        const lot$ = lotTotal(r);
+        const qtyLabel = formatQtyCompact(r.quantity);
+        const locked = isLocked(r);
+        const canOpenSeller = Boolean(
+          (r.sellerName ?? r.seller ?? "").trim() || r.sellerId != null,
+        );
+        const iconSize = compact ? 44 : 52;
 
-          return (
-            <div
-              key={r.id}
-              className={cn(
-                "flex items-center gap-2 px-3 py-3 sm:gap-3 sm:px-4 sm:py-3.5",
-                locked && mode === "listings" && "bg-amber-500/[0.06]",
-              )}
+        return (
+          <div
+            key={r.id}
+            className={cn(
+              "grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 px-2.5 py-2.5 sm:gap-3 sm:px-3 sm:py-3",
+              locked && mode === "listings" && "bg-amber-500/[0.06]",
+            )}
+          >
+            <button
+              type="button"
+              onClick={() => onOpenItem(r.itemType)}
+              className="relative shrink-0 rounded-2xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky"
+              aria-label={`Open ${r.name}`}
             >
+              <ItemIcon
+                itemId={r.itemType}
+                name={r.name}
+                size={iconSize}
+                clear
+              />
+              {mode === "listings" && locked && (
+                <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-amber-500 text-[#0a121c] shadow">
+                  <Lock className="h-3 w-3" strokeWidth={2.5} />
+                </span>
+              )}
+            </button>
+
+            <div className="min-w-0 overflow-hidden">
               <button
                 type="button"
                 onClick={() => onOpenItem(r.itemType)}
-                className="relative shrink-0 rounded-2xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky"
-                aria-label={`Open ${r.name}`}
+                className="block w-full min-w-0 truncate text-left text-[14px] font-semibold tracking-tight hover:text-sky-hi sm:text-[15px]"
               >
-                <ItemIcon itemId={r.itemType} name={r.name} size={52} clear />
-                {mode === "listings" && locked && (
-                  <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-amber-500 text-[#0a121c] shadow">
-                    <Lock className="h-3 w-3" strokeWidth={2.5} />
-                  </span>
-                )}
+                <span className="font-mono tabular-nums text-sky-hi">
+                  {qtyLabel}
+                </span>{" "}
+                {r.name}
               </button>
 
-              <div className="min-w-0 flex-1">
-                <button
-                  type="button"
-                  onClick={() => onOpenItem(r.itemType)}
-                  className="flex w-full min-w-0 items-center gap-2 text-left"
-                >
-                  <span className="truncate text-[16px] font-semibold tracking-tight hover:text-sky-hi">
-                    <span className="font-mono tabular-nums text-sky-hi">
-                      {qtyLabel}
-                    </span>{" "}
-                    {r.name}
-                  </span>
-                </button>
-
-                {mode === "listings" && locked && (
-                  <div className="mt-0.5 inline-flex items-center gap-1 rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[11px] font-semibold text-amber-200">
-                    <Lock className="h-3 w-3" />
-                    {lockLabel(r)}
-                  </div>
-                )}
-
-                <button
-                  type="button"
-                  disabled={!canOpenSeller}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    onOpenSeller(r);
-                  }}
-                  onPointerDown={(e) => e.stopPropagation()}
-                  className={cn(
-                    "mt-0.5 flex min-h-8 max-w-full items-center gap-1 rounded-lg px-0 py-0.5 text-left text-[12px]",
-                    canOpenSeller
-                      ? "text-sky-hi underline decoration-sky/40 underline-offset-2 hover:bg-sky/10 hover:decoration-sky active:bg-sky/15"
-                      : "cursor-default text-muted",
-                  )}
-                  aria-label={`View all listings by ${seller}`}
-                >
-                  <span className="truncate font-medium">{seller}</span>
-                  {r.sellerId != null && (
-                    <span className="shrink-0 font-mono text-muted">
-                      #{r.sellerId}
-                    </span>
-                  )}
-                  {mode === "activity" && (
-                    <span className="shrink-0 text-muted/70">
-                      · {new Date(r.timestamp).toLocaleTimeString()}
-                    </span>
-                  )}
-                  {mode === "listings" && !locked && (
-                    <span className="shrink-0 text-muted/70">
-                      · {new Date(r.timestamp).toLocaleTimeString()}
-                    </span>
-                  )}
-                </button>
-              </div>
+              {mode === "listings" && locked && (
+                <div className="mt-0.5 inline-flex items-center gap-1 rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-200">
+                  <Lock className="h-2.5 w-2.5" />
+                  {lockLabel(r)}
+                </div>
+              )}
 
               <button
                 type="button"
-                onClick={() => onOpenItem(r.itemType)}
-                className="shrink-0 text-right"
-              >
-                {/* Total (lot) large on top · avg/unit small below */}
-                <div
-                  className={cn(
-                    "font-mono text-[17px] font-semibold tabular-nums",
-                    locked && mode === "listings"
-                      ? "text-muted"
-                      : "text-sky-hi",
-                  )}
-                >
-                  {lot$
-                    ? formatUsdShort(lot$)
-                    : unit$
-                      ? formatUsdShort(unit$)
-                      : "—"}
-                </div>
-                {unit$ && (
-                  <div className="font-mono text-[12px] tabular-nums text-muted">
-                    avg {formatUsdPer1k(unit$)}
-                    <span className="text-[10px]">/1k</span>
-                  </div>
+                disabled={!canOpenSeller}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onOpenSeller(r);
+                }}
+                onPointerDown={(e) => e.stopPropagation()}
+                className={cn(
+                  "mt-0.5 flex min-h-7 max-w-full items-center gap-1 rounded-lg text-left text-[11px] sm:text-[12px]",
+                  canOpenSeller
+                    ? "text-sky-hi underline decoration-sky/40 underline-offset-2 hover:bg-sky/10"
+                    : "cursor-default text-muted",
                 )}
+                aria-label={`View all listings by ${seller}`}
+              >
+                <span className="truncate font-medium">{seller}</span>
+                {r.sellerId != null && (
+                  <span className="shrink-0 font-mono text-muted">
+                    #{r.sellerId}
+                  </span>
+                )}
+                <span className="shrink-0 text-muted/70">
+                  · {new Date(r.timestamp).toLocaleTimeString()}
+                </span>
+              </button>
+            </div>
+
+            {/* Fixed price column — always visible */}
+            <div className="flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                onClick={() => onOpenItem(r.itemType)}
+                className="text-right"
+              >
+                <PriceBlock
+                  lot$={lot$}
+                  unit$={unit$}
+                  locked={locked && mode === "listings"}
+                  compact={compact}
+                />
                 {mode === "listings" && locked && (
-                  <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-300/90">
+                  <div className="text-[9px] font-semibold uppercase tracking-wide text-amber-300/90">
                     Locked
                   </div>
                 )}
               </button>
-
               <button
                 type="button"
                 onClick={() => onWatch(r.itemType)}
-                className="rounded-xl p-2 text-muted hover:bg-raised hover:text-sky"
+                className="rounded-lg p-1.5 text-muted hover:bg-raised hover:text-sky"
                 aria-label="Watch"
               >
                 <Star
                   className={cn(
-                    "h-4 w-4",
+                    "h-3.5 w-3.5",
                     watch.includes(r.itemType) && "fill-sky text-sky",
                   )}
                 />
               </button>
             </div>
-          );
-        })}
-      </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -603,34 +694,38 @@ function FloorList({
           return (
             <div
               key={row.id}
-              className="flex items-center gap-3 px-4 py-3.5 hover:bg-sky/[0.04]"
+              className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-3 px-4 py-3.5 hover:bg-sky/[0.04]"
             >
               <button
                 type="button"
                 onClick={() => onOpen(row.id)}
-                className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                className="shrink-0"
               >
                 <ItemIcon itemId={row.id} name={row.name} size={52} clear />
-                <div className="min-w-0">
-                  <div className="truncate text-[16px] font-semibold">
-                    {qtyLabel ? (
-                      <>
-                        <span className="font-mono tabular-nums text-sky-hi">
-                          {qtyLabel}
-                        </span>{" "}
-                      </>
-                    ) : null}
-                    {row.name}
-                  </div>
-                  <div className="text-[12px] text-muted">
-                    {row.listings ?? 0} listings
-                  </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => onOpen(row.id)}
+                className="min-w-0 text-left"
+              >
+                <div className="truncate text-[16px] font-semibold">
+                  {qtyLabel ? (
+                    <>
+                      <span className="font-mono tabular-nums text-sky-hi">
+                        {qtyLabel}
+                      </span>{" "}
+                    </>
+                  ) : null}
+                  {row.name}
+                </div>
+                <div className="text-[12px] text-muted">
+                  {row.listings ?? 0} listings
                 </div>
               </button>
               <button
                 type="button"
                 onClick={() => onOpen(row.id)}
-                className="shrink-0 text-right"
+                className="min-w-[5rem] shrink-0 text-right"
               >
                 <div className="font-mono text-[17px] font-semibold tabular-nums text-sky-hi">
                   {row.lowestUsdPerUnit
@@ -733,6 +828,8 @@ function DetailSheet({
             )}
             {rows.map((s) => {
               const locked = showLock && isLocked(s);
+              const lot$ = lotTotal(s);
+              const unit$ = unitPrice(s);
               return (
                 <div
                   key={s.id}
@@ -741,7 +838,7 @@ function DetailSheet({
                     locked ? "bg-amber-500/10" : "bg-surface-2/60",
                   )}
                 >
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     {mode === "seller" ? (
                       <button
                         type="button"
@@ -786,26 +883,7 @@ function DetailSheet({
                       )}
                     </div>
                   </div>
-                  <div className="shrink-0 text-right">
-                    <div
-                      className={cn(
-                        "font-mono text-[16px] font-semibold tabular-nums",
-                        locked ? "text-muted" : "text-sky-hi",
-                      )}
-                    >
-                      {s.usdTotal
-                        ? formatUsdShort(s.usdTotal)
-                        : s.unitUsd
-                          ? formatUsdShort(s.unitUsd)
-                          : "—"}
-                    </div>
-                    {s.unitUsd && (
-                      <div className="font-mono text-[12px] text-muted">
-                        avg {formatUsdPer1k(s.unitUsd)}
-                        <span className="text-[10px]">/1k</span>
-                      </div>
-                    )}
-                  </div>
+                  <PriceBlock lot$={lot$} unit$={unit$} locked={locked} />
                 </div>
               );
             })}

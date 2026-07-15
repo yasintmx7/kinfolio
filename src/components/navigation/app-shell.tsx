@@ -4,14 +4,13 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import {
-  Activity,
   Calculator,
   Grid3X3,
   Layers,
-  List,
   MoreHorizontal,
   Settings,
   Star,
+  Store,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -19,23 +18,17 @@ import { Logo } from "@/components/brand/logo";
 
 const NAV = [
   {
-    href: "/market?tab=listings",
-    tab: "listings",
-    label: "Listings",
-    icon: List,
-  },
-  {
-    href: "/market?tab=activity",
-    tab: "activity",
-    label: "Activity",
-    icon: Activity,
+    href: "/market?tab=market",
+    tab: "market",
+    label: "Market",
+    icon: Store,
   },
   { href: "/items", tab: null, label: "Items", icon: Grid3X3 },
   { href: "/market?tab=watch", tab: "watch", label: "Watch", icon: Star },
+  { href: "/market?tab=floors", tab: "floors", label: "Floors", icon: Layers },
 ] as const;
 
 const EXTRA = [
-  { href: "/market?tab=floors", label: "Floors", icon: Layers },
   { href: "/calculator", label: "Calculator", icon: Calculator },
   { href: "/settings", label: "Settings", icon: Settings },
 ] as const;
@@ -43,9 +36,15 @@ const EXTRA = [
 function ShellInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const rawTab = searchParams.get("tab") ?? "listings";
-  // treat legacy "sales" as activity for active state
-  const tab = rawTab === "sales" ? "activity" : rawTab;
+  const rawTab = searchParams.get("tab") ?? "market";
+  // legacy listings/activity/sales → market active
+  const tab =
+    rawTab === "listings" ||
+    rawTab === "activity" ||
+    rawTab === "sales" ||
+    !rawTab
+      ? "market"
+      : rawTab;
   const [moreOpen, setMoreOpen] = useState(false);
   const onMarket = pathname.startsWith("/market");
   const onItems = pathname.startsWith("/items");
@@ -54,7 +53,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
     <div className="min-h-dvh bg-app text-primary">
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-[13.5rem] border-r border-border/50 bg-surface/80 md:flex md:flex-col">
         <div className="px-4 py-5">
-          <Link href="/market?tab=listings">
+          <Link href="/market?tab=market">
             <Logo size={36} priority />
           </Link>
         </div>
@@ -83,10 +82,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
           })}
           <div className="my-3 mx-2 border-t border-border/40" />
           {EXTRA.map((item) => {
-            const active =
-              item.href.startsWith("/market")
-                ? onMarket && tab === "floors" && item.label === "Floors"
-                : pathname.startsWith(item.href);
+            const active = pathname.startsWith(item.href);
             const Icon = item.icon;
             return (
               <Link
@@ -106,17 +102,17 @@ function ShellInner({ children }: { children: React.ReactNode }) {
           })}
         </nav>
         <p className="px-4 py-4 text-[10px] leading-relaxed text-muted/70">
-          Listings · lock status · activity
+          Listings + activity side by side
         </p>
       </aside>
 
       <div className="md:pl-[13.5rem]">
         <header className="sticky top-0 z-30 flex items-center justify-between border-b border-border/40 bg-app/90 px-4 py-3 backdrop-blur-md md:hidden">
-          <Link href="/market?tab=listings">
+          <Link href="/market?tab=market">
             <Logo size={30} />
           </Link>
         </header>
-        <main className="mx-auto w-full max-w-5xl px-4 py-5 pb-28 md:px-8 md:py-8 md:pb-10">
+        <main className="mx-auto w-full max-w-6xl px-4 py-5 pb-28 md:px-8 md:py-8 md:pb-10">
           {children}
         </main>
       </div>

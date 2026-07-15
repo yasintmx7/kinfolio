@@ -247,7 +247,8 @@ function MarketHubInner() {
   const [sellerFocus, setSellerFocus] = useState<SellerFocus | null>(null);
   const [currencyFilter, setCurrencyFilter] = useState<CurrencyFilter>("all");
   const [sortFilter, setSortFilter] = useState<SortFilter>("cheap");
-  const [hideLocked, setHideLocked] = useState(true);
+  /** false = show locked/reserved rows on the listings page (default) */
+  const [hideLocked, setHideLocked] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
 

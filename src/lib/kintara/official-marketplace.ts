@@ -11,6 +11,7 @@ import type {
   MarketplaceListing,
   SoldSample,
 } from "@/lib/kintara/marketplace-adapter";
+import { normalizeListingPrice } from "@/lib/market/listing-price";
 import { z } from "zod";
 
 const BASE = "https://kintara.com";
@@ -96,14 +97,17 @@ export async function fetchOfficialListings(params?: {
   if (!parsed.success) throw new Error("Unexpected official listings shape");
 
   const rows: OfficialListing[] = parsed.data.listings.map((l) => {
-    const qty = Math.max(l.quantity || 1, 1);
-    const unitUsd =
-      l.priceUsd != null && Number.isFinite(l.priceUsd)
-        ? l.priceUsd / qty
-        : null;
+    // priceUsd is LOT total — unit derived in one place only
+    const priced = normalizeListingPrice({
+      quantity: l.quantity,
+      priceUsd: l.priceUsd,
+      priceGold: l.priceGold,
+      currency: l.currency,
+    });
     return {
       ...l,
-      unitUsd,
+      quantity: priced.quantity,
+      unitUsd: priced.unitUsd,
       isReserved:
         l.reservedBy != null ||
         (l.reservedUntilMs != null && l.reservedUntilMs > Date.now()),
@@ -392,22 +396,16 @@ export async function fetchOfficialRecentActivity(options?: {
   });
 
   return collected.slice(0, maxRows).map((r) => {
-    const qty = Math.max(r.quantity || 1, 1);
-    // Prefer computed unit; fall back to priceUsd / qty
-    let unitUsd = r.unitUsd;
-    if (
-      (unitUsd == null || !Number.isFinite(unitUsd)) &&
-      r.priceUsd != null &&
-      Number.isFinite(r.priceUsd)
-    ) {
-      unitUsd = r.priceUsd / qty;
-    }
-    const lotUsd =
-      r.priceUsd != null && Number.isFinite(r.priceUsd)
-        ? r.priceUsd
-        : unitUsd != null
-          ? unitUsd * qty
-          : null;
+    const priced = normalizeListingPrice({
+      quantity: r.quantity,
+      priceUsd: r.priceUsd,
+      unitUsd: r.unitUsd,
+      priceGold: r.priceGold,
+      currency: r.currency,
+    });
+    const qty = priced.quantity;
+    const unitUsd = priced.unitUsd;
+    const lotUsd = priced.lotUsd;
     const isToken = (r.currency ?? "token") === "token";
     const unitKins =
       kinsUsd != null && unitUsd != null && isToken
@@ -427,9 +425,10 @@ export async function fetchOfficialRecentActivity(options?: {
       quantity: String(qty),
       unitKins: unitKins ?? "0",
       totalKins,
-      unitUsd: unitUsd != null && Number.isFinite(unitUsd) ? String(unitUsd) : null,
-      usdTotal: lotUsd != null && Number.isFinite(lotUsd) ? String(lotUsd) : null,
-      priceGold: r.priceGold != null ? String(r.priceGold) : null,
+      unitUsd: unitUsd != null ? String(unitUsd) : null,
+      usdTotal: lotUsd != null ? String(lotUsd) : null,
+      priceGold:
+        priced.priceGold != null ? String(priced.priceGold) : null,
       currency: r.currency ?? "token",
       timestamp: r.createdAt ?? new Date().toISOString(),
       sellerName: r.sellerName ?? null,

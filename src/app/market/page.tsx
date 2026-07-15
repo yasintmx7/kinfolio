@@ -12,11 +12,12 @@ import {
 } from "@/hooks/use-market-hub";
 import { useKinsPrice } from "@/hooks/use-kins-price";
 import { useToast } from "@/components/feedback/toast";
+import { formatQtyCompact, formatUsdShort } from "@/lib/formatting/money";
 import {
-  formatQtyCompact,
-  formatUsdPer1k,
-  formatUsdShort,
-} from "@/lib/formatting/money";
+  formatUsdMarket,
+  listingPriceLabels,
+  normalizeListingPrice,
+} from "@/lib/market/listing-price";
 import { getWatchlist, toggleWatch } from "@/lib/market/watchlist";
 import { cn } from "@/lib/utils";
 
@@ -52,33 +53,26 @@ function lockLabel(r: RecentSale): string {
   return "Reserved";
 }
 
-/** Lot total USD for display. */
-function lotTotal(r: RecentSale): string | null {
-  const total = Number(r.usdTotal);
-  if (Number.isFinite(total) && total > 0) return String(total);
-  const unit = Number(r.unitUsd);
-  const qty = Number(r.quantity);
-  if (Number.isFinite(unit) && unit > 0 && Number.isFinite(qty) && qty > 0) {
-    return String(unit * qty);
-  }
-  return null;
+/** Single path for row prices — never re-derive ad-hoc in UI. */
+function priceOf(r: RecentSale) {
+  return listingPriceLabels({
+    quantity: r.quantity,
+    usdTotal: r.usdTotal,
+    unitUsd: r.unitUsd,
+    priceGold: r.priceGold,
+    currency: r.currency,
+  });
 }
 
-function unitPrice(r: RecentSale): string | null {
-  const unit = Number(r.unitUsd);
-  if (Number.isFinite(unit) && unit > 0) return String(unit);
-  const total = Number(r.usdTotal);
-  const qty = Number(r.quantity);
-  if (Number.isFinite(total) && total > 0 && Number.isFinite(qty) && qty > 0) {
-    return String(total / qty);
-  }
-  return null;
-}
-
-function goldTotal(r: RecentSale): string | null {
-  const g = Number(r.priceGold);
-  if (Number.isFinite(g) && g > 0) return String(g);
-  return null;
+function unitSortKey(r: RecentSale): number {
+  const p = normalizeListingPrice({
+    quantity: r.quantity,
+    usdTotal: r.usdTotal,
+    unitUsd: r.unitUsd,
+    priceGold: r.priceGold,
+    currency: r.currency,
+  });
+  return p.unitUsd ?? Number.POSITIVE_INFINITY;
 }
 
 function MarketHubInner() {
@@ -153,11 +147,9 @@ function MarketHubInner() {
       const la = isLocked(a) ? 1 : 0;
       const lb = isLocked(b) ? 1 : 0;
       if (la !== lb) return la - lb;
-      const ua = Number(unitPrice(a));
-      const ub = Number(unitPrice(b));
-      const aOk = Number.isFinite(ua) ? ua : Number.POSITIVE_INFINITY;
-      const bOk = Number.isFinite(ub) ? ub : Number.POSITIVE_INFINITY;
-      if (aOk !== bOk) return aOk - bOk;
+      const ua = unitSortKey(a);
+      const ub = unitSortKey(b);
+      if (ua !== ub) return ua - ub;
       return Date.parse(b.timestamp) - Date.parse(a.timestamp);
     });
     return list;
@@ -494,9 +486,6 @@ function SoldActivityCard({
     <div className="max-h-[min(42dvh,22rem)] divide-y divide-border/25 overflow-y-auto lg:max-h-[calc(100dvh-14rem)]">
       {rows.map((r) => {
         const seller = (r.sellerName ?? r.seller ?? "").trim() || "Unknown";
-        const lot$ = lotTotal(r);
-        const unit$ = unitPrice(r);
-        const gold$ = goldTotal(r);
         return (
           <div
             key={`${r.id}-${r.timestamp}`}
@@ -521,7 +510,6 @@ function SoldActivityCard({
                 </span>{" "}
                 {r.name}
               </button>
-              {/* Seller username + mini character avatar */}
               <button
                 type="button"
                 onClick={() => onOpenSeller(r)}
@@ -543,22 +531,7 @@ function SoldActivityCard({
                 sold · {new Date(r.timestamp).toLocaleTimeString()}
               </div>
             </div>
-            <div className="shrink-0 text-right">
-              <div className="font-mono text-[13px] font-bold tabular-nums text-sky-hi">
-                {lot$
-                  ? formatUsdShort(lot$)
-                  : unit$
-                    ? formatUsdShort(unit$)
-                    : gold$
-                      ? `${formatQtyCompact(gold$)}g`
-                      : "—"}
-              </div>
-              {unit$ && (
-                <div className="font-mono text-[10px] tabular-nums text-muted">
-                  {formatUsdPer1k(unit$)}/1k
-                </div>
-              )}
-            </div>
+            <PriceBlock row={r} compact />
           </div>
         );
       })}
@@ -567,26 +540,15 @@ function SoldActivityCard({
 }
 
 function PriceBlock({
-  lot$,
-  unit$,
-  gold$,
+  row,
   locked,
   compact,
 }: {
-  lot$: string | null;
-  unit$: string | null;
-  gold$?: string | null;
+  row: RecentSale;
   locked?: boolean;
   compact?: boolean;
 }) {
-  // Prefer USD total; fall back to unit total; then gold
-  let totalLabel: string;
-  if (lot$) totalLabel = formatUsdShort(lot$);
-  else if (unit$) totalLabel = formatUsdShort(unit$);
-  else if (gold$) totalLabel = `${formatQtyCompact(gold$)}g`;
-  else totalLabel = "—";
-
-  const avgLabel = unit$ ? formatUsdPer1k(unit$) : null;
+  const { lotLabel, per1kLabel, goldLabel } = priceOf(row);
 
   return (
     <div
@@ -602,21 +564,21 @@ function PriceBlock({
           locked && "opacity-60",
         )}
       >
-        {totalLabel}
+        {lotLabel}
       </div>
-      {avgLabel ? (
+      {per1kLabel ? (
         <div
           className={cn(
             "font-mono tabular-nums leading-tight text-muted",
             compact ? "text-[11px]" : "text-[12px]",
           )}
         >
-          {avgLabel}
+          {per1kLabel}
           <span className="text-[10px]">/1k</span>
         </div>
-      ) : gold$ && lot$ ? (
+      ) : goldLabel ? (
         <div className="font-mono text-[11px] tabular-nums text-muted">
-          {formatQtyCompact(gold$)}g
+          {goldLabel}
         </div>
       ) : null}
     </div>
@@ -664,9 +626,6 @@ function ListingList({
     >
       {rows.map((r) => {
         const seller = (r.sellerName ?? r.seller ?? "").trim() || "Unknown";
-        const unit$ = unitPrice(r);
-        const lot$ = lotTotal(r);
-        const gold$ = goldTotal(r);
         const qtyLabel = formatQtyCompact(r.quantity);
         const locked = isLocked(r);
         const canOpenSeller = Boolean(
@@ -764,9 +723,7 @@ function ListingList({
                 className="text-right"
               >
                 <PriceBlock
-                  lot$={lot$}
-                  unit$={unit$}
-                  gold$={gold$}
+                  row={r}
                   locked={locked && mode === "listings"}
                   compact={compact}
                 />
@@ -975,9 +932,6 @@ function DetailSheet({
             )}
             {rows.map((s) => {
               const locked = showLock && isLocked(s);
-              const lot$ = lotTotal(s);
-              const unit$ = unitPrice(s);
-              const gold$ = goldTotal(s);
               const sold = Boolean(s.isSold);
               return (
                 <div
@@ -1054,12 +1008,7 @@ function DetailSheet({
                       )}
                     </div>
                   </div>
-                  <PriceBlock
-                    lot$={lot$}
-                    unit$={unit$}
-                    gold$={gold$}
-                    locked={locked && !sold}
-                  />
+                  <PriceBlock row={s} locked={locked && !sold} />
                 </div>
               );
             })}

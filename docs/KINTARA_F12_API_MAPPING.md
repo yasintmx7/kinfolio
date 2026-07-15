@@ -38,11 +38,12 @@ KINTARA_ITEM_STATS_PATH=/api/market/{itemId}
 
 See `src/lib/kintara/item-type-map.ts` for favorites mapping (`cooked_fish_meat` → `cooked-fish`, etc.).
 
-## kintrade.xyz — completed sales
+## kintrade.xyz — completed sales & gone listings
 
 | Feature | HTTP method | Full URL | Public | Response | Normalizer |
 |--------|-------------|---------|--------|----------|------------|
 | Recent sales | GET | `https://www.kintrade.xyz/api/recent-sales` | Yes | `{ ok, sales: [{ itemType, quantity, kinsTotal, treasuryKins, usd, ts, signature, buyer, seller, … }] }` | **live** |
+| Gone listing IDs | GET | `https://www.kintrade.xyz/api/gone` | Yes | `{ ok, ids: number[] }` | **live** |
 
 ### Sales fields
 
@@ -51,10 +52,18 @@ See `src/lib/kintara/item-type-map.ts` for favorites mapping (`cooked_fish_meat`
 - `unitKins` (derived) = `kinsTotal / quantity`  
 - `signature` — Solana tx (Solscan link)
 
+### Gone listings
+
+- `ids` are marketplace **listing IDs** no longer on the book (sold / cancelled / expired).
+- Used to filter kintaramarket.xyz active listings so floors don’t include dead rows.
+- App route: `GET /api/market/gone`
+
 App routes:
 
 - `GET /api/market/recent-sales?itemType=&limit=`
+- `GET /api/market/gone`
 - Enriches `GET /api/market/items/[itemId]/stats` with median recent sale KINS
+- Filters `GET /api/market/items/[itemId]/listings` with gone IDs
 
 ### Intentionally blocked
 

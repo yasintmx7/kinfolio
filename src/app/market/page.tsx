@@ -56,6 +56,7 @@ export default function MarketPage() {
     }[]
   >([]);
   const [salesNote, setSalesNote] = useState<string | null>(null);
+  const [goneCount, setGoneCount] = useState<number | null>(null);
   const [q, setQ] = useState("");
   const [applying, setApplying] = useState(false);
   const fee = d(settings?.defaultSellFeePercent ?? "5").div(100);
@@ -104,6 +105,17 @@ export default function MarketPage() {
       })
       .catch(() => {
         /* optional feed */
+      });
+
+    fetch("/api/market/gone")
+      .then((r) => r.json())
+      .then((j) => {
+        if (j.ok && typeof j.data.count === "number") {
+          setGoneCount(j.data.count);
+        }
+      })
+      .catch(() => {
+        /* optional */
       });
   }, []);
 
@@ -216,6 +228,19 @@ export default function MarketPage() {
         {market?.goldFloorUsd && (
           <p className="mt-1 text-xs text-muted">
             Gold floor: {formatUsd(market.goldFloorUsd, { maxDecimals: 6 })} / gold
+          </p>
+        )}
+        {goneCount != null && (
+          <p className="mt-1 text-xs text-muted">
+            Stale listing filter: {goneCount.toLocaleString()} gone IDs from{" "}
+            <a
+              href="https://www.kintrade.xyz"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-info underline"
+            >
+              kintrade.xyz/api/gone
+            </a>
           </p>
         )}
       </Card>

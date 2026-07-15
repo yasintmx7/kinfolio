@@ -133,9 +133,21 @@ export async function getListingsFromKintaraMarket(
   kinsUsd?: number,
 ): Promise<MarketplaceListing[]> {
   const rows = await fetchItemListings(itemType);
+
+  // Drop sold/cancelled/expired listing ids from kintrade.xyz /api/gone
+  let goneSet: Set<string> | null = null;
+  try {
+    const { fetchGoneListingIds } = await import("@/lib/kintara/kintrade-gone");
+    const gone = await fetchGoneListingIds();
+    goneSet = gone.idSet;
+  } catch {
+    // still return listings if gone feed fails
+  }
+
   // Prefer token (KINS) currency listings for KINS unit pricing
   return rows
     .filter((r) => (r.currency ?? "token") === "token")
+    .filter((r) => !goneSet?.has(String(r.id)))
     .map((r) => {
       const qty = r.quantity || 1;
       const unitUsd = r.unitPrice ?? (r.priceUsd != null ? r.priceUsd / qty : null);
@@ -168,13 +180,18 @@ export async function getStatsFromKintaraMarket(
   itemType: string,
   kinsUsd?: number,
 ): Promise<ItemMarketStats> {
-  const [summary, listings] = await Promise.all([
+  const [summary, listings, gone] = await Promise.all([
     fetchMarketSummary(),
     fetchItemListings(itemType).catch(() => []),
+    import("@/lib/kintara/kintrade-gone")
+      .then((m) => m.fetchGoneListingIds())
+      .catch(() => null),
   ]);
   const row = summary.find((s) => s.itemType === itemType);
+  const goneSet = gone?.idSet;
   const tokenListings = listings
     .filter((l) => (l.currency ?? "token") === "token" && l.unitPrice != null)
+    .filter((l) => !goneSet?.has(String(l.id)))
     .sort((a, b) => (a.unitPrice ?? 0) - (b.unitPrice ?? 0));
 
   const cheapest3 = tokenListings.slice(0, 3).map((l) => l.unitPrice!);

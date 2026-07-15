@@ -36,4 +36,5 @@ export const ALLOWED_UPSTREAM_HOSTS = [
   "kintrade.xyz",
   "fanout.kintara.gg",
   "kintara.com",
+  "www.kintara.com",
 ] as const;

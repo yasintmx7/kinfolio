@@ -8,6 +8,8 @@ import {
 } from "@/lib/kintara/kintrade-sales";
 import { portfolioIdToMarketType } from "@/lib/kintara/item-type-map";
 import { STATIC_CATALOG } from "@/data/static-catalog";
+import { fetchOfficialItemStats } from "@/lib/kintara/official-marketplace";
+import { resolveKinsUsdForMarket } from "@/lib/prices/kintaramarket-ticker";
 
 export const runtime = "nodejs";
 
@@ -21,29 +23,31 @@ export async function GET(
   }
 
   const marketType = portfolioIdToMarketType(itemId, STATIC_CATALOG);
-  // Also accept raw market itemType ids (e.g. cooked_fish_meat)
   const typeCandidates = Array.from(
     new Set([itemId, marketType, itemId.replace(/-/g, "_")]),
   );
 
   try {
-    let baseStats =
+    const rate = await resolveKinsUsdForMarket();
+    const kinsUsd = rate?.kinsUsd;
+
+    // 1) Official 30d stats (kintara.com)
+    let official = null as Awaited<ReturnType<typeof fetchOfficialItemStats>> | null;
+    try {
+      official = await fetchOfficialItemStats(marketType, kinsUsd);
+    } catch {
+      // optional
+    }
+
+    // 2) Community floors / listings stats
+    let community =
       isMarketplaceConfigured()
         ? await marketplaceAdapter.getItemStats(marketType).catch(() => null)
         : null;
 
-    if (!baseStats) {
-      baseStats = {
-        itemId: marketType,
-        currency: "token" as const,
-        samples: [],
-        updatedAt: new Date().toISOString(),
-      };
-    }
-
-    // Enrich with completed sales from kintrade.xyz
+    // 3) Completed sales (kintrade)
     let recentMedian: string | null = null;
-    let salesSamples = baseStats.samples;
+    let salesSamples: { timestamp: string; unitPriceKins: string; quantity?: string; saleCount?: number }[] = [];
     let salesCount = 0;
     try {
       const allSales = await fetchRecentSales({ limit: 100 });
@@ -60,25 +64,40 @@ export async function GET(
         salesSamples = salesToSoldSamples(matched);
       }
     } catch {
-      // listings-only still OK
+      // optional
     }
+
+    const samples =
+      salesSamples.length > 0
+        ? salesSamples
+        : official?.samples?.length
+          ? official.samples
+          : community?.samples ?? [];
 
     return ok(
       {
-        ...baseStats,
         itemId,
         marketType,
+        currency: "token" as const,
+        avg30dKins: official?.avg30dKins ?? community?.avg30dKins,
+        lowestActiveKins: community?.lowestActiveKins,
+        medianCheapest3Kins: community?.medianCheapest3Kins,
         medianRecentSalesKins: recentMedian ?? undefined,
-        samples: salesSamples,
-        sales30d: salesCount || baseStats.sales30d,
+        sales30d: official?.sales30d ?? (salesCount || community?.sales30d),
+        samples,
+        updatedAt: new Date().toISOString(),
         configured: true,
         sources: {
+          officialStats: official ? "kintara.com/api/marketplace/stats" : null,
           listings: isMarketplaceConfigured() ? "kintaramarket.xyz" : null,
           recentSales: salesCount > 0 ? "kintrade.xyz" : null,
+          rate: rate?.source ?? null,
         },
+        note:
+          "avg30d from official stats (USD→KINS). Floors from community market. Recent median from completed sales. Estimates only.",
       },
       {
-        source: salesCount > 0 ? "kintaramarket+kintrade" : "marketplace",
+        source: "merged",
         updatedAt: new Date().toISOString(),
       },
     );

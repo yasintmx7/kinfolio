@@ -192,7 +192,17 @@ export default function MarketPage() {
             kintaramarket.xyz
           </a>
           {" · "}
-          Recent sales:{" "}
+          Official stats:{" "}
+          <a
+            href="https://kintara.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-info underline"
+          >
+            kintara.com
+          </a>
+          {" · "}
+          Sales:{" "}
           <a
             href="https://www.kintrade.xyz"
             target="_blank"
@@ -201,7 +211,7 @@ export default function MarketPage() {
           >
             kintrade.xyz
           </a>
-          . Estimates only — not guaranteed future prices.
+          . Read-only — no buy/reserve.
         </p>
       </div>
 

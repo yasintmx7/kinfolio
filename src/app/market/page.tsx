@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { RefreshCw, Star, X } from "lucide-react";
+import { Lock, RefreshCw, Star, X } from "lucide-react";
 import { ItemIcon } from "@/components/items/item-icon";
 import {
   useMarketHub,
@@ -15,21 +15,44 @@ import { formatQtyCompact, formatUsdShort } from "@/lib/formatting/money";
 import { getWatchlist, toggleWatch } from "@/lib/market/watchlist";
 import { cn } from "@/lib/utils";
 
-type Tab = "sales" | "floors" | "watch";
+type Tab = "listings" | "activity" | "floors" | "watch";
 
 type SellerFocus = {
   sellerId: string | null;
   sellerName: string | null;
 };
 
+function parseTab(raw: string | null): Tab {
+  if (raw === "activity" || raw === "sales") return "activity";
+  if (raw === "floors") return "floors";
+  if (raw === "watch") return "watch";
+  // default + legacy "sales" redirect handled below → listings
+  if (raw === "listings" || !raw || raw === "overview") return "listings";
+  return "listings";
+}
+
+function isLocked(r: RecentSale): boolean {
+  if (r.reserved) return true;
+  if (r.reservedUntilMs != null && r.reservedUntilMs > Date.now()) return true;
+  return false;
+}
+
+function lockLabel(r: RecentSale): string {
+  if (r.reservedUntilMs != null && r.reservedUntilMs > Date.now()) {
+    try {
+      return `Locked · until ${new Date(r.reservedUntilMs).toLocaleTimeString()}`;
+    } catch {
+      return "Locked";
+    }
+  }
+  return "Reserved";
+}
+
 function MarketHubInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const rawTab = searchParams.get("tab");
-  const tab: Tab =
-    rawTab === "floors" || rawTab === "watch" || rawTab === "sales"
-      ? rawTab
-      : "sales";
+  const tab = parseTab(rawTab);
 
   const hub = useMarketHub(10_000);
   const { price, reload: reloadPrice } = useKinsPrice(10_000);
@@ -37,24 +60,27 @@ function MarketHubInner() {
 
   const [q, setQ] = useState("");
   const [watch, setWatch] = useState<string[]>([]);
-  /** Item sheet — local state so clicks always work */
   const [itemFocus, setItemFocus] = useState<string | null>(null);
-  /** Seller sheet — local state (not URL) so click never races navigation */
   const [sellerFocus, setSellerFocus] = useState<SellerFocus | null>(null);
 
   useEffect(() => {
     setWatch(getWatchlist());
   }, []);
 
+  // Normalize legacy ?tab=sales → listings default home is listings
   useEffect(() => {
-    if (!rawTab || rawTab === "overview") {
+    if (!rawTab || rawTab === "overview" || rawTab === "sales") {
       const p = new URLSearchParams(searchParams.toString());
-      p.set("tab", "sales");
+      // Keep "sales" URLs as activity; empty/overview → listings
+      if (rawTab === "sales") {
+        p.set("tab", "activity");
+      } else {
+        p.set("tab", "listings");
+      }
       router.replace(`/market?${p.toString()}`);
     }
   }, [rawTab, router, searchParams]);
 
-  // Deep-link support: ?item= / ?seller= still open sheets once
   useEffect(() => {
     const item = searchParams.get("item");
     const seller = searchParams.get("seller");
@@ -63,31 +89,54 @@ function MarketHubInner() {
       setItemFocus(item);
       setSellerFocus(null);
     } else if (seller || sellerName) {
-      setSellerFocus({
-        sellerId: seller,
-        sellerName: sellerName,
-      });
+      setSellerFocus({ sellerId: seller, sellerName: sellerName });
       setItemFocus(null);
     }
-    // only on first meaningful query — avoid fighting local open/close
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const kinsUsd = price?.priceUsd ?? hub.kinsUsd ?? undefined;
 
-  const filteredLive = useMemo(() => {
+  const searchMatch = (s: RecentSale, query: string) => {
+    const seller = (s.sellerName ?? s.seller ?? "").toLowerCase();
+    return (
+      s.name.toLowerCase().includes(query) ||
+      s.itemType.toLowerCase().includes(query) ||
+      seller.includes(query) ||
+      String(s.sellerId ?? "").includes(query) ||
+      String(s.listingId ?? s.id).includes(query) ||
+      (query === "lock" && isLocked(s)) ||
+      (query === "locked" && isLocked(s)) ||
+      (query === "reserved" && isLocked(s))
+    );
+  };
+
+  /** Listings: open first, then cheapest unit $ */
+  const listingRows = useMemo(() => {
+    let list = [...hub.sales];
     const query = q.trim().toLowerCase();
-    if (!query) return hub.sales;
-    return hub.sales.filter((s) => {
-      const seller = (s.sellerName ?? s.seller ?? "").toLowerCase();
-      return (
-        s.name.toLowerCase().includes(query) ||
-        s.itemType.toLowerCase().includes(query) ||
-        seller.includes(query) ||
-        String(s.sellerId ?? "").includes(query) ||
-        String(s.listingId ?? s.id).includes(query)
-      );
+    if (query) list = list.filter((s) => searchMatch(s, query));
+    list.sort((a, b) => {
+      const la = isLocked(a) ? 1 : 0;
+      const lb = isLocked(b) ? 1 : 0;
+      if (la !== lb) return la - lb;
+      const ua = Number(a.unitUsd);
+      const ub = Number(b.unitUsd);
+      const aOk = Number.isFinite(ua) ? ua : Number.POSITIVE_INFINITY;
+      const bOk = Number.isFinite(ub) ? ub : Number.POSITIVE_INFINITY;
+      if (aOk !== bOk) return aOk - bOk;
+      return Date.parse(b.timestamp) - Date.parse(a.timestamp);
     });
+    return list;
+  }, [hub.sales, q]);
+
+  /** Activity: newest first */
+  const activityRows = useMemo(() => {
+    let list = [...hub.sales];
+    const query = q.trim().toLowerCase();
+    if (query) list = list.filter((s) => searchMatch(s, query));
+    list.sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp));
+    return list;
   }, [hub.sales, q]);
 
   const filteredFloors = useMemo(() => {
@@ -103,6 +152,12 @@ function MarketHubInner() {
     }
     return [...list].sort((a, b) => (b.listings ?? 0) - (a.listings ?? 0));
   }, [hub.floors, q, tab, watch]);
+
+  const lockedCount = useMemo(
+    () => hub.sales.filter(isLocked).length,
+    [hub.sales],
+  );
+  const openCount = hub.sales.length - lockedCount;
 
   const selected = useMemo(
     () =>
@@ -123,7 +178,6 @@ function MarketHubInner() {
         const n = (s.sellerName ?? s.seller ?? "").trim().toLowerCase();
         if (n && n === name) return true;
       }
-      // seller id used as name fallback
       if (id && !/^\d+$/.test(id)) {
         const n = (s.sellerName ?? s.seller ?? "").trim().toLowerCase();
         if (n === id.toLowerCase()) return true;
@@ -136,7 +190,8 @@ function MarketHubInner() {
     if (!sellerFocus) return "Seller";
     if (sellerFocus.sellerName) return sellerFocus.sellerName;
     const hit = sellerListings[0];
-    if (hit?.sellerName ?? hit?.seller) return hit.sellerName ?? hit.seller ?? "Seller";
+    if (hit?.sellerName ?? hit?.seller)
+      return hit.sellerName ?? hit.seller ?? "Seller";
     if (sellerFocus.sellerId) return `#${sellerFocus.sellerId}`;
     return "Seller";
   }, [sellerFocus, sellerListings]);
@@ -160,10 +215,7 @@ function MarketHubInner() {
         : null;
     if (!name && !id) return;
     setItemFocus(null);
-    setSellerFocus({
-      sellerId: id,
-      sellerName: name || null,
-    });
+    setSellerFocus({ sellerId: id, sellerName: name || null });
   }
 
   function closeSheet() {
@@ -182,13 +234,16 @@ function MarketHubInner() {
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-[1.65rem] font-semibold tracking-tight">
-            {tab === "sales" && "Sales activity"}
+            {tab === "listings" && "Listings"}
+            {tab === "activity" && "Activity"}
             {tab === "floors" && "Floors"}
             {tab === "watch" && "Watchlist"}
           </h1>
           <p className="mt-1 text-sm text-muted">
-            {tab === "sales" &&
-              `${hub.sales.length} live listings · newest first · 10s`}
+            {tab === "listings" &&
+              `${hub.sales.length} listings · ${openCount} open · ${lockedCount} locked`}
+            {tab === "activity" &&
+              `${hub.sales.length} newest first · 10s refresh`}
             {tab === "floors" && `${hub.floors.length} items · lowest $ each`}
             {tab === "watch" &&
               (watch.length
@@ -229,10 +284,11 @@ function MarketHubInner() {
         </div>
       </div>
 
-      <div className="inline-flex rounded-2xl border border-border/40 bg-surface/50 p-1">
+      <div className="inline-flex flex-wrap rounded-2xl border border-border/40 bg-surface/50 p-1">
         {(
           [
-            ["sales", "Activity"],
+            ["listings", "Listings"],
+            ["activity", "Activity"],
             ["floors", "Floors"],
             ["watch", "Watch"],
           ] as const
@@ -242,7 +298,7 @@ function MarketHubInner() {
             type="button"
             onClick={() => setTab(id)}
             className={cn(
-              "min-h-9 rounded-xl px-4 text-sm font-medium",
+              "min-h-9 rounded-xl px-3.5 text-sm font-medium sm:px-4",
               tab === id
                 ? "bg-sky text-[#0a121c]"
                 : "text-muted hover:text-primary",
@@ -258,14 +314,28 @@ function MarketHubInner() {
         value={q}
         onChange={(e) => setQ(e.target.value)}
         placeholder={
-          tab === "sales" ? "Search item or seller…" : "Search items…"
+          tab === "listings" || tab === "activity"
+            ? "Search item, seller, reserved…"
+            : "Search items…"
         }
         className="min-h-12 w-full rounded-2xl border border-border/40 bg-surface/60 px-4 text-sm outline-none placeholder:text-muted/50 focus:border-sky/40 focus:ring-2 focus:ring-sky/15"
       />
 
-      {tab === "sales" && (
-        <LiveList
-          rows={filteredLive}
+      {tab === "listings" && (
+        <ListingList
+          rows={listingRows}
+          mode="listings"
+          onOpenItem={openItem}
+          onOpenSeller={openSeller}
+          onWatch={onWatch}
+          watch={watch}
+        />
+      )}
+
+      {tab === "activity" && (
+        <ListingList
+          rows={activityRows}
+          mode="activity"
           onOpenItem={openItem}
           onOpenSeller={openSeller}
           onWatch={onWatch}
@@ -302,6 +372,7 @@ function MarketHubInner() {
           onWatch={() => onWatch(itemFocus)}
           onOpenSeller={openSeller}
           mode="item"
+          showLock
         />
       )}
 
@@ -318,6 +389,7 @@ function MarketHubInner() {
           onClose={closeSheet}
           onOpenItem={openItem}
           mode="seller"
+          showLock
         />
       )}
 
@@ -328,14 +400,16 @@ function MarketHubInner() {
   );
 }
 
-function LiveList({
+function ListingList({
   rows,
+  mode,
   onOpenItem,
   onOpenSeller,
   onWatch,
   watch,
 }: {
   rows: RecentSale[];
+  mode: "listings" | "activity";
   onOpenItem: (id: string) => void;
   onOpenSeller: (row: RecentSale) => void;
   onWatch: (id: string) => void;
@@ -344,7 +418,7 @@ function LiveList({
   if (!rows.length) {
     return (
       <div className="rounded-3xl border border-border/40 bg-surface/40 px-6 py-16 text-center text-sm text-muted">
-        Waiting for listings…
+        {mode === "listings" ? "No listings…" : "Waiting for activity…"}
       </div>
     );
   }
@@ -357,6 +431,7 @@ function LiveList({
           const unit$ = r.unitUsd ?? null;
           const lot$ = r.usdTotal ?? null;
           const qtyLabel = formatQtyCompact(r.quantity);
+          const locked = isLocked(r);
           const canOpenSeller = Boolean(
             (r.sellerName ?? r.seller ?? "").trim() || r.sellerId != null,
           );
@@ -364,30 +439,46 @@ function LiveList({
           return (
             <div
               key={r.id}
-              className="flex items-center gap-2 px-3 py-3 sm:gap-3 sm:px-4 sm:py-3.5"
+              className={cn(
+                "flex items-center gap-2 px-3 py-3 sm:gap-3 sm:px-4 sm:py-3.5",
+                locked && mode === "listings" && "bg-amber-500/[0.06]",
+              )}
             >
               <button
                 type="button"
                 onClick={() => onOpenItem(r.itemType)}
-                className="shrink-0 rounded-2xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky"
+                className="relative shrink-0 rounded-2xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky"
                 aria-label={`Open ${r.name}`}
               >
                 <ItemIcon itemId={r.itemType} name={r.name} size={52} clear />
+                {mode === "listings" && locked && (
+                  <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-amber-500 text-[#0a121c] shadow">
+                    <Lock className="h-3 w-3" strokeWidth={2.5} />
+                  </span>
+                )}
               </button>
 
               <div className="min-w-0 flex-1">
                 <button
                   type="button"
                   onClick={() => onOpenItem(r.itemType)}
-                  className="block w-full truncate text-left text-[16px] font-semibold tracking-tight hover:text-sky-hi"
+                  className="flex w-full min-w-0 items-center gap-2 text-left"
                 >
-                  <span className="font-mono tabular-nums text-sky-hi">
-                    {qtyLabel}
-                  </span>{" "}
-                  {r.name}
+                  <span className="truncate text-[16px] font-semibold tracking-tight hover:text-sky-hi">
+                    <span className="font-mono tabular-nums text-sky-hi">
+                      {qtyLabel}
+                    </span>{" "}
+                    {r.name}
+                  </span>
                 </button>
 
-                {/* Large touch target for seller — separate from item */}
+                {mode === "listings" && locked && (
+                  <div className="mt-0.5 inline-flex items-center gap-1 rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[11px] font-semibold text-amber-200">
+                    <Lock className="h-3 w-3" />
+                    {lockLabel(r)}
+                  </div>
+                )}
+
                 <button
                   type="button"
                   disabled={!canOpenSeller}
@@ -411,9 +502,16 @@ function LiveList({
                       #{r.sellerId}
                     </span>
                   )}
-                  <span className="shrink-0 text-muted/70">
-                    · {new Date(r.timestamp).toLocaleTimeString()}
-                  </span>
+                  {mode === "activity" && (
+                    <span className="shrink-0 text-muted/70">
+                      · {new Date(r.timestamp).toLocaleTimeString()}
+                    </span>
+                  )}
+                  {mode === "listings" && !locked && (
+                    <span className="shrink-0 text-muted/70">
+                      · {new Date(r.timestamp).toLocaleTimeString()}
+                    </span>
+                  )}
                 </button>
               </div>
 
@@ -422,7 +520,14 @@ function LiveList({
                 onClick={() => onOpenItem(r.itemType)}
                 className="shrink-0 text-right"
               >
-                <div className="font-mono text-[17px] font-semibold tabular-nums text-sky-hi">
+                <div
+                  className={cn(
+                    "font-mono text-[17px] font-semibold tabular-nums",
+                    locked && mode === "listings"
+                      ? "text-muted"
+                      : "text-sky-hi",
+                  )}
+                >
                   {unit$ ? formatUsdShort(unit$) : "—"}
                   <span className="text-[11px] font-medium text-muted">
                     /u
@@ -431,6 +536,11 @@ function LiveList({
                 {lot$ && (
                   <div className="font-mono text-[12px] tabular-nums text-muted">
                     lot {formatUsdShort(lot$)}
+                  </div>
+                )}
+                {mode === "listings" && locked && (
+                  <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-300/90">
+                    Locked
                   </div>
                 )}
               </button>
@@ -555,6 +665,7 @@ function DetailSheet({
   onOpenSeller,
   onOpenItem,
   mode,
+  showLock,
 }: {
   title: string;
   subtitle: string;
@@ -566,6 +677,7 @@ function DetailSheet({
   onOpenSeller?: (row: RecentSale) => void;
   onOpenItem?: (id: string) => void;
   mode: "item" | "seller";
+  showLock?: boolean;
 }) {
   return (
     <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center sm:justify-end">
@@ -612,63 +724,80 @@ function DetailSheet({
             {rows.length === 0 && (
               <p className="text-sm text-muted">None in current feed.</p>
             )}
-            {rows.map((s) => (
-              <div
-                key={s.id}
-                className="flex items-center justify-between gap-3 rounded-2xl bg-surface-2/60 px-3.5 py-3"
-              >
-                <div className="min-w-0">
-                  {mode === "seller" ? (
-                    <button
-                      type="button"
-                      onClick={() => onOpenItem?.(s.itemType)}
-                      className="text-left text-[15px] font-semibold hover:text-sky-hi"
-                    >
-                      <span className="font-mono tabular-nums text-sky-hi">
-                        {formatQtyCompact(s.quantity)}
-                      </span>{" "}
-                      {s.name}
-                    </button>
-                  ) : (
-                    <div className="text-[15px] font-semibold">
-                      <span className="font-mono tabular-nums text-sky-hi">
-                        {formatQtyCompact(s.quantity)}
-                      </span>{" "}
-                      {title}
-                    </div>
+            {rows.map((s) => {
+              const locked = showLock && isLocked(s);
+              return (
+                <div
+                  key={s.id}
+                  className={cn(
+                    "flex items-center justify-between gap-3 rounded-2xl px-3.5 py-3",
+                    locked ? "bg-amber-500/10" : "bg-surface-2/60",
                   )}
-                  <div className="mt-0.5 truncate text-[12px] text-muted">
-                    {mode === "item" ? (
+                >
+                  <div className="min-w-0">
+                    {mode === "seller" ? (
                       <button
                         type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          onOpenSeller?.(s);
-                        }}
-                        className="min-h-8 rounded-lg font-medium text-sky-hi underline decoration-sky/40 underline-offset-2 hover:bg-sky/10"
+                        onClick={() => onOpenItem?.(s.itemType)}
+                        className="text-left text-[15px] font-semibold hover:text-sky-hi"
                       >
-                        {s.sellerName ?? s.seller ?? "—"}
-                        {s.sellerId != null ? ` · #${s.sellerId}` : ""}
+                        <span className="font-mono tabular-nums text-sky-hi">
+                          {formatQtyCompact(s.quantity)}
+                        </span>{" "}
+                        {s.name}
                       </button>
                     ) : (
-                      <span>{new Date(s.timestamp).toLocaleString()}</span>
+                      <div className="text-[15px] font-semibold">
+                        <span className="font-mono tabular-nums text-sky-hi">
+                          {formatQtyCompact(s.quantity)}
+                        </span>{" "}
+                        {title}
+                      </div>
+                    )}
+                    {locked && (
+                      <div className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-semibold text-amber-200">
+                        <Lock className="h-3 w-3" />
+                        {lockLabel(s)}
+                      </div>
+                    )}
+                    <div className="mt-0.5 truncate text-[12px] text-muted">
+                      {mode === "item" ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            onOpenSeller?.(s);
+                          }}
+                          className="min-h-8 rounded-lg font-medium text-sky-hi underline decoration-sky/40 underline-offset-2 hover:bg-sky/10"
+                        >
+                          {s.sellerName ?? s.seller ?? "—"}
+                          {s.sellerId != null ? ` · #${s.sellerId}` : ""}
+                        </button>
+                      ) : (
+                        <span>{new Date(s.timestamp).toLocaleString()}</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <div
+                      className={cn(
+                        "font-mono text-[16px] font-semibold tabular-nums",
+                        locked ? "text-muted" : "text-sky-hi",
+                      )}
+                    >
+                      {s.unitUsd ? formatUsdShort(s.unitUsd) : "—"}
+                      <span className="text-[11px] text-muted">/u</span>
+                    </div>
+                    {s.usdTotal && (
+                      <div className="font-mono text-[12px] text-muted">
+                        lot {formatUsdShort(s.usdTotal)}
+                      </div>
                     )}
                   </div>
                 </div>
-                <div className="shrink-0 text-right">
-                  <div className="font-mono text-[16px] font-semibold tabular-nums text-sky-hi">
-                    {s.unitUsd ? formatUsdShort(s.unitUsd) : "—"}
-                    <span className="text-[11px] text-muted">/u</span>
-                  </div>
-                  {s.usdTotal && (
-                    <div className="font-mono text-[12px] text-muted">
-                      lot {formatUsdShort(s.usdTotal)}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 

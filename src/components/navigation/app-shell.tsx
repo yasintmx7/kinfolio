@@ -8,6 +8,7 @@ import {
   Calculator,
   Grid3X3,
   Layers,
+  List,
   MoreHorizontal,
   Settings,
   Star,
@@ -18,17 +19,23 @@ import { Logo } from "@/components/brand/logo";
 
 const NAV = [
   {
-    href: "/market?tab=sales",
-    tab: "sales",
+    href: "/market?tab=listings",
+    tab: "listings",
+    label: "Listings",
+    icon: List,
+  },
+  {
+    href: "/market?tab=activity",
+    tab: "activity",
     label: "Activity",
     icon: Activity,
   },
-  { href: "/market?tab=floors", tab: "floors", label: "Floors", icon: Layers },
   { href: "/items", tab: null, label: "Items", icon: Grid3X3 },
   { href: "/market?tab=watch", tab: "watch", label: "Watch", icon: Star },
 ] as const;
 
 const EXTRA = [
+  { href: "/market?tab=floors", label: "Floors", icon: Layers },
   { href: "/calculator", label: "Calculator", icon: Calculator },
   { href: "/settings", label: "Settings", icon: Settings },
 ] as const;
@@ -36,7 +43,9 @@ const EXTRA = [
 function ShellInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const tab = searchParams.get("tab") ?? "sales";
+  const rawTab = searchParams.get("tab") ?? "listings";
+  // treat legacy "sales" as activity for active state
+  const tab = rawTab === "sales" ? "activity" : rawTab;
   const [moreOpen, setMoreOpen] = useState(false);
   const onMarket = pathname.startsWith("/market");
   const onItems = pathname.startsWith("/items");
@@ -45,7 +54,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
     <div className="min-h-dvh bg-app text-primary">
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-[13.5rem] border-r border-border/50 bg-surface/80 md:flex md:flex-col">
         <div className="px-4 py-5">
-          <Link href="/market?tab=sales">
+          <Link href="/market?tab=listings">
             <Logo size={36} priority />
           </Link>
         </div>
@@ -74,7 +83,10 @@ function ShellInner({ children }: { children: React.ReactNode }) {
           })}
           <div className="my-3 mx-2 border-t border-border/40" />
           {EXTRA.map((item) => {
-            const active = pathname.startsWith(item.href);
+            const active =
+              item.href.startsWith("/market")
+                ? onMarket && tab === "floors" && item.label === "Floors"
+                : pathname.startsWith(item.href);
             const Icon = item.icon;
             return (
               <Link
@@ -94,13 +106,13 @@ function ShellInner({ children }: { children: React.ReactNode }) {
           })}
         </nav>
         <p className="px-4 py-4 text-[10px] leading-relaxed text-muted/70">
-          All items A–Z · wiki photos
+          Listings · lock status · activity
         </p>
       </aside>
 
       <div className="md:pl-[13.5rem]">
         <header className="sticky top-0 z-30 flex items-center justify-between border-b border-border/40 bg-app/90 px-4 py-3 backdrop-blur-md md:hidden">
-          <Link href="/market?tab=sales">
+          <Link href="/market?tab=listings">
             <Logo size={30} />
           </Link>
         </header>

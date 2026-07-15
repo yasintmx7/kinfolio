@@ -520,6 +520,7 @@ function ListingList({
                 onClick={() => onOpenItem(r.itemType)}
                 className="shrink-0 text-right"
               >
+                {/* Total (lot) large on top · avg/unit small below */}
                 <div
                   className={cn(
                     "font-mono text-[17px] font-semibold tabular-nums",
@@ -528,14 +529,16 @@ function ListingList({
                       : "text-sky-hi",
                   )}
                 >
-                  {unit$ ? formatUsdShort(unit$) : "—"}
-                  <span className="text-[11px] font-medium text-muted">
-                    /u
-                  </span>
+                  {lot$
+                    ? formatUsdShort(lot$)
+                    : unit$
+                      ? formatUsdShort(unit$)
+                      : "—"}
                 </div>
-                {lot$ && (
+                {unit$ && (
                   <div className="font-mono text-[12px] tabular-nums text-muted">
-                    lot {formatUsdShort(lot$)}
+                    avg {formatUsdShort(unit$)}
+                    <span className="text-[10px]">/u</span>
                   </div>
                 )}
                 {mode === "listings" && locked && (
@@ -786,12 +789,16 @@ function DetailSheet({
                         locked ? "text-muted" : "text-sky-hi",
                       )}
                     >
-                      {s.unitUsd ? formatUsdShort(s.unitUsd) : "—"}
-                      <span className="text-[11px] text-muted">/u</span>
+                      {s.usdTotal
+                        ? formatUsdShort(s.usdTotal)
+                        : s.unitUsd
+                          ? formatUsdShort(s.unitUsd)
+                          : "—"}
                     </div>
-                    {s.usdTotal && (
+                    {s.unitUsd && (
                       <div className="font-mono text-[12px] text-muted">
-                        lot {formatUsdShort(s.usdTotal)}
+                        avg {formatUsdShort(s.unitUsd)}
+                        <span className="text-[10px]">/u</span>
                       </div>
                     )}
                   </div>

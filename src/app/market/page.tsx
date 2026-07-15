@@ -456,57 +456,86 @@ function MarketHubInner() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-[1.65rem] font-semibold tracking-tight">
-            {tab === "market" && "Market"}
-            {tab === "floors" && "Floors"}
-            {tab === "watch" && "Watchlist"}
-          </h1>
-          <p className="mt-1 text-sm text-muted">
-            {tab === "market" &&
-              `${hub.sales.length} listings · ${openCount} open · ${lockedCount} locked · ${(hub.sold ?? []).length} sold · 18s`}
-            {tab === "floors" && `${hub.floors.length} items · lowest $ each`}
-            {tab === "watch" &&
-              (watch.length
-                ? `${watch.length} watched`
-                : "Star items to watch")}
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="rounded-2xl border border-border/50 bg-surface/70 px-4 py-2 text-right">
-            <div className="text-[10px] uppercase tracking-wider text-muted">
-              1 KINS
-            </div>
-            <div className="font-mono text-base font-semibold tabular-nums text-sky-hi">
-              {kinsUsd ? formatUsdShort(kinsUsd) : hub.loading ? "…" : "—"}
-            </div>
+      {/* Hero header — first paint for / → market */}
+      <section className="card-hero rounded-3xl px-4 py-4 sm:px-5 sm:py-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-hi/90">
+              Kintara · read-only
+            </p>
+            <h1 className="mt-1 text-[1.7rem] font-semibold tracking-tight text-primary sm:text-[1.85rem]">
+              {tab === "market" && "Market"}
+              {tab === "floors" && "Floors"}
+              {tab === "watch" && "Watchlist"}
+            </h1>
+            <p className="mt-1 max-w-xl text-sm text-muted">
+              {tab === "market" &&
+                "Live book · listings + recent sold · $ pricing"}
+              {tab === "floors" && "Lowest open unit price per item"}
+              {tab === "watch" &&
+                (watch.length
+                  ? `${watch.length} watched items`
+                  : "Star items from listings to watch floors")}
+            </p>
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              void hub.reload();
-              void reloadPrice();
-            }}
-            disabled={hub.refreshing}
-            className="inline-flex min-h-11 items-center gap-2 rounded-2xl border border-border/50 bg-surface px-3.5 text-sm text-muted hover:text-primary disabled:opacity-50"
-          >
-            <RefreshCw
-              className={cn("h-4 w-4", hub.refreshing && "animate-spin")}
-            />
-            <span
-              className={cn(
-                "h-1.5 w-1.5 rounded-full",
-                hub.refreshing ? "bg-sky" : "bg-forest",
-              )}
-            />
-            Live
-          </button>
-        </div>
-      </div>
 
-      <div className="inline-flex flex-wrap rounded-2xl border border-border/40 bg-surface/50 p-1">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="rounded-2xl border border-border/45 bg-app/40 px-3.5 py-2 text-right backdrop-blur-sm">
+              <div className="text-[10px] font-medium uppercase tracking-wider text-muted">
+                1 KINS
+              </div>
+              <div className="font-mono text-base font-semibold tabular-nums text-sky-hi">
+                {kinsUsd ? formatUsdShort(kinsUsd) : hub.loading ? "…" : "—"}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                void hub.reload();
+                void reloadPrice();
+              }}
+              disabled={hub.refreshing}
+              className="inline-flex min-h-11 items-center gap-2 rounded-2xl border border-sky/25 bg-sky/12 px-3.5 text-sm font-medium text-sky-hi hover:bg-sky/18 disabled:opacity-50"
+            >
+              <RefreshCw
+                className={cn("h-4 w-4", hub.refreshing && "animate-spin")}
+              />
+              <span
+                className={cn(
+                  "h-1.5 w-1.5 rounded-full",
+                  hub.refreshing
+                    ? "animate-pulse bg-sky-hi"
+                    : "bg-forest-hi shadow-[0_0_8px_var(--forest-hi)]",
+                )}
+              />
+              Live
+            </button>
+          </div>
+        </div>
+
+        {tab === "market" && (
+          <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <HeroStat label="Listings" value={String(hub.sales.length)} />
+            <HeroStat
+              label="Open"
+              value={String(openCount)}
+              tone="sky"
+            />
+            <HeroStat
+              label="Locked"
+              value={String(lockedCount)}
+              tone="amber"
+            />
+            <HeroStat
+              label="Recent sold"
+              value={String((hub.sold ?? []).length)}
+              tone="forest"
+            />
+          </div>
+        )}
+      </section>
+
+      <div className="inline-flex flex-wrap rounded-2xl border border-border/40 bg-surface/55 p-1 shadow-[inset_0_1px_0_color-mix(in_srgb,#fff_4%,transparent)]">
         {(
           [
             ["market", "Market"],
@@ -519,10 +548,10 @@ function MarketHubInner() {
             type="button"
             onClick={() => setTab(id)}
             className={cn(
-              "min-h-9 rounded-xl px-3.5 text-sm font-medium sm:px-4",
+              "min-h-9 rounded-xl px-3.5 text-sm font-medium transition-colors sm:px-4",
               tab === id
-                ? "bg-sky text-[#0a121c]"
-                : "text-muted hover:text-primary",
+                ? "bg-sky text-[#061018] shadow-sm"
+                : "text-muted hover:bg-raised/40 hover:text-primary",
             )}
           >
             {label}
@@ -539,13 +568,13 @@ function MarketHubInner() {
             ? "Search item, seller, reserved…"
             : "Search items…"
         }
-        className="min-h-11 w-full rounded-2xl border border-border/40 bg-surface/60 px-4 text-sm outline-none placeholder:text-muted/50 focus:border-sky/40 focus:ring-2 focus:ring-sky/15"
+        className="min-h-11 w-full rounded-2xl border border-border/40 bg-surface/65 px-4 text-sm outline-none placeholder:text-muted/50 focus:border-sky/45 focus:bg-surface/80 focus:ring-2 focus:ring-sky/15"
       />
 
       {tab === "market" && (
         <div className="space-y-3">
           {/* Filters — currency · sort · locked · category */}
-          <div className="flex flex-col gap-2.5 rounded-2xl border border-border/40 bg-surface/40 p-3">
+          <div className="card-quiet flex flex-col gap-2.5 rounded-2xl p-3">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[10px] font-semibold uppercase tracking-wider text-muted">
                 Currency
@@ -564,7 +593,7 @@ function MarketHubInner() {
                   className={cn(
                     "min-h-8 rounded-xl px-3 text-[12px] font-medium",
                     currencyFilter === id
-                      ? "bg-sky text-[#0a121c]"
+                      ? "bg-sky text-[#061018]"
                       : "bg-surface-2 text-muted hover:text-primary",
                   )}
                 >
@@ -589,7 +618,7 @@ function MarketHubInner() {
                   className={cn(
                     "min-h-8 rounded-xl px-3 text-[12px] font-medium",
                     sortFilter === id
-                      ? "bg-sky text-[#0a121c]"
+                      ? "bg-sky text-[#061018]"
                       : "bg-surface-2 text-muted hover:text-primary",
                   )}
                 >
@@ -636,8 +665,8 @@ function MarketHubInner() {
 
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:gap-5">
           {/* BIG listings — full open book */}
-          <section className="min-w-0 flex-1 overflow-hidden rounded-3xl border border-border/40 bg-surface/35">
-            <header className="flex shrink-0 items-baseline justify-between gap-2 border-b border-border/30 px-4 py-3">
+          <section className="card-quiet min-w-0 flex-1 overflow-hidden rounded-3xl">
+            <header className="flex shrink-0 items-baseline justify-between gap-2 border-b border-border/30 bg-surface-2/25 px-4 py-3">
               <h2 className="text-[16px] font-semibold tracking-tight">
                 Listings
               </h2>
@@ -663,7 +692,7 @@ function MarketHubInner() {
 
           {/* SMALL activity — sold only + seller username */}
           <aside className="w-full shrink-0 lg:sticky lg:top-4 lg:w-[20rem]">
-            <section className="overflow-hidden rounded-3xl border border-border/40 bg-surface/50 shadow-sm">
+            <section className="card-quiet overflow-hidden rounded-3xl shadow-sm">
               <header className="border-b border-border/30 px-3.5 py-2.5">
                 <div className="flex items-baseline justify-between gap-2">
                   <h2 className="text-[14px] font-semibold tracking-tight">
@@ -1104,7 +1133,7 @@ function FloorList({
   }
 
   return (
-    <div className="overflow-hidden rounded-3xl border border-border/40 bg-surface/35">
+    <div className="card-quiet overflow-hidden rounded-3xl">
       <div className="max-h-[calc(100dvh-15rem)] divide-y divide-border/25 overflow-y-auto">
         {rows.map((row) => {
           const qtyLabel =
@@ -1934,7 +1963,7 @@ function DetailSheet({
               onClick={onWatch}
               className={cn(
                 "flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl text-sm font-semibold",
-                watching ? "bg-sky/15 text-sky-hi" : "bg-sky text-[#0a121c]",
+                watching ? "bg-sky/15 text-sky-hi" : "bg-sky text-[#061018]",
               )}
             >
               <Star className={cn("h-4 w-4", watching && "fill-sky")} />
@@ -1943,6 +1972,35 @@ function DetailSheet({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function HeroStat({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: "sky" | "forest" | "amber";
+}) {
+  return (
+    <div className="rounded-2xl border border-border/35 bg-app/35 px-3 py-2.5 backdrop-blur-sm">
+      <p className="text-[10px] font-medium uppercase tracking-wider text-muted">
+        {label}
+      </p>
+      <p
+        className={cn(
+          "mt-0.5 font-mono text-[1.15rem] font-bold tabular-nums",
+          tone === "forest" && "text-forest-hi",
+          tone === "amber" && "text-amber-200",
+          tone === "sky" && "text-sky-hi",
+          !tone && "text-primary",
+        )}
+      >
+        {value}
+      </p>
     </div>
   );
 }

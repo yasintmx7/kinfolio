@@ -31,6 +31,23 @@ export function getWikiImageMeta() {
   };
 }
 
+/**
+ * Preferred wiki art URLs for items whose auto-matched file looks wrong
+ * (striped bg, wrong variant, low-quality duplicate, etc.).
+ */
+const IMAGE_OVERRIDES: Record<string, string> = {
+  // Cleaner photoreal horn (Brutehorn.png has harsh vertical stripes)
+  brute_horn: "https://kintara.wiki/images/4/4f/Brute_horn.png",
+  brutehorn: "https://kintara.wiki/images/4/4f/Brute_horn.png",
+  "brute-horn": "https://kintara.wiki/images/4/4f/Brute_horn.png",
+  "brute horn": "https://kintara.wiki/images/4/4f/Brute_horn.png",
+  // High-res transparent molten rock (avoid solid-bg MoltenRock.png)
+  molten_rock: "https://kintara.wiki/images/1/16/Molten_rock.png",
+  moltenrock: "https://kintara.wiki/images/1/16/Molten_rock.png",
+  "molten-rock": "https://kintara.wiki/images/1/16/Molten_rock.png",
+  "molten rock": "https://kintara.wiki/images/1/16/Molten_rock.png",
+};
+
 function candidatesFromId(id: string): string[] {
   const raw = id.trim();
   if (!raw) return [];
@@ -54,10 +71,15 @@ function candidatesFromId(id: string): string[] {
       noPrefix,
       noPrefixDash,
       noPrefix.replace(/_/g, ""),
+      // Prefer better file names when duplicates exist
+      underscored === "brute_horn" || compact === "brutehorn"
+        ? "brute_horn.png"
+        : null,
+      underscored === "molten_rock" || compact === "moltenrock"
+        ? "molten_rock.png"
+        : null,
       // common renames
       underscored.replace(/cooked_fish_meat/, "cookedfish"),
-      underscored.replace(/molten_rock/, "molten_rock"),
-      underscored.replace(/brute_horn/, "brutehorn"),
       underscored.replace(/wild_sword.*/, "sword"),
       underscored.replace(/tool_axe.*/, "axe"),
       underscored.replace(/tool_pickaxe.*/, "pickaxe"),
@@ -65,7 +87,7 @@ function candidatesFromId(id: string): string[] {
       underscored.replace(/potion_shield/, "shield"),
       underscored.replace(/potion_strength/, "strength"),
       underscored.replace(/potion_poison/, "poison"),
-    ]),
+    ].filter((k): k is string => Boolean(k))),
   );
 }
 
@@ -79,6 +101,10 @@ export function resolveWikiItemImage(
     ...candidatesFromId(idOrName),
     ...aliases.flatMap((a) => candidatesFromId(a)),
   ];
+  for (const key of keys) {
+    const override = IMAGE_OVERRIDES[key];
+    if (override) return override;
+  }
   for (const key of keys) {
     const url = data.urlByKey[key];
     if (url) return url;

@@ -17,7 +17,12 @@ import { cn } from "@/lib/utils";
 import { Logo } from "@/components/brand/logo";
 
 const NAV = [
-  { href: "/market?tab=sales", tab: "sales", label: "Live", icon: Activity },
+  {
+    href: "/market?tab=sales",
+    tab: "sales",
+    label: "Activity",
+    icon: Activity,
+  },
   { href: "/market?tab=floors", tab: "floors", label: "Floors", icon: Layers },
   { href: "/items", tab: null, label: "Items", icon: Grid3X3 },
   { href: "/market?tab=watch", tab: "watch", label: "Watch", icon: Star },

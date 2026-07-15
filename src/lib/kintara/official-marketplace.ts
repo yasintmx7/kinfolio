@@ -182,9 +182,9 @@ export async function buildOfficialFloorBoard(options?: {
   limit?: number;
   kinsUsd?: number;
 }): Promise<OfficialFloorRow[]> {
-  const pages = options?.pages ?? 5;
-  const limit = options?.limit ?? 60;
-  const cacheKey = `official:floor-board:${pages}:${limit}:${options?.kinsUsd ?? "x"}`;
+  const pageSize = Math.min(Math.max(options?.limit ?? 100, 1), 100);
+  const pages = Math.min(Math.max(options?.pages ?? 50, 1), 100);
+  const cacheKey = `official:floor-board:${pages}:${pageSize}:${options?.kinsUsd ?? "x"}`;
   const cached = getCached<OfficialFloorRow[]>(cacheKey);
   if (cached && !cached.stale) return cached.value;
 
@@ -204,8 +204,8 @@ export async function buildOfficialFloorBoard(options?: {
       sort: "cheap",
       currency: "token",
       category: "all",
-      limit,
-      offset: p * limit,
+      limit: pageSize,
+      offset: p * pageSize,
     });
     for (const row of batch) {
       if (row.isReserved) continue;
@@ -227,7 +227,7 @@ export async function buildOfficialFloorBoard(options?: {
       }
       byType.set(row.itemType, cur);
     }
-    if (batch.length < limit) break;
+    if (batch.length < pageSize) break;
   }
 
   const kinsUsd = options?.kinsUsd;
@@ -273,21 +273,27 @@ export type OfficialActivityRow = {
 };
 
 /**
- * Live market feed: paginate official sort=new listings.
+ * Live market feed: paginate official sort=new listings until empty.
+ * Uses API max page size (100). No artificial 600-row cap —
+ * safety ceiling only (default 5000) for runaway pagination.
  * Includes seller username/id, listing id, qty, prices.
  */
 export async function fetchOfficialRecentActivity(options?: {
-  /** Max rows to return (after multi-page fetch) */
+  /** Soft max rows (default 5000). Pagination still stops on empty page. */
   limit?: number;
-  /** Pages of 60 listings each */
+  /** Max pages per currency (default 50 × 100 = 5000). */
   pages?: number;
   kinsUsd?: number;
   /** Include gold listings too */
   includeGold?: boolean;
 }): Promise<OfficialActivityRow[]> {
-  const pageSize = 60;
-  const pages = Math.min(Math.max(options?.pages ?? 8, 1), 15);
-  const maxRows = Math.min(Math.max(options?.limit ?? pages * pageSize, 1), 900);
+  /** Official endpoint caps page size at 100 (higher values still return 100). */
+  const pageSize = 100;
+  const pages = Math.min(Math.max(options?.pages ?? 50, 1), 100);
+  const maxRows = Math.min(
+    Math.max(options?.limit ?? pages * pageSize, 1),
+    10_000,
+  );
   const kinsUsd = options?.kinsUsd;
   const collected: OfficialListing[] = [];
   const seen = new Set<string>();
@@ -312,6 +318,7 @@ export async function fetchOfficialRecentActivity(options?: {
         seen.add(id);
         collected.push(row);
       }
+      // Empty or short page → no more listings for this currency
       if (batch.length < pageSize) break;
       if (collected.length >= maxRows) break;
     }

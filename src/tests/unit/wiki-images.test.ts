@@ -18,6 +18,13 @@ describe("resolveWikiItemImage", () => {
     );
   });
 
+  it("uses clean art for Brute Horn and Molten Rock", () => {
+    expect(resolveWikiItemImage("brute_horn")).toContain("Brute_horn.png");
+    expect(resolveWikiItemImage("Brute Horn")).toContain("Brute_horn.png");
+    expect(resolveWikiItemImage("molten_rock")).toContain("Molten_rock.png");
+    expect(resolveWikiItemImage("Molten Rock")).toContain("Molten_rock.png");
+  });
+
   it("returns undefined for nonsense", () => {
     expect(resolveWikiItemImage("definitely-not-a-real-item-xyz")).toBeUndefined();
   });

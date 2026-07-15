@@ -7,20 +7,21 @@ import { STATIC_CATALOG } from "@/data/static-catalog";
 export const runtime = "nodejs";
 
 /**
- * Live marketplace feed — official listings (newest first).
- * Query: limit (default 400), pages (default 8), gold=1 to include gold listings
+ * Live marketplace / sales activity — official listings (newest first).
+ * Query: limit (default 5000), pages (default 50 × 100), gold=1 for gold too.
+ * Stops when the official API returns an empty/short page (no hard 600 cap).
  */
 export async function GET(request: Request) {
   const sp = new URL(request.url).searchParams;
-  const limit = Number(sp.get("limit") ?? "400");
-  const pages = Number(sp.get("pages") ?? "8");
+  const limit = Number(sp.get("limit") ?? "5000");
+  const pages = Number(sp.get("pages") ?? "50");
   const includeGold = sp.get("gold") === "1" || sp.get("gold") === "true";
 
   try {
     const rate = await resolveKinsUsd();
     const rows = await fetchOfficialRecentActivity({
-      limit: Number.isFinite(limit) ? Math.min(Math.max(limit, 1), 900) : 400,
-      pages: Number.isFinite(pages) ? Math.min(Math.max(pages, 1), 15) : 8,
+      limit: Number.isFinite(limit) ? Math.min(Math.max(limit, 1), 10_000) : 5000,
+      pages: Number.isFinite(pages) ? Math.min(Math.max(pages, 1), 100) : 50,
       kinsUsd: rate?.kinsUsd,
       includeGold,
     });
@@ -53,7 +54,7 @@ export async function GET(request: Request) {
         kinsUsd: rate != null ? String(rate.kinsUsd) : null,
         rateSource: rate?.source ?? null,
         note:
-          "Live official marketplace listings (newest first). Refreshes ~every 10s. Read-only.",
+          "Sales activity = newest official listings (live market). Full feed until API empty. ~10s refresh. Read-only.",
       },
       {
         source: "kintara.com",

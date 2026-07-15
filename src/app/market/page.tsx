@@ -26,6 +26,8 @@ function MarketHubInner() {
       ? rawTab
       : "sales";
   const selectedId = searchParams.get("item") || "";
+  const sellerKey = searchParams.get("seller") || "";
+  const sellerNameParam = searchParams.get("sellerName") || "";
 
   const hub = useMarketHub(10_000);
   const { price, reload: reloadPrice } = useKinsPrice(10_000);
@@ -80,6 +82,31 @@ function MarketHubInner() {
   const selected = hub.sales.filter((s) => s.itemType === selectedId);
   const selectedFloor = hub.floors.find((f) => f.id === selectedId);
 
+  const sellerListings = useMemo(() => {
+    if (!sellerKey && !sellerNameParam) return [];
+    return hub.sales.filter((s) => {
+      if (sellerKey && s.sellerId && String(s.sellerId) === sellerKey) {
+        return true;
+      }
+      if (sellerNameParam) {
+        const n = (s.sellerName ?? s.seller ?? "").toLowerCase();
+        return n === sellerNameParam.toLowerCase();
+      }
+      // fallback: sellerKey might be a name if no id
+      if (sellerKey && !s.sellerId) {
+        const n = (s.sellerName ?? s.seller ?? "").toLowerCase();
+        return n === sellerKey.toLowerCase();
+      }
+      return false;
+    });
+  }, [hub.sales, sellerKey, sellerNameParam]);
+
+  const sellerDisplayName = useMemo(() => {
+    if (sellerNameParam) return sellerNameParam;
+    const hit = sellerListings[0];
+    return hit?.sellerName ?? hit?.seller ?? (sellerKey ? `#${sellerKey}` : "Seller");
+  }, [sellerListings, sellerNameParam, sellerKey]);
+
   function setTab(next: Tab) {
     const p = new URLSearchParams();
     p.set("tab", next);
@@ -89,13 +116,32 @@ function MarketHubInner() {
   function openItem(id: string) {
     const p = new URLSearchParams(searchParams.toString());
     p.set("item", id);
+    p.delete("seller");
+    p.delete("sellerName");
     if (!p.get("tab")) p.set("tab", tab);
     router.push(`/market?${p.toString()}`);
   }
 
-  function closeItem() {
+  function openSeller(row: RecentSale) {
     const p = new URLSearchParams(searchParams.toString());
     p.delete("item");
+    if (row.sellerId) {
+      p.set("seller", String(row.sellerId));
+    } else {
+      p.set("seller", row.sellerName ?? row.seller ?? "");
+    }
+    if (row.sellerName ?? row.seller) {
+      p.set("sellerName", row.sellerName ?? row.seller ?? "");
+    }
+    if (!p.get("tab")) p.set("tab", tab);
+    router.push(`/market?${p.toString()}`);
+  }
+
+  function closeSheet() {
+    const p = new URLSearchParams(searchParams.toString());
+    p.delete("item");
+    p.delete("seller");
+    p.delete("sellerName");
     router.push(`/market?${p.toString()}`);
   }
 
@@ -110,13 +156,13 @@ function MarketHubInner() {
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-[1.65rem] font-semibold tracking-tight">
-            {tab === "sales" && "Live market"}
+            {tab === "sales" && "Sales activity"}
             {tab === "floors" && "Floors"}
             {tab === "watch" && "Watchlist"}
           </h1>
           <p className="mt-1 text-sm text-muted">
             {tab === "sales" &&
-              `${hub.sales.length} listings · qty + $ only · 10s`}
+              `${hub.sales.length} live listings · newest first · 10s`}
             {tab === "floors" && `${hub.floors.length} items · lowest $ each`}
             {tab === "watch" &&
               (watch.length
@@ -160,7 +206,7 @@ function MarketHubInner() {
       <div className="inline-flex rounded-2xl border border-border/40 bg-surface/50 p-1">
         {(
           [
-            ["sales", "Live"],
+            ["sales", "Activity"],
             ["floors", "Floors"],
             ["watch", "Watch"],
           ] as const
@@ -194,7 +240,8 @@ function MarketHubInner() {
       {tab === "sales" && (
         <LiveList
           rows={filteredLive}
-          onOpen={openItem}
+          onOpenItem={openItem}
+          onOpenSeller={openSeller}
           onWatch={onWatch}
           watch={watch}
         />
@@ -216,13 +263,35 @@ function MarketHubInner() {
 
       {selectedId && (
         <DetailSheet
+          title={selectedFloor?.name ?? selected[0]?.name ?? selectedId}
+          subtitle={
+            selectedFloor?.lowestUsdPerUnit
+              ? `Floor ${formatUsdShort(selectedFloor.lowestUsdPerUnit)}/u`
+              : "Item listings in feed"
+          }
           itemId={selectedId}
-          name={selectedFloor?.name ?? selectedId}
-          floor={selectedFloor}
           rows={selected}
           watching={watch.includes(selectedId)}
-          onClose={closeItem}
+          onClose={closeSheet}
           onWatch={() => onWatch(selectedId)}
+          onOpenSeller={openSeller}
+          mode="item"
+        />
+      )}
+
+      {sellerKey && !selectedId && (
+        <DetailSheet
+          title={sellerDisplayName}
+          subtitle={
+            sellerKey && /^\d+$/.test(sellerKey)
+              ? `Seller #${sellerKey} · ${sellerListings.length} listings`
+              : `${sellerListings.length} listings in feed`
+          }
+          rows={sellerListings}
+          watching={false}
+          onClose={closeSheet}
+          onOpenItem={openItem}
+          mode="seller"
         />
       )}
 
@@ -236,12 +305,14 @@ function MarketHubInner() {
 /** e.g. "5k Wood" + "$0.10" */
 function LiveList({
   rows,
-  onOpen,
+  onOpenItem,
+  onOpenSeller,
   onWatch,
   watch,
 }: {
   rows: RecentSale[];
-  onOpen: (id: string) => void;
+  onOpenItem: (id: string) => void;
+  onOpenSeller: (row: RecentSale) => void;
   onWatch: (id: string) => void;
   watch: string[];
 }) {
@@ -267,27 +338,39 @@ function LiveList({
               key={r.id}
               className="flex items-center gap-3 px-4 py-3.5 hover:bg-sky/[0.04]"
             >
-              <button
-                type="button"
-                onClick={() => onOpen(r.itemType)}
-                className="flex min-w-0 flex-1 items-center gap-3 text-left"
-              >
-                <ItemIcon
-                  itemId={r.itemType}
-                  name={r.name}
-                  size={52}
-                  clear
-                />
+              <div className="flex min-w-0 flex-1 items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => onOpenItem(r.itemType)}
+                  className="shrink-0"
+                  aria-label={`Open ${r.name}`}
+                >
+                  <ItemIcon
+                    itemId={r.itemType}
+                    name={r.name}
+                    size={52}
+                    clear
+                  />
+                </button>
                 <div className="min-w-0">
-                  {/* 5k Wood */}
-                  <div className="truncate text-[16px] font-semibold tracking-tight">
+                  <button
+                    type="button"
+                    onClick={() => onOpenItem(r.itemType)}
+                    className="block w-full truncate text-left text-[16px] font-semibold tracking-tight hover:text-sky-hi"
+                  >
                     <span className="font-mono tabular-nums text-sky-hi">
                       {qtyLabel}
                     </span>{" "}
                     {r.name}
-                  </div>
+                  </button>
                   <div className="mt-0.5 truncate text-[12px] text-muted">
-                    {seller}
+                    <button
+                      type="button"
+                      onClick={() => onOpenSeller(r)}
+                      className="font-medium text-sky-hi/90 underline-offset-2 hover:underline"
+                    >
+                      {seller}
+                    </button>
                     {r.sellerId ? (
                       <span className="font-mono"> · #{r.sellerId}</span>
                     ) : null}
@@ -297,12 +380,11 @@ function LiveList({
                     </span>
                   </div>
                 </div>
-              </button>
+              </div>
 
-              {/* $ only */}
               <button
                 type="button"
-                onClick={() => onOpen(r.itemType)}
+                onClick={() => onOpenItem(r.itemType)}
                 className="shrink-0 text-right"
               >
                 <div className="font-mono text-[17px] font-semibold tabular-nums text-sky-hi">
@@ -428,21 +510,27 @@ function FloorList({
 }
 
 function DetailSheet({
+  title,
+  subtitle,
   itemId,
-  name,
-  floor,
   rows,
   watching,
   onClose,
   onWatch,
+  onOpenSeller,
+  onOpenItem,
+  mode,
 }: {
-  itemId: string;
-  name: string;
-  floor?: MarketFloorItem;
+  title: string;
+  subtitle: string;
+  itemId?: string;
   rows: RecentSale[];
   watching: boolean;
   onClose: () => void;
-  onWatch: () => void;
+  onWatch?: () => void;
+  onOpenSeller?: (row: RecentSale) => void;
+  onOpenItem?: (id: string) => void;
+  mode: "item" | "seller";
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:justify-end">
@@ -454,18 +542,23 @@ function DetailSheet({
       />
       <div className="relative z-10 flex max-h-[88dvh] w-full max-w-md flex-col rounded-t-3xl border border-border bg-surface shadow-2xl sm:mr-4 sm:max-h-[90dvh] sm:rounded-3xl">
         <div className="flex items-start gap-3 border-b border-border/40 p-5">
-          <ItemIcon itemId={itemId} name={name} size={64} clear />
+          {mode === "item" && itemId ? (
+            <ItemIcon itemId={itemId} name={title} size={64} clear />
+          ) : (
+            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-border/50 bg-surface-2 text-lg font-semibold text-sky-hi">
+              {(title || "?")
+                .replace(/[^a-zA-Z0-9 ]/g, "")
+                .split(/\s+/)
+                .filter(Boolean)
+                .slice(0, 2)
+                .map((w) => w[0]?.toUpperCase() ?? "")
+                .join("")
+                .slice(0, 2) || "?"}
+            </div>
+          )}
           <div className="min-w-0 flex-1">
-            <h2 className="text-lg font-semibold">{name}</h2>
-            <p className="text-sm text-muted">
-              Floor{" "}
-              <span className="font-mono font-semibold text-sky-hi">
-                {floor?.lowestUsdPerUnit
-                  ? formatUsdShort(floor.lowestUsdPerUnit)
-                  : "—"}
-              </span>
-              <span className="text-muted"> /u</span>
-            </p>
+            <h2 className="text-lg font-semibold">{title}</h2>
+            <p className="text-sm text-muted">{subtitle}</p>
           </div>
           <button
             type="button"
@@ -478,11 +571,11 @@ function DetailSheet({
 
         <div className="flex-1 overflow-y-auto p-4">
           <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted">
-            Listings · {rows.length}
+            {mode === "seller" ? "Seller listings" : "Listings"} · {rows.length}
           </p>
           <div className="space-y-2">
             {rows.length === 0 && (
-              <p className="text-sm text-muted">None in feed.</p>
+              <p className="text-sm text-muted">None in current feed.</p>
             )}
             {rows.map((s) => (
               <div
@@ -490,15 +583,40 @@ function DetailSheet({
                 className="flex items-center justify-between gap-3 rounded-2xl bg-surface-2/60 px-3.5 py-3"
               >
                 <div className="min-w-0">
-                  <div className="text-[15px] font-semibold">
-                    <span className="font-mono tabular-nums text-sky-hi">
-                      {formatQtyCompact(s.quantity)}
-                    </span>{" "}
-                    {name}
-                  </div>
+                  {mode === "seller" ? (
+                    <button
+                      type="button"
+                      onClick={() => onOpenItem?.(s.itemType)}
+                      className="text-left text-[15px] font-semibold hover:text-sky-hi"
+                    >
+                      <span className="font-mono tabular-nums text-sky-hi">
+                        {formatQtyCompact(s.quantity)}
+                      </span>{" "}
+                      {s.name}
+                    </button>
+                  ) : (
+                    <div className="text-[15px] font-semibold">
+                      <span className="font-mono tabular-nums text-sky-hi">
+                        {formatQtyCompact(s.quantity)}
+                      </span>{" "}
+                      {title}
+                    </div>
+                  )}
                   <div className="truncate text-[12px] text-muted">
-                    {s.sellerName ?? s.seller ?? "—"}
-                    {s.sellerId ? ` · #${s.sellerId}` : ""}
+                    {mode === "item" ? (
+                      <button
+                        type="button"
+                        onClick={() => onOpenSeller?.(s)}
+                        className="font-medium text-sky-hi/90 underline-offset-2 hover:underline"
+                      >
+                        {s.sellerName ?? s.seller ?? "—"}
+                        {s.sellerId ? ` · #${s.sellerId}` : ""}
+                      </button>
+                    ) : (
+                      <span>
+                        {new Date(s.timestamp).toLocaleString()}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="shrink-0 text-right">
@@ -517,19 +635,21 @@ function DetailSheet({
           </div>
         </div>
 
-        <div className="border-t border-border/40 p-4">
-          <button
-            type="button"
-            onClick={onWatch}
-            className={cn(
-              "flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl text-sm font-semibold",
-              watching ? "bg-sky/15 text-sky-hi" : "bg-sky text-[#0a121c]",
-            )}
-          >
-            <Star className={cn("h-4 w-4", watching && "fill-sky")} />
-            {watching ? "Watching" : "Watch item"}
-          </button>
-        </div>
+        {mode === "item" && onWatch && (
+          <div className="border-t border-border/40 p-4">
+            <button
+              type="button"
+              onClick={onWatch}
+              className={cn(
+                "flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl text-sm font-semibold",
+                watching ? "bg-sky/15 text-sky-hi" : "bg-sky text-[#0a121c]",
+              )}
+            >
+              <Star className={cn("h-4 w-4", watching && "fill-sky")} />
+              {watching ? "Watching" : "Watch item"}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

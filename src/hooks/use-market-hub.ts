@@ -98,7 +98,8 @@ export function useMarketHub(pollMs = 10_000) {
               r.json(),
             )
           : Promise.resolve(null),
-        fetch("/api/market/activity?limit=600&pages=10&gold=1", {
+        // Max official page size 100; paginate until empty (no 600 cap)
+        fetch("/api/market/activity?limit=5000&pages=50&gold=1", {
           cache: "no-store",
         }).then((r) => r.json()),
       ]);

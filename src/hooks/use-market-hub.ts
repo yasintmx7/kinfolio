@@ -1,6 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  isSolanaAddress,
+  officialListingId,
+  sanitizePersonName,
+} from "@/lib/market/seller-label";
 
 export type MarketFloorItem = {
   id: string;
@@ -107,14 +112,7 @@ function bestSellerName(
   a: string | null | undefined,
   b: string | null | undefined,
 ): string | null {
-  const pick = (s: string | null | undefined) => {
-    const t = (s ?? "").trim();
-    if (!t) return null;
-    // Never promote raw solana wallet into name
-    if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(t)) return null;
-    return t;
-  };
-  return pick(a) ?? pick(b);
+  return sanitizePersonName(a) ?? sanitizePersonName(b);
 }
 
 function mergeListingFeeds(
@@ -281,15 +279,16 @@ function buildByItem(
   });
 }
 
-/** sellerId → sellerName from open-book rows */
+/** sellerId → sellerName from open-book rows (wallets never stored) */
 function buildSellerIdNameMap(
   rows: RecentSale[],
   into?: Map<string, string>,
 ): Map<string, string> {
   const idToName = into ?? new Map<string, string>();
   for (const r of rows) {
-    if (r.sellerId != null && r.sellerName?.trim()) {
-      idToName.set(String(r.sellerId), r.sellerName.trim());
+    const name = sanitizePersonName(r.sellerName ?? r.seller);
+    if (r.sellerId != null && name) {
+      idToName.set(String(r.sellerId), name);
     }
   }
   return idToName;
@@ -325,46 +324,40 @@ function resolveLockerNames(
  * Attach seller username / item meta from known open-book listings.
  * Never overwrite sale qty/price with live listing (partial fills stay accurate).
  */
-function isWalletish(s: string | null | undefined): boolean {
-  if (!s) return false;
-  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(s.trim());
-}
-
 function enrichSold(
   sold: RecentSale[],
   known: Map<string, RecentSale>,
 ): RecentSale[] {
   return sold.map((row) => {
-    const lid = row.listingId != null ? String(row.listingId) : "";
+    const lid = officialListingId(row.listingId);
     const hit = lid ? known.get(lid) : undefined;
+    const wallet =
+      (row.sellerWallet && isSolanaAddress(row.sellerWallet)
+        ? row.sellerWallet
+        : null) ??
+      (isSolanaAddress(row.seller) ? String(row.seller) : null) ??
+      null;
+
     if (!hit) {
-      // No open-book match — keep wallets only in *Wallet fields
       return {
         ...row,
         isSold: true,
-        sellerName: row.sellerName && !isWalletish(row.sellerName)
-          ? row.sellerName
-          : null,
+        listingId: lid ?? undefined,
+        sellerName: sanitizePersonName(row.sellerName),
         seller: null,
-        sellerWallet: row.sellerWallet ?? (isWalletish(row.seller) ? row.seller : null),
+        sellerWallet: wallet,
       };
     }
-    const bookName =
-      hit.sellerName && !isWalletish(hit.sellerName) ? hit.sellerName : null;
+    const bookName = sanitizePersonName(hit.sellerName ?? hit.seller);
     return {
       ...row,
       isSold: true,
-      // Prefer real username from live book; never promote wallet → name
-      sellerName: bookName ?? (row.sellerName && !isWalletish(row.sellerName) ? row.sellerName : null),
+      listingId: lid ?? undefined,
+      sellerName: bookName ?? sanitizePersonName(row.sellerName),
       sellerId: hit.sellerId ?? row.sellerId,
       seller: bookName,
-      sellerWallet:
-        row.sellerWallet ??
-        (isWalletish(row.seller) ? row.seller : null) ??
-        hit.sellerWallet ??
-        null,
+      sellerWallet: wallet ?? hit.sellerWallet ?? null,
       buyerId: hit.buyerId ?? row.buyerId,
-      // Fill missing item label only — never invent qty/price
       name:
         row.name && row.name !== "Sale"
           ? row.name

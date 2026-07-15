@@ -3,6 +3,7 @@ import { fetchRecentSales } from "@/lib/kintara/kintrade-sales";
 import { humanizeItemType } from "@/lib/kintara/item-type-map";
 import { marketTypeToPortfolioId } from "@/lib/kintara/item-type-map";
 import { STATIC_CATALOG } from "@/data/static-catalog";
+import { officialListingId } from "@/lib/market/seller-label";
 
 export const runtime = "nodejs";
 
@@ -26,7 +27,8 @@ export async function GET(request: Request) {
       {
         sold: sales.map((s) => ({
           id: s.id,
-          listingId: s.listingId ?? s.id,
+          // Only real marketplace listing ids (numeric) — never sale doc id
+          listingId: officialListingId(s.listingId) ?? undefined,
           name: s.name || humanizeItemType(s.itemType),
           itemType: s.itemType,
           quantity: s.quantity,
@@ -37,7 +39,7 @@ export async function GET(request: Request) {
           priceGold: null,
           currency: "token",
           timestamp: s.timestamp,
-          // On-chain only has wallets — never put address in sellerName
+          // On-chain only has wallets — never put address in name fields
           seller: null as string | null,
           sellerName: null as string | null,
           sellerId: null as string | null,

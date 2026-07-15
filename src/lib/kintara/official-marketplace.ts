@@ -12,6 +12,7 @@ import type {
   SoldSample,
 } from "@/lib/kintara/marketplace-adapter";
 import { normalizeListingPrice } from "@/lib/market/listing-price";
+import { sanitizePersonName } from "@/lib/market/seller-label";
 import { z } from "zod";
 
 const BASE = "https://kintara.com";
@@ -297,7 +298,7 @@ export function toOfficialListingDto(l: OfficialListing): OfficialListingDto {
     usdTotal: priced.lotUsd != null ? String(priced.lotUsd) : null,
     priceGold: priced.priceGold != null ? String(priced.priceGold) : null,
     currency: l.currency ?? "token",
-    sellerName: l.sellerName ?? null,
+    sellerName: sanitizePersonName(l.sellerName),
     sellerId: l.sellerId != null ? String(l.sellerId) : null,
     reserved: l.isReserved,
     reservedUntilMs:
@@ -660,7 +661,7 @@ export async function fetchOfficialRecentActivity(options?: {
         priced.priceGold != null ? String(priced.priceGold) : null,
       currency: r.currency ?? "token",
       timestamp: r.createdAt ?? new Date().toISOString(),
-      sellerName: r.sellerName ?? null,
+      sellerName: sanitizePersonName(r.sellerName),
       sellerId: r.sellerId != null ? String(r.sellerId) : null,
       buyerId: reservedById(r.reservedBy),
       // Public API never returns buyer username — only numeric id on reserve

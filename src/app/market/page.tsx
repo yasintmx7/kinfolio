@@ -21,6 +21,12 @@ import {
   listingPriceLabels,
   normalizeListingPrice,
 } from "@/lib/market/listing-price";
+import {
+  formatSellerLabel,
+  isSolanaAddress,
+  sanitizePersonName,
+  shortWallet as shortWalletShared,
+} from "@/lib/market/seller-label";
 import { getWatchlist, toggleWatch } from "@/lib/market/watchlist";
 import { cn } from "@/lib/utils";
 
@@ -130,14 +136,13 @@ function itemIdsMatch(a: string, b: string): boolean {
   return na === nb;
 }
 
-/** Locker display: username when known, else #id */
+/** Locker display: username when known, else #id (never full wallet) */
 function lockerLabel(r: RecentSale): string | null {
-  const name = r.buyerName?.trim();
-  if (name && !name.startsWith("#")) {
+  const name = sanitizePersonName(r.buyerName);
+  if (name) {
     return r.buyerId ? `${name} · #${r.buyerId}` : name;
   }
   if (r.buyerId != null && String(r.buyerId).trim()) return `#${r.buyerId}`;
-  if (name) return name;
   return null;
 }
 
@@ -156,39 +161,12 @@ function lockLabel(r: RecentSale): string {
   return buyer ? `Reserved by ${buyer}` : "Reserved";
 }
 
-/** Solana base58 pubkey-ish (32–44 chars) — never treat as a username. */
 function isWalletAddress(s: string | null | undefined): boolean {
-  if (!s) return false;
-  const t = s.trim();
-  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(t);
+  return isSolanaAddress(s);
 }
 
 function shortWallet(w: string | null | undefined): string | null {
-  if (!w || w.length < 8) return w || null;
-  const t = w.trim();
-  if (t.length < 10) return t;
-  return `${t.slice(0, 4)}…${t.slice(-4)}`;
-}
-
-/**
- * Human label only — never a full wallet as "username".
- * Order: real name → #gameId → short wallet → Unknown
- */
-function displayName(
-  name: string | null | undefined,
-  id: string | number | null | undefined,
-  wallet: string | null | undefined,
-): string {
-  const n = (name ?? "").trim();
-  if (n && !isWalletAddress(n) && !n.startsWith("#")) return n;
-  if (id != null && String(id).trim() && /^\d+$/.test(String(id).trim())) {
-    return `#${String(id).trim()}`;
-  }
-  if (n && isWalletAddress(n)) return shortWallet(n) || "Unknown";
-  if (wallet && isWalletAddress(wallet)) return shortWallet(wallet) || "Unknown";
-  if (wallet) return shortWallet(wallet) || "Unknown";
-  if (n) return n;
-  return "Unknown";
+  return shortWalletShared(w);
 }
 
 /** Best buyer label: locker name → #id → short wallet (never full address) */
@@ -198,15 +176,18 @@ function buyerLabel(r: RecentSale): string | null {
   if (r.buyerId != null && String(r.buyerId).trim()) {
     return `#${String(r.buyerId).trim()}`;
   }
-  return shortWallet(r.buyerWallet ?? r.buyerName);
+  if (isSolanaAddress(r.buyerName)) return shortWallet(r.buyerName);
+  if (sanitizePersonName(r.buyerName)) return sanitizePersonName(r.buyerName);
+  return shortWallet(r.buyerWallet);
 }
 
 function sellerDisplay(r: RecentSale): string {
-  return displayName(
-    r.sellerName ?? r.seller,
-    r.sellerId,
-    r.sellerWallet ?? (isWalletAddress(r.seller) ? r.seller : null),
-  );
+  return formatSellerLabel({
+    sellerName: r.sellerName,
+    seller: r.seller,
+    sellerId: r.sellerId,
+    sellerWallet: r.sellerWallet,
+  });
 }
 
 /** Single path for row prices — never re-derive ad-hoc in UI. */
@@ -470,12 +451,17 @@ function MarketHubInner() {
 
   const sellerDisplayName = useMemo(() => {
     if (!sellerFocus) return "Seller";
-    if (sellerFocus.sellerName) return sellerFocus.sellerName;
+    // Never trust raw hit.seller (may be a wallet)
     const hit = sellerListings[0];
-    if (hit?.sellerName ?? hit?.seller)
-      return hit.sellerName ?? hit.seller ?? "Seller";
-    if (sellerFocus.sellerId) return `#${sellerFocus.sellerId}`;
-    return "Seller";
+    return formatSellerLabel({
+      sellerName:
+        sanitizePersonName(sellerFocus.sellerName) ??
+        hit?.sellerName ??
+        null,
+      seller: hit?.seller ?? null,
+      sellerId: sellerFocus.sellerId ?? hit?.sellerId,
+      sellerWallet: hit?.sellerWallet ?? null,
+    });
   }, [sellerFocus, sellerListings]);
 
   function setTab(next: Tab) {
@@ -492,23 +478,26 @@ function MarketHubInner() {
   function openSeller(row: RecentSale) {
     const wallet =
       (row.sellerWallet ?? "").trim() ||
-      (isWalletAddress(row.seller) ? String(row.seller).trim() : null) ||
+      (isSolanaAddress(row.seller) ? String(row.seller).trim() : null) ||
+      (isSolanaAddress(row.sellerName) ? String(row.sellerName).trim() : null) ||
       null;
-    const rawName = (row.sellerName ?? "").trim() || null;
-    const name =
-      rawName && !isWalletAddress(rawName) ? rawName : null;
+    const name = sanitizePersonName(row.sellerName ?? row.seller);
     // Prefer numeric game id; else wallet for sold-feed matching only
     const id =
       row.sellerId != null && String(row.sellerId).trim() !== ""
         ? String(row.sellerId)
         : wallet;
-    const display = displayName(name, row.sellerId, wallet);
-    if (display === "Unknown" && !id) return;
+    const display = formatSellerLabel({
+      sellerName: name,
+      sellerId: row.sellerId,
+      sellerWallet: wallet,
+    });
+    if (display === "Seller" && !id) return;
     setItemFocus(null);
     setSellerFocus({
       sellerId: id,
-      // Never store full wallet as the visible "username"
-      sellerName: display,
+      // Real name or #id only — never store a wallet string as the name
+      sellerName: name ?? (row.sellerId != null ? `#${row.sellerId}` : null),
     });
   }
 

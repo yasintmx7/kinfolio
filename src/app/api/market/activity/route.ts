@@ -3,6 +3,7 @@ import { fetchOfficialRecentActivity } from "@/lib/kintara/official-marketplace"
 import { resolveKinsUsd } from "@/lib/prices/resolve-kins-usd";
 import { marketTypeToPortfolioId } from "@/lib/kintara/item-type-map";
 import { STATIC_CATALOG } from "@/data/static-catalog";
+import { sanitizePersonName } from "@/lib/market/seller-label";
 
 export const runtime = "nodejs";
 
@@ -30,30 +31,34 @@ export async function GET(request: Request) {
 
     return ok(
       {
-        activity: rows.map((r) => ({
-          id: r.id,
-          listingId: r.listingId,
-          name: r.name,
-          itemType: r.itemType,
-          quantity: r.quantity,
-          unitKins: r.unitKins,
-          totalKins: r.totalKins,
-          unitUsd: r.unitUsd,
-          usdTotal: r.usdTotal,
-          priceGold: r.priceGold,
-          currency: r.currency,
-          timestamp: r.timestamp,
-          sellerName: r.sellerName,
-          sellerId: r.sellerId,
-          seller: r.sellerName,
-          buyerId: r.buyerId,
-          buyerName: r.buyerName,
-          reserved: r.reserved,
-          reservedUntilMs: r.reservedUntilMs,
-          itemDurability: r.itemDurability,
-          portfolioItemId: marketTypeToPortfolioId(r.itemType, STATIC_CATALOG),
-          solscanUrl: null,
-        })),
+        activity: rows.map((r) => {
+          const sellerName = sanitizePersonName(r.sellerName);
+          return {
+            id: r.id,
+            listingId: r.listingId,
+            name: r.name,
+            itemType: r.itemType,
+            quantity: r.quantity,
+            unitKins: r.unitKins,
+            totalKins: r.totalKins,
+            unitUsd: r.unitUsd,
+            usdTotal: r.usdTotal,
+            priceGold: r.priceGold,
+            currency: r.currency,
+            timestamp: r.timestamp,
+            sellerName,
+            sellerId: r.sellerId,
+            // Never put wallet into seller / sellerName
+            seller: sellerName,
+            buyerId: r.buyerId,
+            buyerName: sanitizePersonName(r.buyerName),
+            reserved: r.reserved,
+            reservedUntilMs: r.reservedUntilMs,
+            itemDurability: r.itemDurability,
+            portfolioItemId: marketTypeToPortfolioId(r.itemType, STATIC_CATALOG),
+            solscanUrl: null,
+          };
+        }),
         count: rows.length,
         kinsUsd: rate != null ? String(rate.kinsUsd) : null,
         rateSource: rate?.source ?? null,

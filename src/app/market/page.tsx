@@ -119,12 +119,19 @@ function isLocked(r: RecentSale): boolean {
   return false;
 }
 
+/** Locker display: username when known, else #id */
+function lockerLabel(r: RecentSale): string | null {
+  const name = r.buyerName?.trim();
+  if (name && !name.startsWith("#")) {
+    return r.buyerId ? `${name} · #${r.buyerId}` : name;
+  }
+  if (r.buyerId != null && String(r.buyerId).trim()) return `#${r.buyerId}`;
+  if (name) return name;
+  return null;
+}
+
 function lockLabel(r: RecentSale): string {
-  const buyer =
-    (r.buyerName && r.buyerName.trim()) ||
-    (r.buyerId != null && String(r.buyerId).trim()
-      ? `#${r.buyerId}`
-      : null);
+  const buyer = lockerLabel(r);
   if (r.reservedUntilMs != null && r.reservedUntilMs > Date.now()) {
     try {
       const until = new Date(r.reservedUntilMs).toLocaleTimeString();
@@ -145,8 +152,8 @@ function shortWallet(w: string | null | undefined): string | null {
 
 /** Best buyer label: name → #id → short wallet */
 function buyerLabel(r: RecentSale): string | null {
-  if (r.buyerName && r.buyerName.trim()) return r.buyerName.trim();
-  if (r.buyerId != null && String(r.buyerId).trim()) return `#${r.buyerId}`;
+  const locker = lockerLabel(r);
+  if (locker) return locker;
   return shortWallet(r.buyerWallet);
 }
 
@@ -974,6 +981,14 @@ const ListingRow = memo(function ListingRow({
             · {new Date(r.timestamp).toLocaleTimeString()}
           </span>
         </button>
+        {/* Locker line — who reserved this listing */}
+        {mode === "listings" && locked && lockerLabel(r) && (
+          <div className="mt-0.5 truncate text-[11px] font-medium text-amber-200">
+            <Lock className="mr-1 inline h-3 w-3" />
+            Locked by{" "}
+            <span className="text-sky-hi">{lockerLabel(r)}</span>
+          </div>
+        )}
       </div>
 
       <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">

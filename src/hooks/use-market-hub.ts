@@ -154,6 +154,32 @@ function buildByItem(
 }
 
 /**
+ * Official API only gives reservedBy as a numeric user id (no username).
+ * If that user also has open listings as a seller, we can reverse-map id → name.
+ */
+function resolveLockerNames(rows: RecentSale[]): RecentSale[] {
+  const idToName = new Map<string, string>();
+  for (const r of rows) {
+    if (r.sellerId != null && r.sellerName?.trim()) {
+      idToName.set(String(r.sellerId), r.sellerName.trim());
+    }
+  }
+  if (idToName.size === 0) return rows;
+
+  let changed = false;
+  const out = rows.map((r) => {
+    if (!r.buyerId) return r;
+    // already have a real name (not just #id style)
+    if (r.buyerName && !r.buyerName.startsWith("#")) return r;
+    const name = idToName.get(String(r.buyerId));
+    if (!name) return r;
+    changed = true;
+    return { ...r, buyerName: name };
+  });
+  return changed ? out : rows;
+}
+
+/**
  * Attach seller username / item meta from known open-book listings.
  * Never overwrite sale qty/price with live listing (partial fills stay accurate).
  */
@@ -223,10 +249,12 @@ export function useMarketHub(pollMs = 18_000) {
       };
 
       setData((prev) => {
-        const nextSales =
+        const nextSalesRaw =
           activityRes?.ok && Array.isArray(activityRes.data?.activity)
             ? activityRes.data!.activity!
             : prev.sales;
+        // Fill locker username when reservedBy id matches a known seller
+        const nextSales = resolveLockerNames(nextSalesRaw);
 
         const fp = listFingerprint(nextSales);
         const sameList =

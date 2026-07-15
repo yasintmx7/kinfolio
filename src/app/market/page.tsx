@@ -51,29 +51,32 @@ function lockLabel(r: RecentSale): string {
   return "Reserved";
 }
 
-/** Lot total for display (always prefer total over unit). */
+/** Lot total USD for display. */
 function lotTotal(r: RecentSale): string | null {
-  if (r.usdTotal != null && r.usdTotal !== "" && Number.isFinite(Number(r.usdTotal))) {
-    return String(r.usdTotal);
-  }
-  // derive from unit × qty if needed
+  const total = Number(r.usdTotal);
+  if (Number.isFinite(total) && total > 0) return String(total);
   const unit = Number(r.unitUsd);
   const qty = Number(r.quantity);
-  if (Number.isFinite(unit) && Number.isFinite(qty) && unit > 0 && qty > 0) {
+  if (Number.isFinite(unit) && unit > 0 && Number.isFinite(qty) && qty > 0) {
     return String(unit * qty);
   }
   return null;
 }
 
 function unitPrice(r: RecentSale): string | null {
-  if (r.unitUsd != null && r.unitUsd !== "" && Number.isFinite(Number(r.unitUsd))) {
-    return String(r.unitUsd);
-  }
+  const unit = Number(r.unitUsd);
+  if (Number.isFinite(unit) && unit > 0) return String(unit);
   const total = Number(r.usdTotal);
   const qty = Number(r.quantity);
-  if (Number.isFinite(total) && Number.isFinite(qty) && total > 0 && qty > 0) {
+  if (Number.isFinite(total) && total > 0 && Number.isFinite(qty) && qty > 0) {
     return String(total / qty);
   }
+  return null;
+}
+
+function goldTotal(r: RecentSale): string | null {
+  const g = Number(r.priceGold);
+  if (Number.isFinite(g) && g > 0) return String(g);
   return null;
 }
 
@@ -458,38 +461,42 @@ function Panel({
 function PriceBlock({
   lot$,
   unit$,
+  gold$,
   locked,
   compact,
 }: {
   lot$: string | null;
   unit$: string | null;
+  gold$?: string | null;
   locked?: boolean;
   compact?: boolean;
 }) {
-  const totalLabel = lot$
-    ? formatUsdShort(lot$)
-    : unit$
-      ? formatUsdShort(unit$)
-      : "—";
+  // Prefer USD total; fall back to unit total; then gold
+  let totalLabel: string;
+  if (lot$) totalLabel = formatUsdShort(lot$);
+  else if (unit$) totalLabel = formatUsdShort(unit$);
+  else if (gold$) totalLabel = `${formatQtyCompact(gold$)}g`;
+  else totalLabel = "—";
+
   const avgLabel = unit$ ? formatUsdPer1k(unit$) : null;
 
   return (
     <div
       className={cn(
-        "shrink-0 text-right",
-        compact ? "min-w-[4.75rem] sm:min-w-[5.5rem]" : "min-w-[5.5rem]",
+        "shrink-0 whitespace-nowrap text-right",
+        "min-w-[5.25rem] sm:min-w-[5.75rem]",
       )}
     >
       <div
         className={cn(
-          "font-mono font-semibold tabular-nums leading-tight",
+          "font-mono font-bold tabular-nums leading-tight text-sky-hi",
           compact ? "text-[15px] sm:text-[16px]" : "text-[17px]",
-          locked ? "text-muted" : "text-sky-hi",
+          locked && "opacity-60",
         )}
       >
         {totalLabel}
       </div>
-      {avgLabel && (
+      {avgLabel ? (
         <div
           className={cn(
             "font-mono tabular-nums leading-tight text-muted",
@@ -499,7 +506,11 @@ function PriceBlock({
           {avgLabel}
           <span className="text-[10px]">/1k</span>
         </div>
-      )}
+      ) : gold$ && lot$ ? (
+        <div className="font-mono text-[11px] tabular-nums text-muted">
+          {formatQtyCompact(gold$)}g
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -542,6 +553,7 @@ function ListingList({
         const seller = (r.sellerName ?? r.seller ?? "").trim() || "Unknown";
         const unit$ = unitPrice(r);
         const lot$ = lotTotal(r);
+        const gold$ = goldTotal(r);
         const qtyLabel = formatQtyCompact(r.quantity);
         const locked = isLocked(r);
         const canOpenSeller = Boolean(
@@ -624,8 +636,8 @@ function ListingList({
               </button>
             </div>
 
-            {/* Fixed price column — always visible */}
-            <div className="flex shrink-0 items-center gap-1">
+            {/* Fixed price column — never shrinks away */}
+            <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
               <button
                 type="button"
                 onClick={() => onOpenItem(r.itemType)}
@@ -634,6 +646,7 @@ function ListingList({
                 <PriceBlock
                   lot$={lot$}
                   unit$={unit$}
+                  gold$={gold$}
                   locked={locked && mode === "listings"}
                   compact={compact}
                 />
@@ -830,6 +843,7 @@ function DetailSheet({
               const locked = showLock && isLocked(s);
               const lot$ = lotTotal(s);
               const unit$ = unitPrice(s);
+              const gold$ = goldTotal(s);
               return (
                 <div
                   key={s.id}
@@ -883,7 +897,12 @@ function DetailSheet({
                       )}
                     </div>
                   </div>
-                  <PriceBlock lot$={lot$} unit$={unit$} locked={locked} />
+                  <PriceBlock
+                    lot$={lot$}
+                    unit$={unit$}
+                    gold$={gold$}
+                    locked={locked}
+                  />
                 </div>
               );
             })}

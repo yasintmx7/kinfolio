@@ -14,7 +14,7 @@ export async function GET() {
   try {
     const rate = await resolveKinsUsd();
     const rows = await buildOfficialFloorBoard({
-      pages: 50,
+      pages: 8,
       limit: 100,
       kinsUsd: rate?.kinsUsd,
     });

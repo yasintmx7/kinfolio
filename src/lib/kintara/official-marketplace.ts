@@ -183,7 +183,7 @@ export async function buildOfficialFloorBoard(options?: {
   kinsUsd?: number;
 }): Promise<OfficialFloorRow[]> {
   const pageSize = Math.min(Math.max(options?.limit ?? 100, 1), 100);
-  const pages = Math.min(Math.max(options?.pages ?? 50, 1), 100);
+  const pages = Math.min(Math.max(options?.pages ?? 8, 1), 20);
   const cacheKey = `official:floor-board:${pages}:${pageSize}:${options?.kinsUsd ?? "x"}`;
   const cached = getCached<OfficialFloorRow[]>(cacheKey);
   if (cached && !cached.stale) return cached.value;
@@ -273,28 +273,29 @@ export type OfficialActivityRow = {
 };
 
 /**
- * Live market feed: paginate official sort=new listings until empty.
- * Uses API max page size (100). No artificial 600-row cap —
- * safety ceiling only (default 5000) for runaway pagination.
- * Includes seller username/id, listing id, qty, prices.
+ * Live market feed: paginate official listings (parallel pages).
+ * Default: 8×100 token pages — fast enough for 10s poll / serverless.
+ * Stops early when a page returns short/empty.
  */
 export async function fetchOfficialRecentActivity(options?: {
-  /** Soft max rows (default 5000). Pagination still stops on empty page. */
+  /** Soft max rows (default pages × 100). */
   limit?: number;
-  /** Max pages per currency (default 50 × 100 = 5000). */
+  /** Max pages per currency (default 8). */
   pages?: number;
   kinsUsd?: number;
   /** Include gold listings too */
   includeGold?: boolean;
+  /** sort=new (activity) or sort=cheap (listings by price) */
+  sort?: "new" | "cheap";
 }): Promise<OfficialActivityRow[]> {
-  /** Official endpoint caps page size at 100 (higher values still return 100). */
   const pageSize = 100;
-  const pages = Math.min(Math.max(options?.pages ?? 50, 1), 100);
+  const pages = Math.min(Math.max(options?.pages ?? 8, 1), 20);
   const maxRows = Math.min(
     Math.max(options?.limit ?? pages * pageSize, 1),
-    10_000,
+    2000,
   );
   const kinsUsd = options?.kinsUsd;
+  const sort = options?.sort ?? "new";
   const collected: OfficialListing[] = [];
   const seen = new Set<string>();
 
@@ -303,58 +304,93 @@ export async function fetchOfficialRecentActivity(options?: {
     : ["token"];
 
   for (const currency of currencies) {
-    for (let p = 0; p < pages; p++) {
-      const batch = await fetchOfficialListings({
-        sort: "new",
-        currency,
-        category: "all",
-        limit: pageSize,
-        offset: p * pageSize,
-        cacheTtlSeconds: 8,
-      });
-      for (const row of batch) {
-        const id = String(row.id);
-        if (seen.has(id)) continue;
-        seen.add(id);
-        collected.push(row);
+    // Parallel chunks of 4 pages — much faster than sequential 50×
+    const PARALLEL = 4;
+    let stopped = false;
+    for (let start = 0; start < pages && !stopped; start += PARALLEL) {
+      const idxs = Array.from(
+        { length: Math.min(PARALLEL, pages - start) },
+        (_, i) => start + i,
+      );
+      const batches = await Promise.all(
+        idxs.map((p) =>
+          fetchOfficialListings({
+            sort,
+            currency,
+            category: "all",
+            limit: pageSize,
+            offset: p * pageSize,
+            cacheTtlSeconds: 6,
+          }).catch(() => [] as OfficialListing[]),
+        ),
+      );
+      for (let i = 0; i < batches.length; i++) {
+        const batch = batches[i] ?? [];
+        for (const row of batch) {
+          const id = String(row.id);
+          if (seen.has(id)) continue;
+          seen.add(id);
+          collected.push(row);
+        }
+        if (batch.length < pageSize) {
+          stopped = true;
+          // still process remaining parallel results but don't request more
+        }
       }
-      // Empty or short page → no more listings for this currency
-      if (batch.length < pageSize) break;
       if (collected.length >= maxRows) break;
     }
     if (collected.length >= maxRows) break;
   }
 
-  // Newest first
   collected.sort((a, b) => {
+    if (sort === "cheap") {
+      const ua = a.unitUsd ?? Number.POSITIVE_INFINITY;
+      const ub = b.unitUsd ?? Number.POSITIVE_INFINITY;
+      if (ua !== ub) return ua - ub;
+    }
     const ta = a.createdAt ? Date.parse(a.createdAt) : 0;
     const tb = b.createdAt ? Date.parse(b.createdAt) : 0;
     return tb - ta;
   });
 
   return collected.slice(0, maxRows).map((r) => {
-    const unitUsd = r.unitUsd;
+    const qty = Math.max(r.quantity || 1, 1);
+    // Prefer computed unit; fall back to priceUsd / qty
+    let unitUsd = r.unitUsd;
+    if (
+      (unitUsd == null || !Number.isFinite(unitUsd)) &&
+      r.priceUsd != null &&
+      Number.isFinite(r.priceUsd)
+    ) {
+      unitUsd = r.priceUsd / qty;
+    }
+    const lotUsd =
+      r.priceUsd != null && Number.isFinite(r.priceUsd)
+        ? r.priceUsd
+        : unitUsd != null
+          ? unitUsd * qty
+          : null;
     const isToken = (r.currency ?? "token") === "token";
     const unitKins =
       kinsUsd != null && unitUsd != null && isToken
         ? usdToKins(unitUsd, kinsUsd)
         : null;
     const totalKins =
-      kinsUsd != null && r.priceUsd != null && isToken
-        ? usdToKins(r.priceUsd, kinsUsd)
+      kinsUsd != null && lotUsd != null && isToken
+        ? usdToKins(lotUsd, kinsUsd)
         : unitKins != null
-          ? d(unitKins).mul(r.quantity || 1).toFixed()
+          ? d(unitKins).mul(qty).toFixed()
           : null;
     return {
       id: String(r.id),
       listingId: String(r.id),
       itemType: r.itemType,
       name: humanizeItemType(r.itemType),
-      quantity: String(r.quantity),
+      quantity: String(qty),
       unitKins: unitKins ?? "0",
       totalKins,
-      unitUsd: unitUsd != null ? String(unitUsd) : null,
-      usdTotal: r.priceUsd != null ? String(r.priceUsd) : null,
+      unitUsd: unitUsd != null && Number.isFinite(unitUsd) ? String(unitUsd) : null,
+      usdTotal: lotUsd != null && Number.isFinite(lotUsd) ? String(lotUsd) : null,
       priceGold: r.priceGold != null ? String(r.priceGold) : null,
       currency: r.currency ?? "token",
       timestamp: r.createdAt ?? new Date().toISOString(),

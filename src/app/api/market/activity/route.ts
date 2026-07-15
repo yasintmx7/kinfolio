@@ -7,23 +7,25 @@ import { STATIC_CATALOG } from "@/data/static-catalog";
 export const runtime = "nodejs";
 
 /**
- * Live marketplace / sales activity — official listings (newest first).
- * Query: limit (default 5000), pages (default 50 × 100), gold=1 for gold too.
- * Stops when the official API returns an empty/short page (no hard 600 cap).
+ * Live marketplace feed — official listings.
+ * Query: limit (default 800), pages (default 8 × 100 parallel), gold=1.
+ * Fast enough for ~10s client poll without hanging refresh.
  */
 export async function GET(request: Request) {
   const sp = new URL(request.url).searchParams;
-  const limit = Number(sp.get("limit") ?? "5000");
-  const pages = Number(sp.get("pages") ?? "50");
+  const limit = Number(sp.get("limit") ?? "800");
+  const pages = Number(sp.get("pages") ?? "8");
   const includeGold = sp.get("gold") === "1" || sp.get("gold") === "true";
+  const sort = sp.get("sort") === "cheap" ? "cheap" : "new";
 
   try {
     const rate = await resolveKinsUsd();
     const rows = await fetchOfficialRecentActivity({
-      limit: Number.isFinite(limit) ? Math.min(Math.max(limit, 1), 10_000) : 5000,
-      pages: Number.isFinite(pages) ? Math.min(Math.max(pages, 1), 100) : 50,
+      limit: Number.isFinite(limit) ? Math.min(Math.max(limit, 1), 2000) : 800,
+      pages: Number.isFinite(pages) ? Math.min(Math.max(pages, 1), 20) : 8,
       kinsUsd: rate?.kinsUsd,
       includeGold,
+      sort,
     });
 
     return ok(

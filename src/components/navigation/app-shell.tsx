@@ -122,11 +122,12 @@ function ShellInner({ children }: { children: React.ReactNode }) {
       </aside>
 
       <div className="md:pl-[14rem]">
-        <header className="sticky top-0 z-30 flex items-center justify-between border-b border-border/35 bg-app/75 px-4 py-3 backdrop-blur-xl md:hidden">
+        <header className="sticky top-0 z-30 flex items-center justify-between border-b border-border/35 bg-app/80 px-4 py-3 backdrop-blur-xl md:hidden">
           <Link href="/market?tab=market">
             <Logo size={30} />
           </Link>
-          <span className="rounded-full bg-sky/12 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-sky-hi">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-sky/20 bg-sky/12 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-sky-hi">
+            <span className="live-dot" />
             Live
           </span>
         </header>

@@ -2,12 +2,12 @@
 
 /* Kinfolio — deep navy + sky + forest (kintara.com inspired) */
 :root {
-  --app: #070e16;
-  --surface: #0f1c2c;
-  --surface-2: #152536;
-  --raised: #1a3048;
+  --app: #060c14;
+  --surface: #0e1a29;
+  --surface-2: #142333;
+  --raised: #1a2f45;
   --border: #2a4560;
-  --primary: #eaf3fa;
+  --primary: #eef5fb;
   --muted: #8aa6bd;
   --sky: #5ba3d4;
   --sky-hi: #8ad0f5;
@@ -19,8 +19,10 @@
   --profit: #3d9a68;
   --info: #5ba3d4;
   --loss: #e07282;
-  --glow-sky: color-mix(in srgb, var(--sky) 14%, transparent);
-  --glow-forest: color-mix(in srgb, var(--forest) 8%, transparent);
+  --amber: #f0b45a;
+  --ink: #061018;
+  --glow-sky: color-mix(in srgb, var(--sky) 16%, transparent);
+  --glow-forest: color-mix(in srgb, var(--forest) 9%, transparent);
 }
 
 @theme inline {
@@ -41,6 +43,7 @@
   --color-profit: var(--profit);
   --color-info: var(--info);
   --color-loss: var(--loss);
+  --color-ink: var(--ink);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -59,6 +62,7 @@ body {
   color: var(--primary);
   font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 ::selection {
@@ -76,68 +80,255 @@ body {
   contain-intrinsic-size: auto 72px;
 }
 
-/* Page atmosphere — dual wash, calm depth */
+/* Page atmosphere */
 .page-glow {
   background:
     radial-gradient(
-      ellipse 90% 55% at 12% -8%,
+      ellipse 95% 58% at 8% -12%,
       var(--glow-sky),
       transparent 58%
     ),
     radial-gradient(
-      ellipse 70% 45% at 92% 0%,
+      ellipse 70% 48% at 96% -4%,
       var(--glow-forest),
-      transparent 52%
+      transparent 54%
     ),
     radial-gradient(
-      ellipse 50% 30% at 50% 100%,
-      color-mix(in srgb, var(--sky) 5%, transparent),
-      transparent 60%
+      ellipse 55% 32% at 50% 108%,
+      color-mix(in srgb, var(--sky) 6%, transparent),
+      transparent 62%
     ),
     var(--app);
   min-height: 100dvh;
 }
 
-/* Quiet elevated panels */
+/* Elevated panels */
 .card-quiet {
-  background: color-mix(in srgb, var(--surface) 92%, transparent);
-  border: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
-  box-shadow: 0 1px 0 color-mix(in srgb, #fff 3%, transparent) inset;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 62%, transparent);
+  box-shadow:
+    0 1px 0 color-mix(in srgb, #fff 3.5%, transparent) inset,
+    0 8px 28px color-mix(in srgb, #000 18%, transparent);
 }
 
 .card-hero {
+  position: relative;
+  overflow: hidden;
   background:
     linear-gradient(
       145deg,
-      color-mix(in srgb, var(--surface) 95%, var(--sky) 5%),
-      color-mix(in srgb, var(--surface) 98%, transparent)
+      color-mix(in srgb, var(--surface) 88%, var(--sky) 12%),
+      color-mix(in srgb, var(--surface) 96%, transparent) 55%,
+      color-mix(in srgb, var(--surface) 100%, transparent)
     );
-  border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 70%, var(--sky) 12%);
   box-shadow:
-    0 1px 0 color-mix(in srgb, #fff 4%, transparent) inset,
-    0 12px 40px color-mix(in srgb, #000 25%, transparent);
+    0 1px 0 color-mix(in srgb, #fff 5%, transparent) inset,
+    0 16px 48px color-mix(in srgb, #000 28%, transparent);
 }
 
-/* Soft divider used in shells */
+.card-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--sky-hi) 70%, transparent) 20%,
+    color-mix(in srgb, var(--forest-hi) 55%, transparent) 70%,
+    transparent 100%
+  );
+  pointer-events: none;
+}
+
+/* Segmented control shell */
+.seg-shell {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 1rem;
+  border: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  box-shadow: 0 1px 0 color-mix(in srgb, #fff 3%, transparent) inset;
+}
+
+.seg-item {
+  min-height: 2.25rem;
+  border-radius: 0.75rem;
+  padding: 0 0.9rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--muted);
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.seg-item:hover {
+  color: var(--primary);
+  background: color-mix(in srgb, var(--raised) 55%, transparent);
+}
+
+.seg-item-active {
+  background: var(--sky);
+  color: var(--ink);
+  box-shadow: 0 1px 6px color-mix(in srgb, var(--sky) 35%, transparent);
+}
+
+/* List rows */
+.row-hover {
+  transition: background 0.12s ease;
+}
+
+.row-hover:hover {
+  background: color-mix(in srgb, var(--sky) 5.5%, transparent);
+}
+
+.row-locked {
+  background: color-mix(in srgb, var(--amber) 6%, transparent);
+}
+
+.row-locked:hover {
+  background: color-mix(in srgb, var(--amber) 9%, transparent);
+}
+
+/* Panel section header strip */
+.panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 40%, transparent);
+  background: color-mix(in srgb, var(--surface-2) 35%, transparent);
+  padding: 0.75rem 1rem;
+}
+
+/* Field input */
+.field {
+  min-height: 2.75rem;
+  width: 100%;
+  border-radius: 1rem;
+  border: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  padding: 0 1rem;
+  font-size: 0.875rem;
+  outline: none;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.field::placeholder {
+  color: color-mix(in srgb, var(--muted) 55%, transparent);
+}
+
+.field:hover {
+  border-color: color-mix(in srgb, var(--border) 80%, var(--sky) 20%);
+}
+
+.field:focus {
+  border-color: color-mix(in srgb, var(--sky) 55%, transparent);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--sky) 14%, transparent);
+}
+
+/* Chip filters */
+.chip {
+  min-height: 2rem;
+  border-radius: 0.75rem;
+  padding: 0 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--surface-2) 90%, transparent);
+  transition:
+    background 0.12s ease,
+    color 0.12s ease,
+    box-shadow 0.12s ease;
+}
+
+.chip:hover {
+  color: var(--primary);
+}
+
+.chip-active {
+  background: var(--sky);
+  color: var(--ink);
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--sky) 30%, transparent);
+}
+
+.chip-soft-active {
+  background: color-mix(in srgb, var(--sky) 16%, transparent);
+  color: var(--sky-hi);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sky) 35%, transparent);
+}
+
+.chip-forest-active {
+  background: color-mix(in srgb, var(--forest) 22%, transparent);
+  color: var(--forest-hi);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--forest) 40%, transparent);
+}
+
+/* Empty / note */
+.empty-state {
+  padding: 3rem 1.5rem;
+  text-align: center;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
 .hairline {
   border-color: color-mix(in srgb, var(--border) 55%, transparent);
 }
 
+/* Live pulse */
+@keyframes live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--forest-hi) 50%, transparent);
+  }
+  50% {
+    opacity: 0.85;
+    box-shadow: 0 0 0 5px transparent;
+  }
+}
+
+.live-dot {
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 999px;
+  background: var(--forest-hi);
+  animation: live-pulse 2.2s ease-in-out infinite;
+}
+
+.live-dot-busy {
+  background: var(--sky-hi);
+  animation: live-pulse 0.9s ease-in-out infinite;
+}
+
 @media (pointer: fine) {
   ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 7px;
+    height: 7px;
   }
   ::-webkit-scrollbar-thumb {
-    background: color-mix(in srgb, var(--border) 90%, var(--sky) 10%);
+    background: color-mix(in srgb, var(--border) 85%, var(--sky) 15%);
     border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--border) 60%, var(--sky) 40%);
   }
   ::-webkit-scrollbar-track {
     background: transparent;
   }
 }
 
-/* Focus ring */
 :focus-visible {
   outline: 2px solid color-mix(in srgb, var(--sky) 75%, transparent);
   outline-offset: 2px;

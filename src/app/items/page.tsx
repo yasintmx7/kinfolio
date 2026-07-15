@@ -52,33 +52,34 @@ export default function ItemsPage() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-[1.65rem] font-semibold tracking-tight">
+      <section className="card-hero rounded-3xl px-4 py-4 sm:px-5 sm:py-5">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-hi/90">
+          Catalog
+        </p>
+        <h1 className="mt-1 text-[1.7rem] font-semibold tracking-tight sm:text-[1.85rem]">
           All items
         </h1>
         <p className="mt-1 text-sm text-muted">
-          A–Z catalog · {CATALOG_META.count} items ·{" "}
-          {CATALOG_META.withImages} photos from the community wiki
+          A–Z · {CATALOG_META.count} items · {CATALOG_META.withImages} wiki
+          photos
         </p>
-      </div>
+      </section>
 
       <input
         value={q}
         onChange={(e) => setQ(e.target.value)}
         placeholder="Search all items…"
-        className="min-h-12 w-full rounded-2xl border border-border/40 bg-surface/60 px-4 text-sm outline-none placeholder:text-muted/50 focus:border-sky/40 focus:ring-2 focus:ring-sky/15"
+        className="field min-h-12"
       />
 
       {/* A–Z jump */}
-      <div className="flex flex-wrap gap-1">
+      <div className="card-quiet flex flex-wrap gap-1 rounded-2xl p-2">
         <button
           type="button"
           onClick={() => setLetter("all")}
           className={cn(
-            "min-h-8 min-w-8 rounded-lg px-2 text-xs font-semibold",
-            letter === "all"
-              ? "bg-sky text-[#0a121c]"
-              : "bg-surface-2 text-muted hover:text-primary",
+            "chip min-h-8 min-w-8 px-2 text-xs font-semibold",
+            letter === "all" && "chip-active",
           )}
         >
           All
@@ -89,10 +90,8 @@ export default function ItemsPage() {
             type="button"
             onClick={() => setLetter(L)}
             className={cn(
-              "min-h-8 min-w-8 rounded-lg text-xs font-semibold",
-              letter === L
-                ? "bg-sky text-[#0a121c]"
-                : "bg-surface-2 text-muted hover:text-primary",
+              "chip min-h-8 min-w-8 px-0 text-xs font-semibold",
+              letter === L && "chip-active",
             )}
           >
             {L}
@@ -107,10 +106,8 @@ export default function ItemsPage() {
             type="button"
             onClick={() => setCategory(c)}
             className={cn(
-              "min-h-8 rounded-full px-3 text-xs font-medium capitalize",
-              category === c
-                ? "bg-sky/15 text-sky-hi ring-1 ring-sky/30"
-                : "bg-surface-2 text-muted",
+              "chip rounded-full capitalize",
+              category === c && "chip-soft-active",
             )}
           >
             {c}
@@ -122,7 +119,7 @@ export default function ItemsPage() {
 
       {byLetter.map(([L, group]) => (
         <section key={L} id={`letter-${L}`} className="space-y-3">
-          <h2 className="sticky top-14 z-10 -mx-1 rounded-xl bg-app/90 px-2 py-1.5 text-sm font-semibold text-sky backdrop-blur md:top-2">
+          <h2 className="sticky top-14 z-10 -mx-1 rounded-xl border border-border/30 bg-app/85 px-2.5 py-1.5 text-sm font-semibold text-sky-hi backdrop-blur-md md:top-2">
             {L}
           </h2>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
@@ -130,7 +127,7 @@ export default function ItemsPage() {
               <Link
                 key={item.id}
                 href={`/market?tab=floors&item=${encodeURIComponent(item.id)}`}
-                className="flex flex-col items-center gap-2.5 rounded-3xl border border-border/40 bg-surface/50 p-4 text-center transition-colors hover:border-sky/35 hover:bg-sky/[0.06]"
+                className="card-quiet flex flex-col items-center gap-2.5 rounded-3xl p-4 text-center transition-all hover:-translate-y-0.5 hover:border-sky/40 hover:shadow-[0_10px_28px_color-mix(in_srgb,#000_25%,transparent)]"
               >
                 <ItemIcon
                   itemId={item.id}
@@ -155,7 +152,7 @@ export default function ItemsPage() {
       ))}
 
       {!filtered.length && (
-        <p className="py-12 text-center text-sm text-muted">No items match.</p>
+        <div className="card-quiet empty-state rounded-3xl">No items match.</div>
       )}
 
       <p className="pt-4 text-center text-[11px] text-muted">

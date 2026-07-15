@@ -4,9 +4,9 @@ type Variant = "primary" | "secondary" | "danger" | "ghost" | "forest";
 
 const variants: Record<Variant, string> = {
   primary:
-    "bg-sky text-[#0a121c] hover:bg-sky-hi focus-visible:ring-sky/40 shadow-sm shadow-sky/10",
+    "bg-sky text-ink hover:bg-sky-hi focus-visible:ring-sky/40 shadow-sm shadow-sky/15",
   secondary:
-    "bg-raised/80 text-primary border border-border hover:bg-surface-2 hover:border-sky/30",
+    "bg-raised/80 text-primary border border-border/70 hover:bg-surface-2 hover:border-sky/30",
   forest:
     "bg-forest text-[#04120a] hover:bg-forest-hi focus-visible:ring-forest/40",
   danger: "bg-loss/15 text-loss border border-loss/30 hover:bg-loss/25",

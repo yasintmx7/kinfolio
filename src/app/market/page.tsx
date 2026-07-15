@@ -495,17 +495,14 @@ function MarketHubInner() {
                 void reloadPrice();
               }}
               disabled={hub.refreshing}
-              className="inline-flex min-h-11 items-center gap-2 rounded-2xl border border-sky/25 bg-sky/12 px-3.5 text-sm font-medium text-sky-hi hover:bg-sky/18 disabled:opacity-50"
+              className="inline-flex min-h-11 items-center gap-2 rounded-2xl border border-sky/30 bg-sky/14 px-3.5 text-sm font-semibold text-sky-hi shadow-[0_0_20px_color-mix(in_srgb,var(--sky)_12%,transparent)] transition-colors hover:bg-sky/22 disabled:opacity-50"
             >
               <RefreshCw
                 className={cn("h-4 w-4", hub.refreshing && "animate-spin")}
               />
               <span
                 className={cn(
-                  "h-1.5 w-1.5 rounded-full",
-                  hub.refreshing
-                    ? "animate-pulse bg-sky-hi"
-                    : "bg-forest-hi shadow-[0_0_8px_var(--forest-hi)]",
+                  hub.refreshing ? "live-dot-busy" : "live-dot",
                 )}
               />
               Live
@@ -514,13 +511,9 @@ function MarketHubInner() {
         </div>
 
         {tab === "market" && (
-          <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="relative z-[1] mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
             <HeroStat label="Listings" value={String(hub.sales.length)} />
-            <HeroStat
-              label="Open"
-              value={String(openCount)}
-              tone="sky"
-            />
+            <HeroStat label="Open" value={String(openCount)} tone="sky" />
             <HeroStat
               label="Locked"
               value={String(lockedCount)}
@@ -535,7 +528,7 @@ function MarketHubInner() {
         )}
       </section>
 
-      <div className="inline-flex flex-wrap rounded-2xl border border-border/40 bg-surface/55 p-1 shadow-[inset_0_1px_0_color-mix(in_srgb,#fff_4%,transparent)]">
+      <div className="seg-shell">
         {(
           [
             ["market", "Market"],
@@ -548,14 +541,16 @@ function MarketHubInner() {
             type="button"
             onClick={() => setTab(id)}
             className={cn(
-              "min-h-9 rounded-xl px-3.5 text-sm font-medium transition-colors sm:px-4",
-              tab === id
-                ? "bg-sky text-[#061018] shadow-sm"
-                : "text-muted hover:bg-raised/40 hover:text-primary",
+              "seg-item",
+              tab === id && "seg-item-active",
             )}
           >
             {label}
-            {id === "watch" && watch.length > 0 ? ` ${watch.length}` : ""}
+            {id === "watch" && watch.length > 0 ? (
+              <span className="ml-1 tabular-nums opacity-80">
+                {watch.length}
+              </span>
+            ) : null}
           </button>
         ))}
       </div>
@@ -568,7 +563,7 @@ function MarketHubInner() {
             ? "Search item, seller, reserved…"
             : "Search items…"
         }
-        className="min-h-11 w-full rounded-2xl border border-border/40 bg-surface/65 px-4 text-sm outline-none placeholder:text-muted/50 focus:border-sky/45 focus:bg-surface/80 focus:ring-2 focus:ring-sky/15"
+        className="field"
       />
 
       {tab === "market" && (
@@ -576,7 +571,7 @@ function MarketHubInner() {
           {/* Filters — currency · sort · locked · category */}
           <div className="card-quiet flex flex-col gap-2.5 rounded-2xl p-3">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted/80">
                 Currency
               </span>
               {(
@@ -591,17 +586,15 @@ function MarketHubInner() {
                   type="button"
                   onClick={() => setCurrencyFilter(id)}
                   className={cn(
-                    "min-h-8 rounded-xl px-3 text-[12px] font-medium",
-                    currencyFilter === id
-                      ? "bg-sky text-[#061018]"
-                      : "bg-surface-2 text-muted hover:text-primary",
+                    "chip",
+                    currencyFilter === id && "chip-active",
                   )}
                 >
                   {label}
                 </button>
               ))}
-              <span className="mx-1 hidden h-4 w-px bg-border/60 sm:inline" />
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted">
+              <span className="mx-1 hidden h-4 w-px bg-border/50 sm:inline" />
+              <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted/80">
                 Sort
               </span>
               {(
@@ -616,10 +609,8 @@ function MarketHubInner() {
                   type="button"
                   onClick={() => setSortFilter(id)}
                   className={cn(
-                    "min-h-8 rounded-xl px-3 text-[12px] font-medium",
-                    sortFilter === id
-                      ? "bg-sky text-[#061018]"
-                      : "bg-surface-2 text-muted hover:text-primary",
+                    "chip",
+                    sortFilter === id && "chip-active",
                   )}
                 >
                   {label}
@@ -629,10 +620,8 @@ function MarketHubInner() {
                 type="button"
                 onClick={() => setHideLocked((v) => !v)}
                 className={cn(
-                  "ml-auto inline-flex min-h-8 items-center gap-1.5 rounded-xl px-3 text-[12px] font-medium",
-                  hideLocked
-                    ? "bg-sky/15 text-sky-hi ring-1 ring-sky/30"
-                    : "bg-surface-2 text-muted hover:text-primary",
+                  "chip ml-auto inline-flex items-center gap-1.5",
+                  hideLocked && "chip-soft-active",
                 )}
               >
                 <Lock className="h-3 w-3" />
@@ -642,7 +631,7 @@ function MarketHubInner() {
               </button>
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="mr-1 text-[10px] font-semibold uppercase tracking-wider text-muted">
+              <span className="mr-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted/80">
                 Type
               </span>
               {CATEGORY_CHIPS.map(({ id, label }) => (
@@ -651,10 +640,10 @@ function MarketHubInner() {
                   type="button"
                   onClick={() => setCategoryFilter(id)}
                   className={cn(
-                    "min-h-7 rounded-lg px-2.5 text-[11px] font-medium",
+                    "chip min-h-7 rounded-lg px-2.5 text-[11px]",
                     categoryFilter === id
-                      ? "bg-forest/25 text-forest-hi ring-1 ring-forest/40"
-                      : "text-muted hover:bg-surface-2 hover:text-primary",
+                      ? "chip-forest-active"
+                      : "bg-transparent",
                   )}
                 >
                   {label}
@@ -666,10 +655,13 @@ function MarketHubInner() {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:gap-5">
           {/* BIG listings — full open book */}
           <section className="card-quiet min-w-0 flex-1 overflow-hidden rounded-3xl">
-            <header className="flex shrink-0 items-baseline justify-between gap-2 border-b border-border/30 bg-surface-2/25 px-4 py-3">
-              <h2 className="text-[16px] font-semibold tracking-tight">
-                Listings
-              </h2>
+            <header className="panel-head">
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-sky-hi shadow-[0_0_8px_var(--sky-hi)]" />
+                <h2 className="text-[15px] font-semibold tracking-tight">
+                  Listings
+                </h2>
+              </div>
               <p className="truncate text-[11px] text-muted">
                 {listingRows.length} shown
                 {currencyFilter !== "all" ? ` · ${currencyFilter}` : ""}
@@ -692,17 +684,20 @@ function MarketHubInner() {
 
           {/* SMALL activity — sold only + seller username */}
           <aside className="w-full shrink-0 lg:sticky lg:top-4 lg:w-[20rem]">
-            <section className="card-quiet overflow-hidden rounded-3xl shadow-sm">
-              <header className="border-b border-border/30 px-3.5 py-2.5">
-                <div className="flex items-baseline justify-between gap-2">
-                  <h2 className="text-[14px] font-semibold tracking-tight">
-                    Activity
-                  </h2>
-                  <span className="rounded-full bg-forest/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-forest">
+            <section className="card-quiet overflow-hidden rounded-3xl">
+              <header className="panel-head flex-col !items-stretch gap-1">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full bg-forest-hi shadow-[0_0_8px_var(--forest-hi)]" />
+                    <h2 className="text-[14px] font-semibold tracking-tight">
+                      Activity
+                    </h2>
+                  </div>
+                  <span className="rounded-full bg-forest/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-forest-hi">
                     Sold
                   </span>
                 </div>
-                <p className="mt-0.5 text-[11px] text-muted">
+                <p className="text-[11px] text-muted">
                   {soldRows.length
                     ? `${soldRows.length} completed sales`
                     : "Loading completed sales…"}
@@ -791,7 +786,7 @@ function SoldActivityCard({
 }) {
   if (!rows.length) {
     return (
-      <div className="px-4 py-10 text-center text-[12px] leading-relaxed text-muted">
+      <div className="empty-state text-[12px] leading-relaxed">
         No completed sales loaded yet.
         <br />
         Activity shows real sales (not cancels or delists).
@@ -800,14 +795,14 @@ function SoldActivityCard({
   }
 
   return (
-    <div className="max-h-[min(42dvh,22rem)] divide-y divide-border/25 overflow-y-auto lg:max-h-[calc(100dvh-14rem)]">
+    <div className="max-h-[min(42dvh,22rem)] divide-y divide-border/20 overflow-y-auto lg:max-h-[calc(100dvh-14rem)]">
       {rows.map((r) => {
         const seller = sellerDisplay(r);
         const buyer = buyerLabel(r);
         return (
           <div
             key={`${r.id}-${r.timestamp}`}
-            className="list-row-cv flex items-start gap-2.5 px-3 py-2.5"
+            className="list-row-cv row-hover flex items-start gap-2.5 px-3 py-2.5"
           >
             <button
               type="button"
@@ -882,6 +877,7 @@ function PriceBlock({
   compact?: boolean;
 }) {
   const { lotLabel, per1kLabel, goldLabel } = priceOf(row);
+  const isGold = (row.currency ?? "token") === "gold";
 
   return (
     <div
@@ -892,7 +888,8 @@ function PriceBlock({
     >
       <div
         className={cn(
-          "font-mono font-bold tabular-nums leading-tight text-sky-hi",
+          "font-mono font-bold tabular-nums leading-tight",
+          isGold ? "text-gold-hi" : "text-sky-hi",
           compact ? "text-[15px] sm:text-[16px]" : "text-[17px]",
           locked && "opacity-60",
         )}
@@ -910,7 +907,7 @@ function PriceBlock({
           <span className="text-[10px]">/1k</span>
         </div>
       ) : goldLabel ? (
-        <div className="font-mono text-[11px] tabular-nums text-muted">
+        <div className="font-mono text-[11px] tabular-nums text-gold/90">
           {goldLabel}
         </div>
       ) : null}
@@ -948,19 +945,19 @@ const ListingRow = memo(function ListingRow({
   return (
     <div
       className={cn(
-        "list-row-cv grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 px-2.5 py-2.5 sm:gap-3 sm:px-3 sm:py-3",
-        locked && mode === "listings" && "bg-amber-500/[0.06]",
+        "list-row-cv grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 px-2.5 py-2.5 sm:gap-3 sm:px-3.5 sm:py-3",
+        locked && mode === "listings" ? "row-locked" : "row-hover",
       )}
     >
       <button
         type="button"
         onClick={() => onOpenItem(r.itemType)}
-        className="relative shrink-0 rounded-2xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky"
+        className="relative shrink-0 rounded-2xl ring-offset-2 ring-offset-app transition-transform hover:scale-[1.03] focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky"
         aria-label={`Open ${r.name}`}
       >
         <ItemIcon itemId={r.itemType} name={r.name} size={iconSize} clear />
         {mode === "listings" && locked && (
-          <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-amber-500 text-[#0a121c] shadow">
+          <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-amber-400 text-ink shadow-md shadow-amber-500/30">
             <Lock className="h-3 w-3" strokeWidth={2.5} />
           </span>
         )}
@@ -1045,11 +1042,17 @@ const ListingRow = memo(function ListingRow({
         <button
           type="button"
           onClick={() => onWatch(r.itemType)}
-          className="rounded-lg p-1.5 text-muted hover:bg-raised hover:text-sky"
+          className={cn(
+            "rounded-xl p-1.5 text-muted transition-colors hover:bg-raised hover:text-sky-hi",
+            watching && "bg-sky/10 text-sky-hi",
+          )}
           aria-label="Watch"
         >
           <Star
-            className={cn("h-3.5 w-3.5", watching && "fill-sky text-sky")}
+            className={cn(
+              "h-3.5 w-3.5",
+              watching && "fill-sky-hi text-sky-hi",
+            )}
           />
         </button>
       </div>
@@ -1078,8 +1081,8 @@ function ListingList({
 }) {
   if (!rows.length) {
     return (
-      <div className="px-6 py-14 text-center text-sm text-muted">
-        {mode === "listings" ? "No listings…" : "Waiting for activity…"}
+      <div className="empty-state">
+        {mode === "listings" ? "No listings match filters…" : "Waiting for activity…"}
       </div>
     );
   }
@@ -1087,7 +1090,7 @@ function ListingList({
   return (
     <div
       className={cn(
-        "divide-y divide-border/25 overflow-y-auto",
+        "divide-y divide-border/20 overflow-y-auto",
         tall
           ? "max-h-[min(78dvh,52rem)] lg:max-h-[calc(100dvh-13rem)]"
           : compact
@@ -1125,23 +1128,19 @@ function FloorList({
   empty: string;
 }) {
   if (!rows.length) {
-    return (
-      <div className="rounded-3xl border border-border/40 bg-surface/40 px-6 py-16 text-center text-sm text-muted">
-        {empty}
-      </div>
-    );
+    return <div className="card-quiet empty-state rounded-3xl">{empty}</div>;
   }
 
   return (
     <div className="card-quiet overflow-hidden rounded-3xl">
-      <div className="max-h-[calc(100dvh-15rem)] divide-y divide-border/25 overflow-y-auto">
+      <div className="max-h-[calc(100dvh-15rem)] divide-y divide-border/20 overflow-y-auto">
         {rows.map((row) => {
           const qtyLabel =
             row.totalQty != null ? formatQtyCompact(row.totalQty) : null;
           return (
             <div
               key={row.id}
-              className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-3 px-4 py-3.5 hover:bg-sky/[0.04]"
+              className="row-hover grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-3 px-4 py-3.5"
             >
               <button
                 type="button"
@@ -1721,12 +1720,12 @@ function DetailSheet({
     <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center sm:justify-end">
       <button
         type="button"
-        className="absolute inset-0 bg-black/55"
+        className="absolute inset-0 bg-black/60 backdrop-blur-[2px]"
         aria-label="Close"
         onClick={onClose}
       />
-      <div className="relative z-10 flex max-h-[88dvh] w-full max-w-md flex-col rounded-t-3xl border border-border bg-surface shadow-2xl sm:mr-4 sm:max-h-[90dvh] sm:rounded-3xl">
-        <div className="flex items-start gap-3 border-b border-border/40 p-5">
+      <div className="card-quiet relative z-10 flex max-h-[88dvh] w-full max-w-md flex-col rounded-t-3xl border-border/60 shadow-2xl sm:mr-4 sm:max-h-[90dvh] sm:rounded-3xl">
+        <div className="flex items-start gap-3 border-b border-border/35 bg-surface-2/30 p-5">
           {mode === "item" && itemId ? (
             <ItemIcon itemId={itemId} name={displayName} size={64} clear />
           ) : (
@@ -1963,7 +1962,7 @@ function DetailSheet({
               onClick={onWatch}
               className={cn(
                 "flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl text-sm font-semibold",
-                watching ? "bg-sky/15 text-sky-hi" : "bg-sky text-[#061018]",
+                watching ? "bg-sky/15 text-sky-hi" : "bg-sky text-ink",
               )}
             >
               <Star className={cn("h-4 w-4", watching && "fill-sky")} />
@@ -1986,13 +1985,13 @@ function HeroStat({
   tone?: "sky" | "forest" | "amber";
 }) {
   return (
-    <div className="rounded-2xl border border-border/35 bg-app/35 px-3 py-2.5 backdrop-blur-sm">
-      <p className="text-[10px] font-medium uppercase tracking-wider text-muted">
+    <div className="rounded-2xl border border-border/40 bg-app/45 px-3 py-2.5 shadow-[inset_0_1px_0_color-mix(in_srgb,#fff_4%,transparent)] backdrop-blur-sm">
+      <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted/90">
         {label}
       </p>
       <p
         className={cn(
-          "mt-0.5 font-mono text-[1.15rem] font-bold tabular-nums",
+          "mt-0.5 font-mono text-[1.2rem] font-bold tabular-nums tracking-tight",
           tone === "forest" && "text-forest-hi",
           tone === "amber" && "text-amber-200",
           tone === "sky" && "text-sky-hi",

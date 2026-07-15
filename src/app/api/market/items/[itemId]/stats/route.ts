@@ -1,14 +1,71 @@
 import { fail, ok } from "@/lib/api/response";
-import { portfolioIdToMarketType } from "@/lib/kintara/item-type-map";
+import {
+  portfolioIdToMarketType,
+  humanizeItemType,
+} from "@/lib/kintara/item-type-map";
 import { STATIC_CATALOG } from "@/data/static-catalog";
 import {
   fetchOfficialItemStats,
-  fetchOfficialListingsForItem,
+  fetchOfficialListings,
+  type OfficialListing,
 } from "@/lib/kintara/official-marketplace";
 import { resolveKinsUsd } from "@/lib/prices/resolve-kins-usd";
-import { d } from "@/lib/accounting/decimal";
+import { normalizeListingPrice } from "@/lib/market/listing-price";
 
 export const runtime = "nodejs";
+
+/** Accept portfolio id (wood) or market type (cooked_fish_meat). */
+function toMarketType(itemId: string): string {
+  const dashed = itemId.replace(/_/g, "-");
+  const inCatalog = STATIC_CATALOG.some(
+    (i) => i.id === itemId || i.id === dashed || i.slug === itemId,
+  );
+  if (inCatalog) return portfolioIdToMarketType(itemId, STATIC_CATALOG);
+  return itemId.replace(/-/g, "_");
+}
+
+async function collectItemListings(
+  marketType: string,
+): Promise<OfficialListing[]> {
+  const want = marketType.toLowerCase();
+  const collected: OfficialListing[] = [];
+  const seen = new Set<string>();
+  const pageSize = 100;
+  const pages = 8;
+
+  for (const currency of ["token", "gold"] as const) {
+    for (let p = 0; p < pages; p++) {
+      const batch = await fetchOfficialListings({
+        sort: "cheap",
+        currency,
+        category: "all",
+        limit: pageSize,
+        offset: p * pageSize,
+      });
+      for (const row of batch) {
+        if (row.itemType.toLowerCase() !== want) continue;
+        const id = String(row.id);
+        if (seen.has(id)) continue;
+        seen.add(id);
+        collected.push(row);
+      }
+      if (batch.length < pageSize) break;
+    }
+  }
+
+  // Open first, then cheapest unit USD (gold last)
+  collected.sort((a, b) => {
+    const la = a.isReserved ? 1 : 0;
+    const lb = b.isReserved ? 1 : 0;
+    if (la !== lb) return la - lb;
+    const ua = a.unitUsd ?? Number.POSITIVE_INFINITY;
+    const ub = b.unitUsd ?? Number.POSITIVE_INFINITY;
+    if (ua !== ub) return ua - ub;
+    return (a.priceGold ?? 0) - (b.priceGold ?? 0);
+  });
+
+  return collected;
+}
 
 export async function GET(
   _request: Request,
@@ -19,60 +76,111 @@ export async function GET(
     return fail("INVALID_ITEM", "Invalid item id", { status: 400 });
   }
 
-  const marketType = portfolioIdToMarketType(itemId, STATIC_CATALOG);
+  const marketType = toMarketType(itemId);
 
   try {
     const rate = await resolveKinsUsd();
     const kinsUsd = rate?.kinsUsd;
 
+    // Stats without kins conversion so avg30d stays in USD
     const [official, listings] = await Promise.all([
-      fetchOfficialItemStats(marketType, kinsUsd).catch(() => null),
-      fetchOfficialListingsForItem(marketType, {
-        pages: 3,
-        kinsUsd,
-      }).catch(() => [] as Awaited<ReturnType<typeof fetchOfficialListingsForItem>>),
+      fetchOfficialItemStats(marketType).catch(() => null),
+      collectItemListings(marketType).catch(() => [] as OfficialListing[]),
     ]);
 
-    const units = listings
-      .map((l) => d(l.unitPriceKins))
-      .filter((v) => v.gt(0))
-      .sort((a, b) => a.cmp(b));
-    const lowest = units[0]?.toFixed();
-    const cheapest3 = units.slice(0, 3);
-    const medianCheapest3 =
-      cheapest3.length === 0
-        ? undefined
-        : cheapest3.length === 1
-          ? cheapest3[0].toFixed()
-          : cheapest3.length === 2
-            ? cheapest3[0].plus(cheapest3[1]).div(2).toFixed()
-            : cheapest3[1].toFixed();
+    const open = listings.filter((l) => !l.isReserved);
+    const unitUsds = open
+      .map((l) => l.unitUsd)
+      .filter((v): v is number => v != null && Number.isFinite(v) && v > 0)
+      .sort((a, b) => a - b);
+
+    const floorUsd = unitUsds[0] ?? null;
+    const medianUsd =
+      unitUsds.length === 0
+        ? null
+        : unitUsds.length % 2 === 1
+          ? unitUsds[Math.floor(unitUsds.length / 2)]!
+          : (unitUsds[unitUsds.length / 2 - 1]! +
+              unitUsds[unitUsds.length / 2]!) /
+            2;
+
+    // official.avg30dKins is USD/unit when kinsUsd was not passed
+    const avg30dUsd = official?.avg30dKins
+      ? Number(official.avg30dKins)
+      : null;
+    const avg30dKins =
+      avg30dUsd != null && kinsUsd && kinsUsd > 0
+        ? String(avg30dUsd / kinsUsd)
+        : null;
+
+    const samples = (official?.samples ?? []).map((s) => {
+      // samples unitPriceKins is USD/unit without conversion
+      const unitUsd = Number(s.unitPriceKins);
+      return {
+        date: (s.timestamp ?? "").slice(0, 10),
+        unitUsd: Number.isFinite(unitUsd) ? String(unitUsd) : null,
+        sales: s.saleCount ?? null,
+      };
+    });
 
     return ok(
       {
         itemId,
         marketType,
-        currency: "token" as const,
-        avg30dKins: official?.avg30dKins,
-        lowestActiveKins: lowest,
-        medianCheapest3Kins: medianCheapest3,
-        sales30d: official?.sales30d,
-        samples: official?.samples ?? [],
+        name: humanizeItemType(marketType),
+        kinsUsd: kinsUsd != null ? String(kinsUsd) : null,
+        floorUsd: floorUsd != null ? String(floorUsd) : null,
+        floorPer1kUsd:
+          floorUsd != null ? String(floorUsd * 1000) : null,
+        medianUsd: medianUsd != null ? String(medianUsd) : null,
+        avg30dUsd:
+          avg30dUsd != null && Number.isFinite(avg30dUsd)
+            ? String(avg30dUsd)
+            : null,
+        avg30dKins,
+        sales30d: official?.sales30d ?? null,
+        openCount: open.length,
+        lockedCount: listings.length - open.length,
+        samples,
+        listings: listings.map((l) => {
+          const priced = normalizeListingPrice({
+            quantity: l.quantity,
+            priceUsd: l.priceUsd,
+            unitUsd: l.unitUsd,
+            priceGold: l.priceGold,
+            currency: l.currency,
+          });
+          return {
+            id: String(l.id),
+            quantity: String(priced.quantity),
+            unitUsd:
+              priced.unitUsd != null ? String(priced.unitUsd) : null,
+            usdTotal:
+              priced.lotUsd != null ? String(priced.lotUsd) : null,
+            priceGold:
+              priced.priceGold != null ? String(priced.priceGold) : null,
+            currency: l.currency ?? "token",
+            sellerName: l.sellerName ?? null,
+            sellerId: l.sellerId != null ? String(l.sellerId) : null,
+            reserved: l.isReserved,
+            reservedUntilMs:
+              typeof l.reservedUntilMs === "number"
+                ? l.reservedUntilMs
+                : null,
+            buyerId:
+              l.reservedBy != null ? String(l.reservedBy as string | number) : null,
+            timestamp: l.createdAt ?? null,
+          };
+        }),
         updatedAt: new Date().toISOString(),
         configured: true,
-        sources: {
-          officialStats: official
-            ? "kintara.com/api/marketplace/stats"
-            : null,
-          listings: "kintara.com/api/marketplace/listings",
-          rate: rate?.source ?? null,
-        },
         note:
-          "Official marketplace stats and listings only. Estimates, not guaranteed sales.",
+          "Floor from active cheap listings. 30d avg/sales from official stats.",
       },
       {
         source: "kintara.com",
         updatedAt: new Date().toISOString(),
+        cacheControl: "public, s-maxage=25, stale-while-revalidate=50",
       },
     );
   } catch (e) {

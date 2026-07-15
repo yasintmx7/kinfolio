@@ -121,27 +121,42 @@ export async function fetchOfficialListings(params?: {
 /** Client-side filter (itemType query is not reliable on the public endpoint). */
 export async function fetchOfficialListingsForItem(
   itemType: string,
-  options?: { pages?: number; limit?: number; kinsUsd?: number },
+  options?: {
+    pages?: number;
+    limit?: number;
+    kinsUsd?: number;
+    includeReserved?: boolean;
+    includeGold?: boolean;
+  },
 ): Promise<MarketplaceListing[]> {
-  const pages = options?.pages ?? 4;
-  const limit = options?.limit ?? 60;
+  const pages = Math.min(Math.max(options?.pages ?? 6, 1), 12);
+  const limit = Math.min(Math.max(options?.limit ?? 100, 1), 100);
   const want = itemType.toLowerCase();
   const collected: OfficialListing[] = [];
+  const seen = new Set<string>();
+  const currencies: Array<"token" | "gold"> = options?.includeGold
+    ? ["token", "gold"]
+    : ["token"];
 
-  for (let p = 0; p < pages; p++) {
-    const batch = await fetchOfficialListings({
-      sort: "cheap",
-      currency: "token",
-      category: "all",
-      limit,
-      offset: p * limit,
-    });
-    for (const row of batch) {
-      if (row.itemType.toLowerCase() === want && !row.isReserved) {
+  for (const currency of currencies) {
+    for (let p = 0; p < pages; p++) {
+      const batch = await fetchOfficialListings({
+        sort: "cheap",
+        currency,
+        category: "all",
+        limit,
+        offset: p * limit,
+      });
+      for (const row of batch) {
+        if (row.itemType.toLowerCase() !== want) continue;
+        if (!options?.includeReserved && row.isReserved) continue;
+        const id = String(row.id);
+        if (seen.has(id)) continue;
+        seen.add(id);
         collected.push(row);
       }
+      if (batch.length < limit) break;
     }
-    if (batch.length < limit) break;
   }
 
   const kinsUsd = options?.kinsUsd;
@@ -160,6 +175,7 @@ export async function fetchOfficialListingsForItem(
         id: String(r.id),
         itemId: r.itemType,
         quantity: String(qty),
+        // Prefer USD strings when no kins conversion (UI uses as unit/lot USD)
         totalPriceKins: totalKins ?? String(r.priceUsd ?? 0),
         unitPriceKins: unitKins ?? String(r.unitUsd ?? 0),
         seller: r.sellerName,

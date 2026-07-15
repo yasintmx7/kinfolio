@@ -12,7 +12,11 @@ import {
 } from "@/hooks/use-market-hub";
 import { useKinsPrice } from "@/hooks/use-kins-price";
 import { useToast } from "@/components/feedback/toast";
-import { formatQtyCompact, formatUsdShort } from "@/lib/formatting/money";
+import {
+  formatQtyCompact,
+  formatUsdPer1k,
+  formatUsdShort,
+} from "@/lib/formatting/money";
 import {
   formatUsdMarket,
   listingPriceLabels,
@@ -706,10 +710,11 @@ function MarketHubInner() {
           subtitle={
             selectedFloor?.lowestUsdPerUnit
               ? `Floor ${formatUsdShort(selectedFloor.lowestUsdPerUnit)}/u`
-              : "Item listings in feed"
+              : "Loading item detail…"
           }
           itemId={itemFocus}
           rows={selected}
+          soldRows={(hub.sold ?? []).filter((s) => s.itemType === itemFocus)}
           watching={watch.includes(itemFocus)}
           onClose={closeSheet}
           onWatch={() => onWatch(itemFocus)}
@@ -1169,11 +1174,182 @@ function FloorList({
   );
 }
 
+type ItemStatsListing = {
+  id: string;
+  quantity: string;
+  unitUsd: string | null;
+  usdTotal: string | null;
+  priceGold: string | null;
+  currency: string;
+  sellerName: string | null;
+  sellerId: string | null;
+  reserved: boolean;
+  reservedUntilMs: number | null;
+  buyerId: string | null;
+  timestamp: string | null;
+};
+
+type ItemStatsSample = {
+  date: string;
+  unitUsd: string | null;
+  sales: number | null;
+};
+
+type ItemStatsPayload = {
+  itemId: string;
+  marketType: string;
+  name: string;
+  floorUsd: string | null;
+  floorPer1kUsd: string | null;
+  medianUsd: string | null;
+  avg30dUsd: string | null;
+  sales30d: number | null;
+  openCount: number;
+  lockedCount: number;
+  samples: ItemStatsSample[];
+  listings: ItemStatsListing[];
+};
+
+function statsListingToSale(
+  l: ItemStatsListing,
+  itemId: string,
+  name: string,
+): RecentSale {
+  return {
+    id: l.id,
+    listingId: l.id,
+    name,
+    itemType: itemId,
+    quantity: l.quantity,
+    unitKins: "0",
+    unitUsd: l.unitUsd,
+    usdTotal: l.usdTotal,
+    priceGold: l.priceGold,
+    currency: l.currency ?? "token",
+    timestamp: l.timestamp ?? new Date().toISOString(),
+    solscanUrl: null,
+    sellerName: l.sellerName,
+    seller: l.sellerName,
+    sellerId: l.sellerId,
+    buyerId: l.buyerId,
+    reserved: l.reserved,
+    reservedUntilMs: l.reservedUntilMs,
+    isSold: false,
+  };
+}
+
+function SheetListingRow({
+  s,
+  title,
+  mode,
+  showLock,
+  onOpenSeller,
+  onOpenItem,
+}: {
+  s: RecentSale;
+  title: string;
+  mode: "item" | "seller";
+  showLock?: boolean;
+  onOpenSeller?: (row: RecentSale) => void;
+  onOpenItem?: (id: string) => void;
+}) {
+  const locked = showLock && isLocked(s);
+  const sold = Boolean(s.isSold);
+  return (
+    <div
+      className={cn(
+        "flex items-center justify-between gap-3 rounded-2xl px-3.5 py-3",
+        sold
+          ? "bg-forest/10"
+          : locked
+            ? "bg-amber-500/10"
+            : "bg-surface-2/60",
+      )}
+    >
+      <div className="min-w-0 flex-1">
+        {mode === "seller" ? (
+          <button
+            type="button"
+            onClick={() => onOpenItem?.(s.itemType)}
+            className="flex items-center gap-2 text-left text-[15px] font-semibold hover:text-sky-hi"
+          >
+            <ItemIcon itemId={s.itemType} name={s.name} size={36} clear />
+            <span>
+              <span className="font-mono tabular-nums text-sky-hi">
+                {formatQtyCompact(s.quantity)}
+              </span>{" "}
+              {s.name}
+            </span>
+          </button>
+        ) : (
+          <div className="text-[15px] font-semibold">
+            <span className="font-mono tabular-nums text-sky-hi">
+              {formatQtyCompact(s.quantity)}
+            </span>{" "}
+            {title}
+          </div>
+        )}
+        {sold && (
+          <div className="mt-0.5 text-[11px] font-semibold text-forest-hi">
+            Sold
+            {buyerLabel(s) ? (
+              <span className="font-medium text-sky-hi">
+                {" · buyer "}
+                {buyerLabel(s)}
+              </span>
+            ) : null}
+          </div>
+        )}
+        {locked && !sold && (
+          <div className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-semibold text-amber-200">
+            <Lock className="h-3 w-3" />
+            {lockLabel(s)}
+          </div>
+        )}
+        <div className="mt-0.5 truncate text-[12px] text-muted">
+          {mode === "item" && !sold ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onOpenSeller?.(s);
+              }}
+              className="inline-flex min-h-8 items-center gap-1.5 rounded-lg font-medium text-sky-hi underline decoration-sky/40 underline-offset-2 hover:bg-sky/10"
+            >
+              <SellerAvatar
+                sellerId={s.sellerId}
+                sellerName={s.sellerName ?? s.seller}
+                size={20}
+              />
+              {s.sellerName ?? s.seller ?? "—"}
+              {s.sellerId != null ? ` · #${s.sellerId}` : ""}
+            </button>
+          ) : (
+            <span>
+              {mode === "item" && (s.sellerName || s.seller) ? (
+                <>
+                  {s.sellerName ?? s.seller}
+                  {s.sellerId != null ? ` · #${s.sellerId}` : ""}
+                  {" · "}
+                </>
+              ) : null}
+              {new Date(s.timestamp).toLocaleString()}
+            </span>
+          )}
+        </div>
+      </div>
+      <PriceBlock row={s} locked={locked && !sold} />
+    </div>
+  );
+}
+
 function DetailSheet({
   title,
   subtitle,
   itemId,
   rows,
+  soldRows,
   watching,
   onClose,
   onWatch,
@@ -1188,6 +1364,7 @@ function DetailSheet({
   subtitle: string;
   itemId?: string;
   rows: RecentSale[];
+  soldRows?: RecentSale[];
   watching: boolean;
   onClose: () => void;
   onWatch?: () => void;
@@ -1198,8 +1375,85 @@ function DetailSheet({
   sellerId?: string | null;
   sellerName?: string | null;
 }) {
-  const openCount = rows.filter((r) => !r.isSold).length;
-  const soldCount = rows.filter((r) => r.isSold).length;
+  const [stats, setStats] = useState<ItemStatsPayload | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [statsError, setStatsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (mode !== "item" || !itemId) {
+      setStats(null);
+      setStatsError(null);
+      return;
+    }
+    let cancelled = false;
+    setStatsLoading(true);
+    setStatsError(null);
+    fetch(`/api/market/items/${encodeURIComponent(itemId)}/stats`)
+      .then(async (res) => {
+        const body = (await res.json()) as {
+          ok?: boolean;
+          data?: ItemStatsPayload;
+          error?: { message?: string };
+        };
+        if (!res.ok || !body.ok || !body.data) {
+          throw new Error(body.error?.message ?? "Failed to load stats");
+        }
+        return body.data;
+      })
+      .then((data) => {
+        if (!cancelled) setStats(data);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setStats(null);
+          setStatsError(e instanceof Error ? e.message : "Failed to load");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setStatsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, itemId]);
+
+  const displayName = stats?.name ?? title;
+
+  // Prefer full official item listings; fall back to hub feed slice
+  const openListings = useMemo(() => {
+    if (mode === "item" && stats?.listings?.length) {
+      return stats.listings.map((l) =>
+        statsListingToSale(l, itemId ?? stats.itemId, displayName),
+      );
+    }
+    return rows.filter((r) => !r.isSold);
+  }, [mode, stats, rows, itemId, displayName]);
+
+  const recentSold = useMemo(() => {
+    if (mode !== "item") return rows.filter((r) => r.isSold);
+    const fromHub = soldRows ?? [];
+    return [...fromHub].sort(
+      (a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp),
+    );
+  }, [mode, rows, soldRows]);
+
+  const openCount =
+    mode === "item" && stats
+      ? stats.openCount
+      : openListings.filter((r) => !isLocked(r)).length;
+  const lockedCount =
+    mode === "item" && stats
+      ? stats.lockedCount
+      : openListings.filter(isLocked).length;
+  const soldCount =
+    mode === "seller"
+      ? rows.filter((r) => r.isSold).length
+      : recentSold.length;
+
+  const liveSubtitle =
+    mode === "item" && stats?.floorUsd
+      ? `Floor ${formatUsdShort(stats.floorUsd)}/u · ${formatUsdPer1k(stats.floorUsd)}/1k`
+      : subtitle;
 
   return (
     <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center sm:justify-end">
@@ -1212,7 +1466,7 @@ function DetailSheet({
       <div className="relative z-10 flex max-h-[88dvh] w-full max-w-md flex-col rounded-t-3xl border border-border bg-surface shadow-2xl sm:mr-4 sm:max-h-[90dvh] sm:rounded-3xl">
         <div className="flex items-start gap-3 border-b border-border/40 p-5">
           {mode === "item" && itemId ? (
-            <ItemIcon itemId={itemId} name={title} size={64} clear />
+            <ItemIcon itemId={itemId} name={displayName} size={64} clear />
           ) : (
             <SellerAvatar
               sellerId={sellerId}
@@ -1222,8 +1476,8 @@ function DetailSheet({
             />
           )}
           <div className="min-w-0 flex-1">
-            <h2 className="text-lg font-semibold">{title}</h2>
-            <p className="text-sm text-muted">{subtitle}</p>
+            <h2 className="text-lg font-semibold">{displayName}</h2>
+            <p className="text-sm text-muted">{liveSubtitle}</p>
             {mode === "seller" && (
               <p className="mt-1 text-[11px] text-muted">
                 <span className="text-sky-hi">{openCount} open</span>
@@ -1231,6 +1485,23 @@ function DetailSheet({
                   <>
                     {" · "}
                     <span className="text-forest-hi">{soldCount} sold</span>
+                  </>
+                ) : null}
+              </p>
+            )}
+            {mode === "item" && (
+              <p className="mt-1 text-[11px] text-muted">
+                <span className="text-sky-hi">{openCount} open</span>
+                {lockedCount > 0 ? (
+                  <>
+                    {" · "}
+                    <span className="text-amber-200">{lockedCount} locked</span>
+                  </>
+                ) : null}
+                {soldCount > 0 ? (
+                  <>
+                    {" · "}
+                    <span className="text-forest-hi">{soldCount} recent sold</span>
                   </>
                 ) : null}
               </p>
@@ -1246,102 +1517,166 @@ function DetailSheet({
         </div>
 
         <div className="flex-1 overflow-y-auto p-4">
-          <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted">
-            {mode === "seller" ? "Seller inventory" : "Listings"} · {rows.length}
-          </p>
-          <div className="space-y-2">
-            {rows.length === 0 && (
-              <p className="text-sm text-muted">None in current feed.</p>
-            )}
-            {rows.map((s) => {
-              const locked = showLock && isLocked(s);
-              const sold = Boolean(s.isSold);
-              return (
-                <div
-                  key={`${s.id}-${s.isSold ? "sold" : "open"}`}
-                  className={cn(
-                    "flex items-center justify-between gap-3 rounded-2xl px-3.5 py-3",
-                    sold
-                      ? "bg-forest/10"
-                      : locked
-                        ? "bg-amber-500/10"
-                        : "bg-surface-2/60",
-                  )}
-                >
-                  <div className="min-w-0 flex-1">
-                    {mode === "seller" ? (
-                      <button
-                        type="button"
-                        onClick={() => onOpenItem?.(s.itemType)}
-                        className="flex items-center gap-2 text-left text-[15px] font-semibold hover:text-sky-hi"
-                      >
-                        <ItemIcon
-                          itemId={s.itemType}
-                          name={s.name}
-                          size={36}
-                          clear
-                        />
-                        <span>
-                          <span className="font-mono tabular-nums text-sky-hi">
-                            {formatQtyCompact(s.quantity)}
-                          </span>{" "}
-                          {s.name}
-                        </span>
-                      </button>
-                    ) : (
-                      <div className="text-[15px] font-semibold">
-                        <span className="font-mono tabular-nums text-sky-hi">
-                          {formatQtyCompact(s.quantity)}
-                        </span>{" "}
-                        {title}
-                      </div>
-                    )}
-                    {sold && (
-                      <div className="mt-0.5 text-[11px] font-semibold text-forest-hi">
-                        Sold
-                        {buyerLabel(s) ? (
-                          <span className="font-medium text-sky-hi">
-                            {" · buyer "}
-                            {buyerLabel(s)}
-                          </span>
-                        ) : null}
-                      </div>
-                    )}
-                    {locked && !sold && (
-                      <div className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-semibold text-amber-200">
-                        <Lock className="h-3 w-3" />
-                        {lockLabel(s)}
-                      </div>
-                    )}
-                    <div className="mt-0.5 truncate text-[12px] text-muted">
-                      {mode === "item" ? (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            onOpenSeller?.(s);
-                          }}
-                          className="inline-flex min-h-8 items-center gap-1.5 rounded-lg font-medium text-sky-hi underline decoration-sky/40 underline-offset-2 hover:bg-sky/10"
-                        >
-                          <SellerAvatar
-                            sellerId={s.sellerId}
-                            sellerName={s.sellerName ?? s.seller}
-                            size={20}
-                          />
-                          {s.sellerName ?? s.seller ?? "—"}
-                          {s.sellerId != null ? ` · #${s.sellerId}` : ""}
-                        </button>
-                      ) : (
-                        <span>{new Date(s.timestamp).toLocaleString()}</span>
-                      )}
-                    </div>
+          {mode === "item" && (
+            <div className="mb-4 space-y-3">
+              {statsLoading && !stats && (
+                <p className="text-sm text-muted">Loading floor & 30d stats…</p>
+              )}
+              {statsError && !stats && (
+                <p className="text-sm text-loss">{statsError}</p>
+              )}
+              {stats && (
+                <>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    <StatChip
+                      label="Floor"
+                      value={
+                        stats.floorUsd
+                          ? formatUsdShort(stats.floorUsd)
+                          : "—"
+                      }
+                      hint={
+                        stats.floorUsd
+                          ? `${formatUsdPer1k(stats.floorUsd)}/1k`
+                          : undefined
+                      }
+                    />
+                    <StatChip
+                      label="Median"
+                      value={
+                        stats.medianUsd
+                          ? formatUsdShort(stats.medianUsd)
+                          : "—"
+                      }
+                      hint={
+                        stats.medianUsd
+                          ? `${formatUsdPer1k(stats.medianUsd)}/1k`
+                          : undefined
+                      }
+                    />
+                    <StatChip
+                      label="30d avg"
+                      value={
+                        stats.avg30dUsd
+                          ? formatUsdShort(stats.avg30dUsd)
+                          : "—"
+                      }
+                      hint={
+                        stats.avg30dUsd
+                          ? `${formatUsdPer1k(stats.avg30dUsd)}/1k`
+                          : undefined
+                      }
+                    />
+                    <StatChip
+                      label="30d sales"
+                      value={
+                        stats.sales30d != null
+                          ? String(stats.sales30d)
+                          : "—"
+                      }
+                    />
                   </div>
-                  <PriceBlock row={s} locked={locked && !sold} />
+                  {stats.samples.length > 0 && (
+                    <div>
+                      <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-muted">
+                        Recent samples
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {stats.samples.slice(0, 8).map((s, i) => (
+                          <span
+                            key={`${s.date}-${i}`}
+                            className="rounded-lg bg-surface-2/80 px-2 py-1 font-mono text-[11px] tabular-nums text-muted"
+                          >
+                            {s.date.slice(5)}{" "}
+                            <span className="text-sky-hi">
+                              {s.unitUsd
+                                ? formatUsdShort(s.unitUsd)
+                                : "—"}
+                            </span>
+                            {s.sales != null ? (
+                              <span className="text-muted"> ·×{s.sales}</span>
+                            ) : null}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {mode === "seller" ? (
+            <>
+              <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted">
+                Seller inventory · {rows.length}
+              </p>
+              <div className="space-y-2">
+                {rows.length === 0 && (
+                  <p className="text-sm text-muted">None in current feed.</p>
+                )}
+                {rows.map((s) => (
+                  <SheetListingRow
+                    key={`${s.id}-${s.isSold ? "sold" : "open"}`}
+                    s={s}
+                    title={title}
+                    mode="seller"
+                    showLock={showLock}
+                    onOpenSeller={onOpenSeller}
+                    onOpenItem={onOpenItem}
+                  />
+                ))}
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted">
+                Open listings · {openListings.length}
+                {statsLoading && stats ? " · refreshing…" : ""}
+              </p>
+              <div className="space-y-2">
+                {openListings.length === 0 && (
+                  <p className="text-sm text-muted">
+                    {statsLoading
+                      ? "Loading listings…"
+                      : "No open listings for this item."}
+                  </p>
+                )}
+                {openListings.map((s) => (
+                  <SheetListingRow
+                    key={`${s.id}-open`}
+                    s={s}
+                    title={displayName}
+                    mode="item"
+                    showLock={showLock}
+                    onOpenSeller={onOpenSeller}
+                    onOpenItem={onOpenItem}
+                  />
+                ))}
+              </div>
+
+              {recentSold.length > 0 && (
+                <div className="mt-5">
+                  <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted">
+                    Recent sold · {recentSold.length}
+                  </p>
+                  <div className="space-y-2">
+                    {recentSold.map((s) => (
+                      <SheetListingRow
+                        key={`${s.id}-sold`}
+                        s={{ ...s, isSold: true }}
+                        title={displayName}
+                        mode="item"
+                        showLock={false}
+                        onOpenSeller={onOpenSeller}
+                        onOpenItem={onOpenItem}
+                      />
+                    ))}
+                  </div>
                 </div>
-              );
-            })}
-          </div>
+              )}
+            </>
+          )}
         </div>
 
         {mode === "item" && onWatch && (
@@ -1360,6 +1695,30 @@ function DetailSheet({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function StatChip({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+}) {
+  return (
+    <div className="rounded-2xl bg-surface-2/70 px-3 py-2.5">
+      <p className="text-[10px] font-medium uppercase tracking-wider text-muted">
+        {label}
+      </p>
+      <p className="mt-0.5 font-mono text-[15px] font-bold tabular-nums text-sky-hi">
+        {value}
+      </p>
+      {hint ? (
+        <p className="font-mono text-[10px] tabular-nums text-muted">{hint}</p>
+      ) : null}
     </div>
   );
 }

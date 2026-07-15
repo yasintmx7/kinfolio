@@ -64,6 +64,26 @@ describe("normalizeListingPrice (official API)", () => {
     expect(p.lotUsd).toBeCloseTo(0.06, 8);
     expect(p.unitUsd).toBeCloseTo(0.00002, 10);
   });
+
+  it("does not invent unit when quantity missing", () => {
+    const p = normalizeListingPrice({
+      quantity: "?",
+      usdTotal: 5.5,
+    });
+    expect(p.lotUsd).toBeCloseTo(5.5, 8);
+    expect(p.unitUsd).toBeNull();
+    expect(p.per1kUsd).toBeNull();
+  });
+
+  it("repairs unit when unit accidentally equals lot for multi-qty", () => {
+    const p = normalizeListingPrice({
+      quantity: 2000,
+      usdTotal: 0.0528,
+      unitUsd: 0.0528, // bug shape: unit never divided
+    });
+    expect(p.lotUsd).toBeCloseTo(0.0528, 8);
+    expect(p.unitUsd).toBeCloseTo(0.0000264, 10);
+  });
 });
 
 describe("formatUsdMarket", () => {

@@ -145,7 +145,8 @@ function buildByItem(
 }
 
 /**
- * Attach seller username from live/known listings when sold row has listingId.
+ * Attach seller username / item meta from known open-book listings.
+ * Never overwrite sale qty/price with live listing (partial fills stay accurate).
  */
 function enrichSold(
   sold: RecentSale[],
@@ -154,15 +155,32 @@ function enrichSold(
   return sold.map((row) => {
     const lid = row.listingId != null ? String(row.listingId) : "";
     const hit = lid ? known.get(lid) : undefined;
-    if (!hit) return { ...row, isSold: true };
+    if (!hit) {
+      return {
+        ...row,
+        isSold: true,
+        // Keep wallet on seller field for matching
+        seller: row.sellerName ?? row.seller ?? row.sellerWallet ?? null,
+      };
+    }
     return {
       ...row,
       isSold: true,
+      // Prefer display name from live book; keep wallets
       sellerName: hit.sellerName ?? row.sellerName,
       sellerId: hit.sellerId ?? row.sellerId,
-      seller: hit.sellerName ?? hit.seller ?? row.seller,
-      // Prefer known buyer id from reserve if we had it
+      seller: hit.sellerName ?? hit.seller ?? row.seller ?? row.sellerWallet,
+      sellerWallet: row.sellerWallet,
       buyerId: hit.buyerId ?? row.buyerId,
+      // Fill missing item label only — never invent qty/price
+      name:
+        row.name && row.name !== "Sale"
+          ? row.name
+          : hit.name || row.name,
+      itemType:
+        row.itemType && row.itemType !== "unknown"
+          ? row.itemType
+          : hit.itemType || row.itemType,
     };
   });
 }

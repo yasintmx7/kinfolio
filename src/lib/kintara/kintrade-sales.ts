@@ -47,7 +47,7 @@ export type KinTradeSale = {
   listingId?: string;
   buyer?: string;
   seller?: string;
-  /** True when row has enough fields to show as an item sale */
+  /** True when row has itemType + quantity (safe to show unit prices) */
   hasItem: boolean;
 };
 
@@ -60,18 +60,25 @@ function timestampMs(sale: z.infer<typeof saleSchema>): number {
 }
 
 export function normalizeSale(raw: z.infer<typeof saleSchema>): KinTradeSale {
-  const hasItem = Boolean(raw.itemType);
-  const qty = Math.max(raw.quantity && raw.quantity > 0 ? raw.quantity : 1, 1);
+  // Unit prices are only safe when quantity is present. Missing qty was treated
+  // as 1 → lot total shown as unit and /1k became lot×1000 (wildly wrong).
+  const hasQty = raw.quantity != null && raw.quantity > 0;
+  const hasItem = Boolean(raw.itemType && hasQty);
+  const qty = hasQty ? Math.max(raw.quantity!, 1) : 1;
   const kinsTotal =
     raw.kinsTotal != null && Number.isFinite(raw.kinsTotal) ? raw.kinsTotal : 0;
-  const unitKins = d(kinsTotal).div(qty);
+  const unitKins = hasQty ? d(kinsTotal).div(qty) : d(kinsTotal);
   const treasury = raw.treasuryKins != null ? d(raw.treasuryKins) : null;
   const netSeller =
-    treasury != null ? d(kinsTotal).minus(treasury).div(qty) : null;
-  const unitUsd =
-    raw.usd != null && Number.isFinite(raw.usd)
-      ? d(raw.usd).div(qty)
+    treasury != null && hasQty
+      ? d(kinsTotal).minus(treasury).div(qty)
       : null;
+  const unitUsd =
+    raw.usd != null && Number.isFinite(raw.usd) && hasQty
+      ? d(raw.usd).div(qty)
+      : raw.usd != null && Number.isFinite(raw.usd) && !hasQty
+        ? null // refuse fake unit
+        : null;
   const itemType = raw.itemType || "unknown";
 
   return {
@@ -81,7 +88,7 @@ export function normalizeSale(raw: z.infer<typeof saleSchema>): KinTradeSale {
       `${itemType}-${timestampMs(raw)}-${raw.listingId ?? ""}`,
     itemType,
     name: hasItem ? humanizeItemType(itemType) : "Sale",
-    quantity: String(qty),
+    quantity: hasQty ? String(qty) : "?",
     kinsTotal: String(kinsTotal),
     treasuryKins: treasury != null ? treasury.toFixed() : null,
     unitKins: unitKins.toFixed(),
@@ -150,7 +157,10 @@ function filterSales(
 ): KinTradeSale[] {
   let out = sales;
   if (options?.requireItem !== false) {
-    out = out.filter((s) => s.hasItem && s.itemType !== "unknown");
+    // Must have item + qty so unit/avg prices are real
+    out = out.filter(
+      (s) => s.hasItem && s.itemType !== "unknown" && s.quantity !== "?",
+    );
   }
   if (options?.itemType) {
     const t = options.itemType.toLowerCase();

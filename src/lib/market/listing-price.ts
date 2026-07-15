@@ -55,7 +55,9 @@ export function normalizeListingPrice(
   input: ListingPriceInput,
 ): ListingPriceFields {
   const qtyRaw = toNum(input.quantity);
-  const quantity = Math.max(qtyRaw && qtyRaw > 0 ? qtyRaw : 1, 1);
+  // "?" or invalid qty → do not invent unit prices
+  const hasQty = qtyRaw != null && qtyRaw > 0;
+  const quantity = hasQty ? Math.max(qtyRaw, 1) : 1;
   const currency = (input.currency ?? "token") || "token";
 
   const explicitLot = finitePositive(toNum(input.usdTotal) ?? NaN);
@@ -70,13 +72,27 @@ export function normalizeListingPrice(
   // Priority: official priceUsd (lot) > usdTotal (lot) > unitUsd×qty
   if (apiLotUsd != null) {
     lotUsd = apiLotUsd;
-    unitUsd = explicitUnit ?? lotUsd / quantity;
+    unitUsd = hasQty ? (explicitUnit ?? lotUsd / quantity) : explicitUnit;
   } else if (explicitLot != null) {
     lotUsd = explicitLot;
-    unitUsd = explicitUnit ?? lotUsd / quantity;
-  } else if (explicitUnit != null) {
+    // Only divide when qty is real — never treat missing qty as 1
+    unitUsd = hasQty ? (explicitUnit ?? lotUsd / quantity) : explicitUnit;
+  } else if (explicitUnit != null && hasQty) {
     unitUsd = explicitUnit;
     lotUsd = unitUsd * quantity;
+  } else if (explicitUnit != null) {
+    unitUsd = explicitUnit;
+  }
+
+  // Guard: if unit ≈ lot while qty >> 1, unit was never divided (bad data)
+  if (
+    hasQty &&
+    quantity > 1 &&
+    lotUsd != null &&
+    unitUsd != null &&
+    Math.abs(unitUsd - lotUsd) / Math.max(lotUsd, 1e-12) < 0.01
+  ) {
+    unitUsd = lotUsd / quantity;
   }
 
   const per1kUsd = unitUsd != null ? unitUsd * 1000 : null;

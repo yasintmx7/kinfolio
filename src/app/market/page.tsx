@@ -225,16 +225,24 @@ function MarketHubInner() {
 
   const matchSeller = (s: RecentSale) => {
     if (!sellerFocus) return false;
-    const id = sellerFocus.sellerId?.trim() || "";
+    const id = (sellerFocus.sellerId ?? "").trim();
     const name = (sellerFocus.sellerName ?? "").trim().toLowerCase();
+    const wallet = (s.sellerWallet ?? "").trim();
+    const sellerField = (s.seller ?? "").trim();
+
     if (id && s.sellerId != null && String(s.sellerId) === id) return true;
+    // Sold rows often only have wallet
+    if (id && wallet && wallet === id) return true;
+    if (id && sellerField && sellerField === id) return true;
     if (name) {
       const n = (s.sellerName ?? s.seller ?? "").trim().toLowerCase();
       if (n && n === name) return true;
+      if (wallet && shortWallet(wallet)?.toLowerCase() === name) return true;
     }
     if (id && !/^\d+$/.test(id)) {
       const n = (s.sellerName ?? s.seller ?? "").trim().toLowerCase();
       if (n === id.toLowerCase()) return true;
+      if (wallet && wallet === id) return true;
     }
     return false;
   };
@@ -272,14 +280,26 @@ function MarketHubInner() {
   }
 
   function openSeller(row: RecentSale) {
-    const name = (row.sellerName ?? row.seller ?? "").trim();
+    const wallet = (row.sellerWallet ?? "").trim() || null;
+    const name = (row.sellerName ?? "").trim() || null;
+    // Prefer numeric game id; else wallet for sold-feed matching
     const id =
       row.sellerId != null && String(row.sellerId).trim() !== ""
         ? String(row.sellerId)
-        : null;
-    if (!name && !id) return;
+        : wallet;
+    // Display name: username, else short wallet
+    const display =
+      name ||
+      (wallet ? shortWallet(wallet) : null) ||
+      (row.seller && !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(row.seller)
+        ? row.seller.trim()
+        : shortWallet(row.seller));
+    if (!display && !id) return;
     setItemFocus(null);
-    setSellerFocus({ sellerId: id, sellerName: name || null });
+    setSellerFocus({
+      sellerId: id,
+      sellerName: display || id,
+    });
   }
 
   function closeSheet() {

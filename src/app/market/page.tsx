@@ -4,6 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Lock, RefreshCw, Star, X } from "lucide-react";
 import { ItemIcon } from "@/components/items/item-icon";
+import { SellerAvatar } from "@/components/sellers/seller-avatar";
 import {
   useMarketHub,
   type MarketFloorItem,
@@ -200,23 +201,32 @@ function MarketHubInner() {
     ? hub.floors.find((f) => f.id === itemFocus)
     : undefined;
 
-  const sellerListings = useMemo(() => {
-    if (!sellerFocus) return [];
+  const matchSeller = (s: RecentSale) => {
+    if (!sellerFocus) return false;
     const id = sellerFocus.sellerId?.trim() || "";
     const name = (sellerFocus.sellerName ?? "").trim().toLowerCase();
-    return hub.sales.filter((s) => {
-      if (id && s.sellerId != null && String(s.sellerId) === id) return true;
-      if (name) {
-        const n = (s.sellerName ?? s.seller ?? "").trim().toLowerCase();
-        if (n && n === name) return true;
-      }
-      if (id && !/^\d+$/.test(id)) {
-        const n = (s.sellerName ?? s.seller ?? "").trim().toLowerCase();
-        if (n === id.toLowerCase()) return true;
-      }
-      return false;
-    });
-  }, [hub.sales, sellerFocus]);
+    if (id && s.sellerId != null && String(s.sellerId) === id) return true;
+    if (name) {
+      const n = (s.sellerName ?? s.seller ?? "").trim().toLowerCase();
+      if (n && n === name) return true;
+    }
+    if (id && !/^\d+$/.test(id)) {
+      const n = (s.sellerName ?? s.seller ?? "").trim().toLowerCase();
+      if (n === id.toLowerCase()) return true;
+    }
+    return false;
+  };
+
+  const sellerListings = useMemo(() => {
+    if (!sellerFocus) return [];
+    // Open listings + this seller's recent sold (for profile activity)
+    const open = hub.sales.filter(matchSeller);
+    const sold = (hub.sold ?? []).filter(matchSeller);
+    const seen = new Set(open.map((r) => String(r.id)));
+    const extra = sold.filter((r) => !seen.has(String(r.id)));
+    return [...open, ...extra];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hub.sales, hub.sold, sellerFocus]);
 
   const sellerDisplayName = useMemo(() => {
     if (!sellerFocus) return "Seller";
@@ -439,8 +449,8 @@ function MarketHubInner() {
           title={sellerDisplayName}
           subtitle={
             sellerFocus.sellerId && /^\d+$/.test(sellerFocus.sellerId)
-              ? `Seller #${sellerFocus.sellerId} · ${sellerListings.length} listings`
-              : `${sellerListings.length} listings in feed`
+              ? `Seller #${sellerFocus.sellerId} · ${sellerListings.length} in feed`
+              : `${sellerListings.length} listings · open + recent sold`
           }
           rows={sellerListings}
           watching={false}
@@ -448,6 +458,8 @@ function MarketHubInner() {
           onOpenItem={openItem}
           mode="seller"
           showLock
+          sellerId={sellerFocus.sellerId}
+          sellerName={sellerFocus.sellerName ?? sellerDisplayName}
         />
       )}
 
@@ -509,16 +521,23 @@ function SoldActivityCard({
                 </span>{" "}
                 {r.name}
               </button>
-              {/* Seller username — always visible on sold cards */}
+              {/* Seller username + mini character avatar */}
               <button
                 type="button"
                 onClick={() => onOpenSeller(r)}
-                className="mt-0.5 block max-w-full truncate text-left text-[12px] font-medium text-sky-hi underline decoration-sky/40 underline-offset-2 hover:bg-sky/10"
+                className="mt-0.5 flex max-w-full items-center gap-1.5 text-left text-[12px] font-medium text-sky-hi underline decoration-sky/40 underline-offset-2 hover:bg-sky/10"
               >
-                {seller}
-                {r.sellerId != null ? (
-                  <span className="font-mono text-muted"> #{r.sellerId}</span>
-                ) : null}
+                <SellerAvatar
+                  sellerId={r.sellerId}
+                  sellerName={r.sellerName ?? r.seller}
+                  size={18}
+                />
+                <span className="truncate">
+                  {seller}
+                  {r.sellerId != null ? (
+                    <span className="font-mono text-muted"> #{r.sellerId}</span>
+                  ) : null}
+                </span>
               </button>
               <div className="mt-0.5 text-[10px] text-muted">
                 sold · {new Date(r.timestamp).toLocaleTimeString()}
@@ -711,13 +730,20 @@ function ListingList({
                 }}
                 onPointerDown={(e) => e.stopPropagation()}
                 className={cn(
-                  "mt-0.5 flex min-h-7 max-w-full items-center gap-1 rounded-lg text-left text-[11px] sm:text-[12px]",
+                  "mt-0.5 flex min-h-7 max-w-full items-center gap-1.5 rounded-lg text-left text-[11px] sm:text-[12px]",
                   canOpenSeller
                     ? "text-sky-hi underline decoration-sky/40 underline-offset-2 hover:bg-sky/10"
                     : "cursor-default text-muted",
                 )}
                 aria-label={`View all listings by ${seller}`}
               >
+                {canOpenSeller && (
+                  <SellerAvatar
+                    sellerId={r.sellerId}
+                    sellerName={r.sellerName ?? r.seller}
+                    size={18}
+                  />
+                )}
                 <span className="truncate font-medium">{seller}</span>
                 {r.sellerId != null && (
                   <span className="shrink-0 font-mono text-muted">
@@ -875,6 +901,8 @@ function DetailSheet({
   onOpenItem,
   mode,
   showLock,
+  sellerId,
+  sellerName,
 }: {
   title: string;
   subtitle: string;
@@ -887,7 +915,12 @@ function DetailSheet({
   onOpenItem?: (id: string) => void;
   mode: "item" | "seller";
   showLock?: boolean;
+  sellerId?: string | null;
+  sellerName?: string | null;
 }) {
+  const openCount = rows.filter((r) => !r.isSold).length;
+  const soldCount = rows.filter((r) => r.isSold).length;
+
   return (
     <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center sm:justify-end">
       <button
@@ -901,20 +934,27 @@ function DetailSheet({
           {mode === "item" && itemId ? (
             <ItemIcon itemId={itemId} name={title} size={64} clear />
           ) : (
-            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-border/50 bg-surface-2 text-lg font-semibold text-sky-hi">
-              {(title || "?")
-                .replace(/[^a-zA-Z0-9 ]/g, "")
-                .split(/\s+/)
-                .filter(Boolean)
-                .slice(0, 2)
-                .map((w) => w[0]?.toUpperCase() ?? "")
-                .join("")
-                .slice(0, 2) || "?"}
-            </div>
+            <SellerAvatar
+              sellerId={sellerId}
+              sellerName={sellerName ?? title}
+              size={72}
+              profile
+            />
           )}
           <div className="min-w-0 flex-1">
             <h2 className="text-lg font-semibold">{title}</h2>
             <p className="text-sm text-muted">{subtitle}</p>
+            {mode === "seller" && (
+              <p className="mt-1 text-[11px] text-muted">
+                <span className="text-sky-hi">{openCount} open</span>
+                {soldCount > 0 ? (
+                  <>
+                    {" · "}
+                    <span className="text-forest-hi">{soldCount} sold</span>
+                  </>
+                ) : null}
+              </p>
+            )}
           </div>
           <button
             type="button"
@@ -927,7 +967,7 @@ function DetailSheet({
 
         <div className="flex-1 overflow-y-auto p-4">
           <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted">
-            {mode === "seller" ? "Seller listings" : "Listings"} · {rows.length}
+            {mode === "seller" ? "Seller inventory" : "Listings"} · {rows.length}
           </p>
           <div className="space-y-2">
             {rows.length === 0 && (
@@ -938,12 +978,17 @@ function DetailSheet({
               const lot$ = lotTotal(s);
               const unit$ = unitPrice(s);
               const gold$ = goldTotal(s);
+              const sold = Boolean(s.isSold);
               return (
                 <div
-                  key={s.id}
+                  key={`${s.id}-${s.isSold ? "sold" : "open"}`}
                   className={cn(
                     "flex items-center justify-between gap-3 rounded-2xl px-3.5 py-3",
-                    locked ? "bg-amber-500/10" : "bg-surface-2/60",
+                    sold
+                      ? "bg-forest/10"
+                      : locked
+                        ? "bg-amber-500/10"
+                        : "bg-surface-2/60",
                   )}
                 >
                   <div className="min-w-0 flex-1">
@@ -951,12 +996,20 @@ function DetailSheet({
                       <button
                         type="button"
                         onClick={() => onOpenItem?.(s.itemType)}
-                        className="text-left text-[15px] font-semibold hover:text-sky-hi"
+                        className="flex items-center gap-2 text-left text-[15px] font-semibold hover:text-sky-hi"
                       >
-                        <span className="font-mono tabular-nums text-sky-hi">
-                          {formatQtyCompact(s.quantity)}
-                        </span>{" "}
-                        {s.name}
+                        <ItemIcon
+                          itemId={s.itemType}
+                          name={s.name}
+                          size={36}
+                          clear
+                        />
+                        <span>
+                          <span className="font-mono tabular-nums text-sky-hi">
+                            {formatQtyCompact(s.quantity)}
+                          </span>{" "}
+                          {s.name}
+                        </span>
                       </button>
                     ) : (
                       <div className="text-[15px] font-semibold">
@@ -966,7 +1019,12 @@ function DetailSheet({
                         {title}
                       </div>
                     )}
-                    {locked && (
+                    {sold && (
+                      <div className="mt-0.5 text-[11px] font-semibold uppercase tracking-wide text-forest-hi">
+                        Sold
+                      </div>
+                    )}
+                    {locked && !sold && (
                       <div className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-semibold text-amber-200">
                         <Lock className="h-3 w-3" />
                         {lockLabel(s)}
@@ -981,8 +1039,13 @@ function DetailSheet({
                             e.stopPropagation();
                             onOpenSeller?.(s);
                           }}
-                          className="min-h-8 rounded-lg font-medium text-sky-hi underline decoration-sky/40 underline-offset-2 hover:bg-sky/10"
+                          className="inline-flex min-h-8 items-center gap-1.5 rounded-lg font-medium text-sky-hi underline decoration-sky/40 underline-offset-2 hover:bg-sky/10"
                         >
+                          <SellerAvatar
+                            sellerId={s.sellerId}
+                            sellerName={s.sellerName ?? s.seller}
+                            size={20}
+                          />
                           {s.sellerName ?? s.seller ?? "—"}
                           {s.sellerId != null ? ` · #${s.sellerId}` : ""}
                         </button>
@@ -995,7 +1058,7 @@ function DetailSheet({
                     lot$={lot$}
                     unit$={unit$}
                     gold$={gold$}
-                    locked={locked}
+                    locked={locked && !sold}
                   />
                 </div>
               );

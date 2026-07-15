@@ -183,7 +183,7 @@ export async function buildOfficialFloorBoard(options?: {
   kinsUsd?: number;
 }): Promise<OfficialFloorRow[]> {
   const pageSize = Math.min(Math.max(options?.limit ?? 100, 1), 100);
-  const pages = Math.min(Math.max(options?.pages ?? 8, 1), 20);
+  const pages = Math.min(Math.max(options?.pages ?? 12, 1), 20);
   const cacheKey = `official:floor-board:${pages}:${pageSize}:${options?.kinsUsd ?? "x"}`;
   const cached = getCached<OfficialFloorRow[]>(cacheKey);
   if (cached && !cached.stale) return cached.value;
@@ -199,35 +199,60 @@ export async function buildOfficialFloorBoard(options?: {
     }
   >();
 
-  for (let p = 0; p < pages; p++) {
-    const batch = await fetchOfficialListings({
-      sort: "cheap",
-      currency: "token",
-      category: "all",
-      limit: pageSize,
-      offset: p * pageSize,
-    });
-    for (const row of batch) {
-      if (row.isReserved) continue;
-      const cur = byType.get(row.itemType) ?? {
-        listings: 0,
-        totalQty: 0,
-        lowestUsd: null as number | null,
-        kinsListings: 0,
-        goldListings: 0,
-      };
-      cur.listings += 1;
-      cur.totalQty += row.quantity || 0;
-      if ((row.currency ?? "token") === "token") cur.kinsListings += 1;
-      else cur.goldListings += 1;
-      if (row.unitUsd != null && Number.isFinite(row.unitUsd)) {
-        if (cur.lowestUsd == null || row.unitUsd < cur.lowestUsd) {
-          cur.lowestUsd = row.unitUsd;
+  // Parallel chunks (same pattern as activity feed)
+  const PARALLEL = 4;
+  let endOffset: number | null = null;
+  for (let start = 0; start < pages; start += PARALLEL) {
+    if (endOffset != null && start * pageSize >= endOffset) break;
+    const idxs = Array.from(
+      { length: Math.min(PARALLEL, pages - start) },
+      (_, i) => start + i,
+    );
+    const settled = await Promise.all(
+      idxs.map(async (p) => {
+        try {
+          const batch = await fetchOfficialListings({
+            sort: "cheap",
+            currency: "token",
+            category: "all",
+            limit: pageSize,
+            offset: p * pageSize,
+          });
+          return { p, batch, ok: true as const };
+        } catch {
+          return { p, batch: [] as OfficialListing[], ok: false as const };
         }
+      }),
+    );
+    settled.sort((a, b) => a.p - b.p);
+    for (const { p, batch, ok } of settled) {
+      if (!ok) continue;
+      for (const row of batch) {
+        if (row.isReserved) continue;
+        const cur = byType.get(row.itemType) ?? {
+          listings: 0,
+          totalQty: 0,
+          lowestUsd: null as number | null,
+          kinsListings: 0,
+          goldListings: 0,
+        };
+        cur.listings += 1;
+        cur.totalQty += row.quantity || 0;
+        if ((row.currency ?? "token") === "token") cur.kinsListings += 1;
+        else cur.goldListings += 1;
+        if (row.unitUsd != null && Number.isFinite(row.unitUsd)) {
+          if (cur.lowestUsd == null || row.unitUsd < cur.lowestUsd) {
+            cur.lowestUsd = row.unitUsd;
+          }
+        }
+        byType.set(row.itemType, cur);
       }
-      byType.set(row.itemType, cur);
+      if (batch.length < pageSize) {
+        endOffset = p * pageSize + batch.length;
+        break;
+      }
     }
-    if (batch.length < pageSize) break;
+    if (endOffset != null) break;
   }
 
   const kinsUsd = options?.kinsUsd;

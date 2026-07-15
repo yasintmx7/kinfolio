@@ -6,7 +6,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowUpDown,
   Calculator,
-  ExternalLink,
   RefreshCw,
   Star,
   X,
@@ -32,11 +31,12 @@ function MarketHubInner() {
   const tab = (searchParams.get("tab") as Tab) || "overview";
   const selectedId = searchParams.get("item") || "";
 
-  const hub = useMarketHub(40000);
-  const { price, reload: reloadPrice } = useKinsPrice();
+  const hub = useMarketHub(10_000);
+  const { price, reload: reloadPrice } = useKinsPrice(10_000);
   const { push } = useToast();
 
   const [q, setQ] = useState("");
+  const [activityQ, setActivityQ] = useState("");
   const [sort, setSort] = useState<SortKey>("listings");
   const [watch, setWatch] = useState<string[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -116,7 +116,22 @@ function MarketHubInner() {
     });
   }, [enriched, q, sort, tab, watch]);
 
-  const hotSales = hub.sales.slice(0, 12);
+  const hotSales = hub.sales.slice(0, 40);
+  const filteredActivity = useMemo(() => {
+    const query = activityQ.trim().toLowerCase();
+    if (!query) return hub.sales;
+    return hub.sales.filter((s) => {
+      const seller = (s.sellerName ?? s.seller ?? "").toLowerCase();
+      const sid = (s.sellerId ?? "").toLowerCase();
+      return (
+        s.name.toLowerCase().includes(query) ||
+        s.itemType.toLowerCase().includes(query) ||
+        seller.includes(query) ||
+        sid.includes(query) ||
+        String(s.listingId ?? s.id).includes(query)
+      );
+    });
+  }, [hub.sales, activityQ]);
   const selectedFloor = enriched.find((i) => i.id === selectedId);
   const selectedSales = hub.sales.filter((s) => s.itemType === selectedId);
 
@@ -177,8 +192,31 @@ function MarketHubInner() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" onClick={refreshAll} disabled={hub.loading}>
-            <RefreshCw className={cn("h-4 w-4", hub.loading && "animate-spin")} />
+          <div className="flex items-center gap-2 text-xs text-muted">
+            <span
+              className={cn(
+                "inline-flex h-2 w-2 rounded-full",
+                hub.refreshing ? "animate-pulse bg-sky" : "bg-forest",
+              )}
+            />
+            Live · 10s
+            {hub.lastActivityAt && (
+              <span className="hidden sm:inline">
+                · top {new Date(hub.lastActivityAt).toLocaleTimeString()}
+              </span>
+            )}
+          </div>
+          <Button
+            variant="secondary"
+            onClick={refreshAll}
+            disabled={hub.loading || hub.refreshing}
+          >
+            <RefreshCw
+              className={cn(
+                "h-4 w-4",
+                (hub.loading || hub.refreshing) && "animate-spin",
+              )}
+            />
             Refresh
           </Button>
           <Link href="/calculator">
@@ -218,9 +256,13 @@ function MarketHubInner() {
           <p className="mt-1 text-[11px] text-muted">Official marketplace</p>
         </Card>
         <Card>
-          <CardTitle>Recent activity</CardTitle>
-          <StatValue>{hub.sales.length || "—"}</StatValue>
-          <p className="mt-1 text-[11px] text-muted">Newest listings</p>
+          <CardTitle>Live feed rows</CardTitle>
+          <StatValue>
+            {(hub.activityCount ?? hub.sales.length) || "—"}
+          </StatValue>
+          <p className="mt-1 text-[11px] text-muted">
+            Listings · updates every 10s
+          </p>
         </Card>
       </div>
 
@@ -341,13 +383,25 @@ function MarketHubInner() {
 
       {tab === "sales" && (
         <Card>
-          <CardTitle>Recent listing activity</CardTitle>
-          {hub.salesNote && (
-            <p className="mt-1 text-xs text-muted">{hub.salesNote}</p>
-          )}
-          <div className="mt-3">
-            <SalesTape sales={hub.sales} onOpen={openItem} full />
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <CardTitle>Live marketplace feed</CardTitle>
+              <p className="mt-1 text-xs text-muted">
+                {hub.sales.length} listings · seller, id, qty, prices · auto every
+                10s
+              </p>
+            </div>
+            <Input
+              className="max-w-xs"
+              placeholder="Filter item / seller / listing id…"
+              value={activityQ}
+              onChange={(e) => setActivityQ(e.target.value)}
+            />
           </div>
+          {hub.salesNote && (
+            <p className="mb-2 text-xs text-muted">{hub.salesNote}</p>
+          )}
+          <ActivityTable rows={filteredActivity} onOpen={openItem} />
         </Card>
       )}
 
@@ -467,39 +521,46 @@ function MarketHubInner() {
 
               <div>
                 <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted">
-                  Recent listings of this item
+                  Live listings of this item ({selectedSales.length})
                 </p>
                 {selectedSales.length === 0 && (
                   <p className="text-sm text-muted">
                     No recent activity for this item in the scanned pages.
                   </p>
                 )}
-                <div className="space-y-1.5">
-                  {selectedSales.slice(0, 15).map((s) => (
+                <div className="max-h-64 space-y-1.5 overflow-y-auto">
+                  {selectedSales.map((s) => (
                     <div
                       key={s.id}
-                      className="flex justify-between rounded-lg bg-surface-2 px-2.5 py-2 text-xs"
+                      className="rounded-lg bg-surface-2 px-2.5 py-2 text-xs"
                     >
-                      <span className="text-muted">
-                        ×{s.quantity} ·{" "}
-                        {new Date(s.timestamp).toLocaleString()}
-                      </span>
-                      <span className="font-mono tabular-nums">
-                        {formatKins(s.unitKins)} KINS/u
-                        {s.solscanUrl && (
-                          <>
-                            {" "}
-                            <a
-                              href={s.solscanUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-sky"
-                            >
-                              <ExternalLink className="inline h-3 w-3" />
-                            </a>
-                          </>
-                        )}
-                      </span>
+                      <div className="flex justify-between gap-2">
+                        <span className="font-medium">
+                          {(s.sellerName ?? s.seller) || "—"}
+                          {s.sellerId ? (
+                            <span className="font-mono text-muted">
+                              {" "}
+                              #{s.sellerId}
+                            </span>
+                          ) : null}
+                        </span>
+                        <span className="font-mono tabular-nums">
+                          {formatKins(s.unitKins)} /u
+                        </span>
+                      </div>
+                      <div className="mt-0.5 flex justify-between text-[10px] text-muted">
+                        <span>
+                          id {s.listingId ?? s.id} · ×{s.quantity}
+                          {s.reserved ? " · reserved" : ""}
+                        </span>
+                        <span>{new Date(s.timestamp).toLocaleString()}</span>
+                      </div>
+                      {s.usdTotal && (
+                        <div className="mt-0.5 font-mono text-[10px] text-muted">
+                          total {formatUsd(s.usdTotal, { maxDecimals: 4 })}
+                          {s.currency ? ` · ${s.currency}` : ""}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -637,7 +698,6 @@ function FloorTable({
 function SalesTape({
   sales,
   onOpen,
-  full,
 }: {
   sales: {
     id: string;
@@ -647,21 +707,17 @@ function SalesTape({
     unitKins: string;
     usdTotal: string | null;
     timestamp: string;
-    solscanUrl: string | null;
+    sellerName?: string | null;
+    sellerId?: string | null;
+    listingId?: string;
   }[];
   onOpen: (id: string) => void;
-  full?: boolean;
 }) {
   if (!sales.length) {
-    return <p className="text-sm text-muted">Waiting for sales feed…</p>;
+    return <p className="text-sm text-muted">Waiting for live feed…</p>;
   }
   return (
-    <div
-      className={cn(
-        "space-y-1.5",
-        full ? "max-h-[36rem] overflow-y-auto" : "max-h-96 overflow-y-auto",
-      )}
-    >
+    <div className="max-h-96 space-y-1.5 overflow-y-auto">
       {sales.map((s) => (
         <button
           key={s.id}
@@ -676,13 +732,16 @@ function SalesTape({
                 {s.name}{" "}
                 <span className="font-mono text-xs text-muted">×{s.quantity}</span>
               </span>
-              <span className="text-[10px] text-muted">
+              <span className="block truncate text-[10px] text-muted">
+                {s.sellerName ?? "—"}
+                {s.sellerId ? ` · #${s.sellerId}` : ""}
+                {" · "}
                 {new Date(s.timestamp).toLocaleTimeString()}
               </span>
             </span>
           </span>
           <span className="shrink-0 text-right font-mono text-[11px] tabular-nums">
-            <span className="block">{formatKins(s.unitKins)} KINS/u</span>
+            <span className="block">{formatKins(s.unitKins)} /u</span>
             {s.usdTotal && (
               <span className="text-muted">
                 {formatUsd(s.usdTotal, { maxDecimals: 4 })}
@@ -691,6 +750,124 @@ function SalesTape({
           </span>
         </button>
       ))}
+    </div>
+  );
+}
+
+function ActivityTable({
+  rows,
+  onOpen,
+}: {
+  rows: {
+    id: string;
+    listingId?: string;
+    name: string;
+    itemType: string;
+    quantity: string;
+    unitKins: string;
+    unitUsd?: string | null;
+    usdTotal: string | null;
+    priceGold?: string | null;
+    currency?: string;
+    timestamp: string;
+    sellerName?: string | null;
+    sellerId?: string | null;
+    seller?: string | null;
+    reserved?: boolean;
+    itemDurability?: string | null;
+  }[];
+  onOpen: (id: string) => void;
+}) {
+  if (!rows.length) {
+    return <p className="text-sm text-muted">No listings match this filter.</p>;
+  }
+
+  return (
+    <div className="max-h-[70vh] overflow-auto rounded-xl border border-border">
+      <table className="w-full min-w-[720px] border-collapse text-left text-xs">
+        <thead className="sticky top-0 z-10 bg-raised text-[10px] uppercase tracking-wide text-muted">
+          <tr>
+            <th className="px-2 py-2 font-medium">Item</th>
+            <th className="px-2 py-2 font-medium">Listing</th>
+            <th className="px-2 py-2 font-medium">Seller</th>
+            <th className="px-2 py-2 font-medium">Seller ID</th>
+            <th className="px-2 py-2 font-medium">Qty</th>
+            <th className="px-2 py-2 font-medium">Unit</th>
+            <th className="px-2 py-2 font-medium">Total</th>
+            <th className="px-2 py-2 font-medium">Cur</th>
+            <th className="px-2 py-2 font-medium">Time</th>
+            <th className="px-2 py-2 font-medium">Flags</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => {
+            const seller = r.sellerName ?? r.seller ?? "—";
+            return (
+              <tr
+                key={r.id}
+                className="cursor-pointer border-t border-border/60 hover:bg-sky/5"
+                onClick={() => onOpen(r.itemType)}
+              >
+                <td className="px-2 py-2">
+                  <div className="flex items-center gap-2">
+                    <ItemIcon itemId={r.itemType} name={r.name} size={28} />
+                    <div>
+                      <div className="font-medium text-primary">{r.name}</div>
+                      <div className="font-mono text-[10px] text-muted">
+                        {r.itemType}
+                      </div>
+                    </div>
+                  </div>
+                </td>
+                <td className="px-2 py-2 font-mono tabular-nums text-muted">
+                  {r.listingId ?? r.id}
+                </td>
+                <td className="max-w-[8rem] truncate px-2 py-2 font-medium">
+                  {seller}
+                </td>
+                <td className="px-2 py-2 font-mono text-muted">
+                  {r.sellerId ?? "—"}
+                </td>
+                <td className="px-2 py-2 font-mono tabular-nums">{r.quantity}</td>
+                <td className="px-2 py-2 font-mono tabular-nums">
+                  {r.unitUsd
+                    ? formatUsd(r.unitUsd, { maxDecimals: 6 })
+                    : formatKins(r.unitKins)}
+                  <div className="text-[10px] text-muted">
+                    {formatKins(r.unitKins)} KINS
+                  </div>
+                </td>
+                <td className="px-2 py-2 font-mono tabular-nums">
+                  {r.usdTotal
+                    ? formatUsd(r.usdTotal, { maxDecimals: 4 })
+                    : "—"}
+                  {r.priceGold && (
+                    <div className="text-[10px] text-muted">
+                      gold {r.priceGold}
+                    </div>
+                  )}
+                </td>
+                <td className="px-2 py-2 capitalize text-muted">
+                  {r.currency ?? "token"}
+                </td>
+                <td className="whitespace-nowrap px-2 py-2 text-muted">
+                  {new Date(r.timestamp).toLocaleString()}
+                </td>
+                <td className="px-2 py-2 text-muted">
+                  {r.reserved ? (
+                    <span className="text-loss">reserved</span>
+                  ) : (
+                    "open"
+                  )}
+                  {r.itemDurability && (
+                    <div className="text-[10px]">dur {r.itemDurability}</div>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export type MarketFloorItem = {
   id: string;
@@ -17,16 +17,24 @@ export type MarketFloorItem = {
 
 export type RecentSale = {
   id: string;
+  listingId?: string;
   name: string;
   itemType: string;
   quantity: string;
   unitKins: string;
   unitUsd?: string | null;
   usdTotal: string | null;
+  priceGold?: string | null;
+  currency?: string;
   timestamp: string;
   solscanUrl: string | null;
   portfolioItemId?: string | null;
-  seller?: string;
+  seller?: string | null;
+  sellerName?: string | null;
+  sellerId?: string | null;
+  reserved?: boolean;
+  reservedUntilMs?: number | null;
+  itemDurability?: string | null;
 };
 
 export type MarketHubData = {
@@ -48,9 +56,12 @@ export type MarketHubData = {
   floorsUpdatedAt?: string;
   salesNote?: string | null;
   floorsNote?: string | null;
+  activityCount?: number;
+  lastActivityAt?: string | null;
   configured: boolean;
   error: string | null;
   loading: boolean;
+  refreshing: boolean;
 };
 
 const empty: MarketHubData = {
@@ -64,37 +75,58 @@ const empty: MarketHubData = {
   configured: false,
   error: null,
   loading: true,
+  refreshing: false,
 };
 
-export function useMarketHub(pollMs = 45000) {
+/** Default poll: 10 seconds for live feed */
+export function useMarketHub(pollMs = 10_000) {
   const [data, setData] = useState<MarketHubData>(empty);
+  const inFlight = useRef(false);
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (opts?: { silent?: boolean; floors?: boolean }) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    if (!opts?.silent) {
+      setData((s) => ({ ...s, refreshing: true }));
+    }
     try {
+      const loadFloors = opts?.floors !== false;
       const [floorsRes, activityRes] = await Promise.all([
-        fetch("/api/market/items", { cache: "no-store" }).then((r) => r.json()),
-        fetch("/api/market/activity?limit=60", { cache: "no-store" }).then((r) =>
-          r.json(),
-        ),
+        loadFloors
+          ? fetch("/api/market/items", { cache: "no-store" }).then((r) =>
+              r.json(),
+            )
+          : Promise.resolve(null),
+        fetch("/api/market/activity?limit=600&pages=10&gold=1", {
+          cache: "no-store",
+        }).then((r) => r.json()),
       ]);
 
-      const floors: MarketFloorItem[] = floorsRes.ok
-        ? (floorsRes.data.items ?? [])
-        : [];
       const sales: RecentSale[] = activityRes.ok
         ? (activityRes.data.activity ?? [])
         : [];
 
-      // Derive simple per-item medians from activity tape (unit prices)
-      const byType = new Map<string, number[]>();
+      setData((prev) => {
+      const floors: MarketFloorItem[] =
+        floorsRes?.ok
+          ? (floorsRes.data.items ?? [])
+          : prev.floors;
+
+      const byType = new Map<string, { vals: number[]; lastAt: string | null }>();
       for (const s of sales) {
         const n = Number(s.unitKins);
         if (!Number.isFinite(n) || n <= 0) continue;
-        const list = byType.get(s.itemType) ?? [];
-        list.push(n);
-        byType.set(s.itemType, list);
+        const cur = byType.get(s.itemType) ?? { vals: [], lastAt: null };
+        cur.vals.push(n);
+        if (
+          !cur.lastAt ||
+          Date.parse(s.timestamp) > Date.parse(cur.lastAt)
+        ) {
+          cur.lastAt = s.timestamp;
+        }
+        byType.set(s.itemType, cur);
       }
-      const byItem = [...byType.entries()].map(([itemType, vals]) => {
+      const byItem = [...byType.entries()].map(([itemType, { vals, lastAt }]) => {
         const sorted = [...vals].sort((a, b) => a - b);
         const mid = Math.floor(sorted.length / 2);
         const median =
@@ -109,43 +141,74 @@ export function useMarketHub(pollMs = 45000) {
           saleCount: vals.length,
           medianUnitKins: String(median),
           avgUnitKins: String(avg),
-          lastSaleAt: null as string | null,
+          lastSaleAt: lastAt,
           lastUnitKins: String(sorted[sorted.length - 1] ?? median),
         };
       });
 
-      setData({
+      return {
         floors,
         sales,
         byItem,
-        kinsUsd: floorsRes.ok ? (floorsRes.data.kinsUsd ?? null) : null,
+        kinsUsd: floorsRes?.ok
+          ? (floorsRes.data.kinsUsd ?? activityRes.data?.kinsUsd ?? prev.kinsUsd)
+          : (activityRes.data?.kinsUsd ?? prev.kinsUsd),
         goldFloorUsd: null,
-        rateSource: floorsRes.ok ? (floorsRes.data.rateSource ?? null) : null,
+        rateSource: floorsRes?.ok
+          ? (floorsRes.data.rateSource ??
+            activityRes.data?.rateSource ??
+            prev.rateSource)
+          : (activityRes.data?.rateSource ?? prev.rateSource),
         goneCount: null,
-        floorsUpdatedAt: floorsRes.updatedAt,
-        salesNote: activityRes.ok ? activityRes.data.note : null,
-        floorsNote: floorsRes.ok ? floorsRes.data.note : null,
-        configured: Boolean(floorsRes.ok && floorsRes.data.configured !== false),
+        floorsUpdatedAt: floorsRes?.updatedAt ?? prev.floorsUpdatedAt,
+        salesNote: activityRes.ok ? activityRes.data.note : prev.salesNote,
+        floorsNote: floorsRes?.ok ? floorsRes.data.note : prev.floorsNote,
+        activityCount: activityRes.ok
+          ? (activityRes.data.count ?? sales.length)
+          : sales.length,
+        lastActivityAt: sales[0]?.timestamp ?? prev.lastActivityAt,
+        configured: Boolean(
+          (floorsRes?.ok && floorsRes.data.configured !== false) ||
+            activityRes.ok ||
+            prev.configured,
+        ),
         error:
-          !floorsRes.ok && !activityRes.ok
+          !activityRes.ok && !floorsRes?.ok && prev.floors.length === 0
             ? "Market data unavailable"
             : null,
         loading: false,
+        refreshing: false,
+      };
       });
     } catch {
       setData((s) => ({
         ...s,
         loading: false,
+        refreshing: false,
         error: "Network error loading market",
       }));
+    } finally {
+      inFlight.current = false;
     }
   }, []);
 
   useEffect(() => {
-    reload();
-    const id = setInterval(reload, pollMs);
-    return () => clearInterval(id);
+    // Full load once (floors + activity)
+    reload({ floors: true });
+    // Live feed every pollMs (activity); floors less often
+    const activityId = setInterval(
+      () => reload({ silent: true, floors: false }),
+      pollMs,
+    );
+    const floorsId = setInterval(
+      () => reload({ silent: true, floors: true }),
+      Math.max(pollMs * 3, 30_000),
+    );
+    return () => {
+      clearInterval(activityId);
+      clearInterval(floorsId);
+    };
   }, [reload, pollMs]);
 
-  return { ...data, reload };
+  return { ...data, reload: () => reload({ floors: true }) };
 }

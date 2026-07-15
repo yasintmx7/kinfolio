@@ -65,12 +65,15 @@ export async function fetchOfficialListings(params?: {
   category?: string;
   limit?: number;
   offset?: number;
+  /** Cache TTL seconds — use short values for live feed */
+  cacheTtlSeconds?: number;
 }): Promise<OfficialListing[]> {
   const sort = params?.sort ?? "cheap";
   const currency = params?.currency ?? "token";
   const category = params?.category ?? "all";
   const limit = Math.min(Math.max(params?.limit ?? 60, 1), 100);
   const offset = Math.max(params?.offset ?? 0, 0);
+  const ttl = params?.cacheTtlSeconds ?? (sort === "new" ? 8 : 40);
 
   const cacheKey = `official:listings:${sort}:${currency}:${category}:${limit}:${offset}`;
   const cached = getCached<OfficialListing[]>(cacheKey);
@@ -84,7 +87,7 @@ export async function fetchOfficialListings(params?: {
   url.searchParams.set("offset", String(offset));
 
   const res = await fetchWithTimeout(url.toString(), {
-    timeoutMs: 10000,
+    timeoutMs: 12000,
     headers: { Accept: "application/json" },
   });
   if (!res.ok) throw new Error(`official listings failed: ${res.status}`);
@@ -101,11 +104,13 @@ export async function fetchOfficialListings(params?: {
     return {
       ...l,
       unitUsd,
-      isReserved: l.reservedBy != null || (l.reservedUntilMs != null && l.reservedUntilMs > Date.now()),
+      isReserved:
+        l.reservedBy != null ||
+        (l.reservedUntilMs != null && l.reservedUntilMs > Date.now()),
     };
   });
 
-  setCache(cacheKey, rows, 45);
+  setCache(cacheKey, rows, ttl);
   return rows;
 }
 
@@ -246,51 +251,105 @@ export async function buildOfficialFloorBoard(options?: {
   return rows;
 }
 
-/** Newest token listings as market activity tape (official API). */
+export type OfficialActivityRow = {
+  id: string;
+  listingId: string;
+  itemType: string;
+  name: string;
+  quantity: string;
+  unitKins: string;
+  unitUsd: string | null;
+  usdTotal: string | null;
+  priceGold: string | null;
+  currency: string;
+  timestamp: string;
+  sellerName: string | null;
+  sellerId: string | null;
+  reserved: boolean;
+  reservedUntilMs: number | null;
+  itemDurability: string | null;
+};
+
+/**
+ * Live market feed: paginate official sort=new listings.
+ * Includes seller username/id, listing id, qty, prices.
+ */
 export async function fetchOfficialRecentActivity(options?: {
+  /** Max rows to return (after multi-page fetch) */
   limit?: number;
+  /** Pages of 60 listings each */
+  pages?: number;
   kinsUsd?: number;
-}): Promise<
-  {
-    id: string;
-    itemType: string;
-    name: string;
-    quantity: string;
-    unitKins: string;
-    unitUsd: string | null;
-    usdTotal: string | null;
-    timestamp: string;
-    seller?: string;
-  }[]
-> {
-  const limit = options?.limit ?? 60;
-  const rows = await fetchOfficialListings({
-    sort: "new",
-    currency: "token",
-    category: "all",
-    limit,
-    offset: 0,
-  });
+  /** Include gold listings too */
+  includeGold?: boolean;
+}): Promise<OfficialActivityRow[]> {
+  const pageSize = 60;
+  const pages = Math.min(Math.max(options?.pages ?? 8, 1), 15);
+  const maxRows = Math.min(Math.max(options?.limit ?? pages * pageSize, 1), 900);
   const kinsUsd = options?.kinsUsd;
-  return rows
-    .filter((r) => !r.isReserved)
-    .map((r) => {
-      const unitUsd = r.unitUsd;
-      return {
-        id: String(r.id),
-        itemType: r.itemType,
-        name: humanizeItemType(r.itemType),
-        quantity: String(r.quantity),
-        unitKins:
-          kinsUsd != null && unitUsd != null
-            ? usdToKins(unitUsd, kinsUsd) ?? "0"
-            : String(unitUsd ?? 0),
-        unitUsd: unitUsd != null ? String(unitUsd) : null,
-        usdTotal: r.priceUsd != null ? String(r.priceUsd) : null,
-        timestamp: r.createdAt ?? new Date().toISOString(),
-        seller: r.sellerName,
-      };
-    });
+  const collected: OfficialListing[] = [];
+  const seen = new Set<string>();
+
+  const currencies: Array<"token" | "gold"> = options?.includeGold
+    ? ["token", "gold"]
+    : ["token"];
+
+  for (const currency of currencies) {
+    for (let p = 0; p < pages; p++) {
+      const batch = await fetchOfficialListings({
+        sort: "new",
+        currency,
+        category: "all",
+        limit: pageSize,
+        offset: p * pageSize,
+        cacheTtlSeconds: 8,
+      });
+      for (const row of batch) {
+        const id = String(row.id);
+        if (seen.has(id)) continue;
+        seen.add(id);
+        collected.push(row);
+      }
+      if (batch.length < pageSize) break;
+      if (collected.length >= maxRows) break;
+    }
+    if (collected.length >= maxRows) break;
+  }
+
+  // Newest first
+  collected.sort((a, b) => {
+    const ta = a.createdAt ? Date.parse(a.createdAt) : 0;
+    const tb = b.createdAt ? Date.parse(b.createdAt) : 0;
+    return tb - ta;
+  });
+
+  return collected.slice(0, maxRows).map((r) => {
+    const unitUsd = r.unitUsd;
+    const unitKins =
+      kinsUsd != null && unitUsd != null && (r.currency ?? "token") === "token"
+        ? usdToKins(unitUsd, kinsUsd)
+        : null;
+    return {
+      id: String(r.id),
+      listingId: String(r.id),
+      itemType: r.itemType,
+      name: humanizeItemType(r.itemType),
+      quantity: String(r.quantity),
+      unitKins: unitKins ?? (unitUsd != null ? String(unitUsd) : "0"),
+      unitUsd: unitUsd != null ? String(unitUsd) : null,
+      usdTotal: r.priceUsd != null ? String(r.priceUsd) : null,
+      priceGold: r.priceGold != null ? String(r.priceGold) : null,
+      currency: r.currency ?? "token",
+      timestamp: r.createdAt ?? new Date().toISOString(),
+      sellerName: r.sellerName ?? null,
+      sellerId: r.sellerId != null ? String(r.sellerId) : null,
+      reserved: r.isReserved,
+      reservedUntilMs:
+        typeof r.reservedUntilMs === "number" ? r.reservedUntilMs : null,
+      itemDurability:
+        r.itemDurability != null ? String(r.itemDurability) : null,
+    };
+  });
 }
 
 export async function fetchOfficialItemStats(

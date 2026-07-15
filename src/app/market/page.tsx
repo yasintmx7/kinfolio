@@ -1,24 +1,50 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Card, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { usePortfolioContext } from "@/components/providers/portfolio-provider";
 import { useKinsPrice } from "@/hooks/use-kins-price";
+import { useToast } from "@/components/feedback/toast";
 import { d } from "@/lib/accounting/decimal";
 import { formatKins, formatUsd } from "@/lib/formatting/money";
+
+type MarketItem = {
+  id: string;
+  name: string;
+  portfolioItemId?: string;
+  listings?: number;
+  totalQty?: number;
+  lowestUsdPerUnit?: string | null;
+  lowestKinsPerUnit?: string | null;
+  lowestGoldPerUnit?: string | null;
+  kinsListings?: number;
+  goldListings?: number;
+};
 
 type MarketState = {
   configured: boolean;
   message?: string;
-  items: { id: string; name: string }[];
+  note?: string;
+  provider?: string;
+  kinsUsd?: string | null;
+  items: MarketItem[];
+  source?: string;
+  updatedAt?: string;
 };
 
 export default function MarketPage() {
-  const { priceMap, itemMap, settings, summary } = usePortfolioContext();
+  const { priceMap, itemMap, settings, summary, setManualPrice } =
+    usePortfolioContext();
   const { price } = useKinsPrice();
+  const { push } = useToast();
   const [market, setMarket] = useState<MarketState | null>(null);
+  const [q, setQ] = useState("");
+  const [applying, setApplying] = useState(false);
   const fee = d(settings?.defaultSellFeePercent ?? "5").div(100);
-  const kinsUsd = price?.priceUsd;
+  const kinsUsd = price?.priceUsd ?? market?.kinsUsd ?? undefined;
 
   useEffect(() => {
     fetch("/api/market/items")
@@ -28,10 +54,19 @@ export default function MarketPage() {
           setMarket({
             configured: Boolean(j.data.configured),
             message: j.data.message,
+            note: j.data.note,
+            provider: j.data.provider,
+            kinsUsd: j.data.kinsUsd,
             items: j.data.items ?? [],
+            source: j.source,
+            updatedAt: j.updatedAt,
           });
         } else {
-          setMarket({ configured: false, items: [], message: j.error?.message });
+          setMarket({
+            configured: false,
+            items: [],
+            message: j.error?.message,
+          });
         }
       })
       .catch(() =>
@@ -43,75 +78,196 @@ export default function MarketPage() {
       );
   }, []);
 
-  const manualRows = summary.positions.map((pos) => {
+  const filtered = useMemo(() => {
+    const items = market?.items ?? [];
+    const query = q.trim().toLowerCase();
+    if (!query) return items;
+    return items.filter(
+      (i) =>
+        i.name.toLowerCase().includes(query) ||
+        i.id.toLowerCase().includes(query),
+    );
+  }, [market?.items, q]);
+
+  const holdingRows = summary.positions.map((pos) => {
     const unit = priceMap.get(pos.itemId);
     const name = itemMap.get(pos.itemId)?.name ?? pos.itemId;
+    const marketHit = market?.items.find(
+      (m) => m.portfolioItemId === pos.itemId || m.id === pos.itemId.replace(/-/g, "_"),
+    );
     const netUnit = unit ? d(unit).mul(d(1).minus(fee)) : null;
     const netUsd =
       netUnit && kinsUsd ? netUnit.mul(d(kinsUsd)).toFixed() : null;
-    return { id: pos.itemId, name, unit, netUnit: netUnit?.toFixed(), netUsd };
+    return {
+      id: pos.itemId,
+      name,
+      unit,
+      netUnit: netUnit?.toFixed(),
+      netUsd,
+      marketUsd: marketHit?.lowestUsdPerUnit,
+      marketKins: marketHit?.lowestKinsPerUnit,
+    };
   });
+
+  async function applyFloorsToHoldings() {
+    if (!market?.items?.length) return;
+    setApplying(true);
+    let n = 0;
+    try {
+      for (const pos of summary.positions) {
+        const hit = market.items.find(
+          (m) =>
+            m.portfolioItemId === pos.itemId ||
+            m.id === pos.itemId.replace(/-/g, "_"),
+        );
+        if (hit?.lowestKinsPerUnit) {
+          await setManualPrice(pos.itemId, hit.lowestKinsPerUnit);
+          n++;
+        }
+      }
+      push(
+        n
+          ? `Applied lowest listing floors to ${n} holding(s).`
+          : "No matching market floors for your holdings.",
+        n ? "ok" : "info",
+      );
+    } finally {
+      setApplying(false);
+    }
+  }
 
   return (
     <div className="space-y-4">
       <div>
         <h1 className="text-2xl font-semibold">Market</h1>
         <p className="mt-1 text-sm text-muted">
-          Reference prices only — not guaranteed sale prices.
+          Live floors from{" "}
+          <a
+            href="https://kintaramarket.xyz"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-info underline"
+          >
+            kintaramarket.xyz
+          </a>
+          . Estimates only — not guaranteed sale prices.
         </p>
       </div>
 
       <Card>
-        <CardTitle>Marketplace adapter status</CardTitle>
+        <CardTitle>Data source</CardTitle>
         <p className="mt-2 text-sm text-muted">
           {market == null
-            ? "Checking configuration…"
+            ? "Loading…"
             : market.configured
-              ? `Configured · ${market.items.length} catalog item(s) from API`
-              : market.message ??
-                "Not configured. Map public read-only endpoints in docs/KINTARA_F12_API_MAPPING.md and set env vars."}
+              ? `${market.provider ?? "marketplace"} · ${market.items.length} items · ${
+                  market.source ?? "api"
+                }${market.updatedAt ? ` · ${new Date(market.updatedAt).toLocaleTimeString()}` : ""}`
+              : market.message ?? "Not configured"}
         </p>
-        <p className="mt-2 text-xs text-muted">
-          Quote/buy/reserve flows are intentionally not integrated.
-        </p>
+        {market?.note && (
+          <p className="mt-2 text-xs text-muted">{market.note}</p>
+        )}
+        {kinsUsd && (
+          <p className="mt-1 text-xs text-muted">
+            KINS/USD used for conversion: {formatUsd(kinsUsd, { maxDecimals: 8 })}
+          </p>
+        )}
       </Card>
 
+      {summary.positions.length > 0 && market?.configured && (
+        <Card className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <CardTitle>Your holdings</CardTitle>
+            <p className="mt-1 text-xs text-muted">
+              Apply live lowest floors as inventory reference prices (KINS/unit).
+            </p>
+          </div>
+          <Button onClick={applyFloorsToHoldings} disabled={applying}>
+            {applying ? "Applying…" : "Apply floors to holdings"}
+          </Button>
+        </Card>
+      )}
+
       <Card>
-        <CardTitle>Manual reference prices (your holdings)</CardTitle>
+        <CardTitle>Holdings vs market</CardTitle>
         <div className="mt-3 space-y-2">
-          {!manualRows.length && (
+          {!holdingRows.length && (
             <p className="text-sm text-muted">
-              No holdings yet. Set prices from Inventory after adding items.
+              No holdings yet.{" "}
+              <Link href="/add" className="text-info underline">
+                Add a trade
+              </Link>
             </p>
           )}
-          {manualRows.map((row) => (
+          {holdingRows.map((row) => (
             <div
               key={row.id}
               className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-surface-2 px-3 py-2 text-sm"
             >
               <span>{row.name}</span>
               <span className="font-mono text-xs tabular-nums text-muted">
+                floor{" "}
+                {row.marketUsd
+                  ? formatUsd(row.marketUsd, { maxDecimals: 8 })
+                  : "—"}
+                {row.marketKins ? ` · ${formatKins(row.marketKins)} KINS` : ""}
                 {row.unit
-                  ? `${formatKins(row.unit)} KINS/u · net ~${formatKins(row.netUnit!)} · ${
-                      row.netUsd ? formatUsd(row.netUsd) : "Not available"
-                    } USD`
-                  : "No manual price"}
+                  ? ` · ref ${formatKins(row.unit)} KINS`
+                  : " · no ref price"}
               </span>
             </div>
           ))}
         </div>
       </Card>
 
-      {market?.configured && market.items.length > 0 && (
+      {market?.configured && (
         <Card>
-          <CardTitle>API catalog sample</CardTitle>
-          <ul className="mt-2 max-h-64 space-y-1 overflow-y-auto text-sm text-muted">
-            {market.items.slice(0, 50).map((i) => (
-              <li key={i.id}>
-                {i.name} <span className="font-mono text-xs">({i.id})</span>
-              </li>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <CardTitle>All market items</CardTitle>
+            <Input
+              className="max-w-xs"
+              placeholder="Search items…"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
+          </div>
+          <div className="mt-3 max-h-[28rem] space-y-1 overflow-y-auto">
+            {filtered.slice(0, 100).map((i) => (
+              <div
+                key={i.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 px-3 py-2 text-sm"
+              >
+                <div>
+                  <div className="font-medium">{i.name}</div>
+                  <div className="text-[11px] text-muted">
+                    {i.id}
+                    {i.listings != null ? ` · ${i.listings} listings` : ""}
+                    {i.totalQty != null ? ` · qty ${i.totalQty}` : ""}
+                  </div>
+                </div>
+                <div className="text-right font-mono text-xs tabular-nums">
+                  <div>
+                    {i.lowestUsdPerUnit
+                      ? formatUsd(i.lowestUsdPerUnit, { maxDecimals: 8 })
+                      : "Not available"}
+                    <span className="text-muted"> /u</span>
+                  </div>
+                  {i.lowestKinsPerUnit && (
+                    <div className="text-muted">
+                      ~{formatKins(i.lowestKinsPerUnit)} KINS/u
+                    </div>
+                  )}
+                </div>
+              </div>
             ))}
-          </ul>
+            {!filtered.length && (
+              <p className="text-sm text-muted">No items match.</p>
+            )}
+          </div>
+          <p className="mt-2 text-[11px] text-muted">
+            Showing up to 100 results. Active listings are not guaranteed sales.
+          </p>
         </Card>
       )}
     </div>

@@ -34,7 +34,7 @@ const nextConfig: NextConfig = {
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: blob: https://kintara.wiki",
               "font-src 'self' data:",
-              "connect-src 'self' https://api.dexscreener.com https://api.coingecko.com https://kintara.wiki",
+              "connect-src 'self' https://api.dexscreener.com https://api.coingecko.com https://kintara.wiki https://kintaramarket.xyz",
               "frame-ancestors 'none'",
               "base-uri 'self'",
               "form-action 'self'",

@@ -1,53 +1,36 @@
-# Kintara F12 API mapping
+# Kintara market API mapping
 
-Do **not** invent endpoints. Paste sanitized DevTools captures here, then wire `src/config/kintara-api.ts`.
+Primary **read-only** public source (community site):
 
-## Rules
+## kintaramarket.xyz
 
-1. Remove cookies, bearer tokens, wallet signatures, and personal identifiers.
-2. Confirm the endpoint is safely public (no personal session cookie).
-3. Add path templates via env: `KINTARA_*_PATH`.
-4. Add Zod schema + normalizer tests with sanitized fixtures.
-5. Call only from server Route Handlers.
-6. Never integrate quote / buy / reserve / sign / claim.
+| Feature | HTTP method | Full URL | Public | Request | Headers | Response sample | Refresh | Normalizer |
+|--------|-------------|---------|--------|---------|---------|-----------------|---------|------------|
+| Market summary | GET | `https://kintaramarket.xyz/api/market` | Yes | — | Accept: json | `{ itemType, listings, totalQty, lowestUsdPerUnit, lowestGoldPerUnit, kinsListings, goldListings }[]` | ~60s cache | **live** |
+| Item listings | GET | `https://kintaramarket.xyz/api/market/{itemType}` | Yes | path `itemType` e.g. `stone` | Accept: json | `{ id, sellerName, quantity, currency, priceUsd, unitPrice, … }[]` | ~45s cache | **live** |
+| Quote / buy | — | — | Auth write | — | — | — | — | **not integrated** |
 
-## Mapping table
+### Notes
 
-| Feature | HTTP method | Full URL | Public or authenticated | Request query/body | Required headers | Sanitized response sample | Refresh behavior | Rate limit observed | Normalizer status |
-|--------|-------------|---------|-------------------------|--------------------|------------------|---------------------------|------------------|---------------------|-------------------|
-| Catalog | GET | _TBD_ | Public? | | | | | | pending |
-| Active listings | GET | _TBD_ | Public? | `{itemId}` | | | | | pending |
-| Item stats | GET | _TBD_ | Public? | `{itemId}` | | `{ ok, currency, avg30d, samples[] }` | | | partial (shape ready) |
-| Sold history | GET | _TBD_ | Public? | `{itemId}` | | `{ date, avgUnitPrice, sales }` | | | partial |
-| Quote (DO NOT USE) | — | — | Authenticated write | | | `{ quoteId, signature }` | — | — | **blocked by design** |
+- Floors are **USD per unit** (`lowestUsdPerUnit`, listing `unitPrice`).
+- Portfolio valuation uses **KINS per unit** = `USD per unit ÷ KINS/USD` (DexScreener/CoinGecko).
+- `currency: "token"` listings are KINS-side marketplace rows (USD quote still provided by the API).
+- Gold listings are shown for reference only; cost basis remains KINS/USD from alerts.
+- Active listings are **not** guaranteed sales.
 
-## Known response fragments (normalizer support)
-
-```json
-{
-  "ok": true,
-  "currency": "token",
-  "avg30d": 0.0002,
-  "samples": [
-    {
-      "date": "2026-06-05",
-      "avgUnitPrice": 0.0002,
-      "sales": 91
-    }
-  ]
-}
-```
-
-Quote-shaped responses are **write/purchase flow and intentionally not integrated**.
-
-## Env slots
+### Env (defaults already set in code)
 
 ```dotenv
-KINTARA_PUBLIC_API_BASE=
-KINTARA_CATALOG_PATH=
-KINTARA_LISTINGS_PATH=
-KINTARA_ITEM_STATS_PATH=
-KINTARA_SOLD_HISTORY_PATH=
+KINTARA_PUBLIC_API_BASE=https://kintaramarket.xyz
+KINTARA_CATALOG_PATH=/api/market
+KINTARA_LISTINGS_PATH=/api/market/{itemId}
+KINTARA_ITEM_STATS_PATH=/api/market/{itemId}
 ```
 
-Path templates may include `{itemId}`.
+### Item type ↔ portfolio catalog
+
+See `src/lib/kintara/item-type-map.ts` for favorites mapping (`cooked_fish_meat` → `cooked-fish`, etc.).
+
+### Intentionally blocked
+
+Any quote/buy/reserve/sign flow (e.g. `{ quoteId, signature }`) is **not** integrated. This app is analytics only.

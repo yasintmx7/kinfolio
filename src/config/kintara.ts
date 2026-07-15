@@ -31,6 +31,7 @@ export const ALLOWED_UPSTREAM_HOSTS = [
   "pro-api.coingecko.com",
   "mainnet.helius-rpc.com",
   "kintara.wiki",
+  "kintaramarket.xyz",
   "fanout.kintara.gg",
   "kintara.com",
 ] as const;

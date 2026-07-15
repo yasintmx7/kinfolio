@@ -108,10 +108,32 @@ export function normalizeItemStats(
   };
 }
 
+async function resolveKinsUsd(): Promise<number | undefined> {
+  try {
+    const { fetchDexScreenerKinsPrice } = await import("@/lib/prices/dexscreener");
+    const { fetchCoinGeckoKinsPrice } = await import("@/lib/prices/coingecko");
+    const dex = await fetchDexScreenerKinsPrice();
+    if (dex?.priceUsd) return Number(dex.priceUsd);
+    const cg = await fetchCoinGeckoKinsPrice();
+    if (cg?.priceUsd) return Number(cg.priceUsd);
+  } catch {
+    // ignore
+  }
+  return undefined;
+}
+
 export class ConfigurableMarketplaceAdapter implements KintaraMarketplaceAdapter {
   async getCatalog(): Promise<MarketplaceItem[]> {
     const cfg = getKintaraApiConfig();
     if (!cfg.catalog.enabled) return [];
+
+    if (cfg.provider === "kintaramarket.xyz") {
+      const { getCatalogFromKintaraMarket } = await import(
+        "@/lib/kintara/kintaramarket-xyz"
+      );
+      return getCatalogFromKintaraMarket();
+    }
+
     const url = joinUrl(cfg.baseUrl, cfg.catalog.pathTemplate);
     const res = await fetchWithTimeout(url, { timeoutMs: cfg.catalog.timeoutMs });
     if (!res.ok) throw new Error(`Catalog fetch failed: ${res.status}`);
@@ -120,8 +142,8 @@ export class ConfigurableMarketplaceAdapter implements KintaraMarketplaceAdapter
     return json.map((row, i) => {
       const r = row as Record<string, unknown>;
       return {
-        id: String(r.id ?? r.itemId ?? i),
-        name: String(r.name ?? r.title ?? "Unknown"),
+        id: String(r.id ?? r.itemId ?? r.itemType ?? i),
+        name: String(r.name ?? r.title ?? r.itemType ?? "Unknown"),
         imageUrl: r.imageUrl ? String(r.imageUrl) : r.image ? String(r.image) : undefined,
       };
     });
@@ -130,6 +152,15 @@ export class ConfigurableMarketplaceAdapter implements KintaraMarketplaceAdapter
   async getActiveListings(itemId: string): Promise<MarketplaceListing[]> {
     const cfg = getKintaraApiConfig();
     if (!cfg.listings.enabled) return [];
+
+    if (cfg.provider === "kintaramarket.xyz") {
+      const kinsUsd = await resolveKinsUsd();
+      const { getListingsFromKintaraMarket } = await import(
+        "@/lib/kintara/kintaramarket-xyz"
+      );
+      return getListingsFromKintaraMarket(itemId, kinsUsd);
+    }
+
     const path = fillTemplate(cfg.listings.pathTemplate, { itemId });
     const url = joinUrl(cfg.baseUrl, path);
     const res = await fetchWithTimeout(url, { timeoutMs: cfg.listings.timeoutMs });
@@ -154,7 +185,7 @@ export class ConfigurableMarketplaceAdapter implements KintaraMarketplaceAdapter
         quantity: qty,
         totalPriceKins: total,
         unitPriceKins: unit,
-        seller: r.seller ? String(r.seller) : undefined,
+        seller: r.seller ? String(r.seller) : r.sellerName ? String(r.sellerName) : undefined,
         createdAt: r.createdAt ? String(r.createdAt) : undefined,
       };
     });
@@ -170,17 +201,45 @@ export class ConfigurableMarketplaceAdapter implements KintaraMarketplaceAdapter
         updatedAt: new Date().toISOString(),
       };
     }
+
+    if (cfg.provider === "kintaramarket.xyz") {
+      const kinsUsd = await resolveKinsUsd();
+      const { getStatsFromKintaraMarket } = await import(
+        "@/lib/kintara/kintaramarket-xyz"
+      );
+      return getStatsFromKintaraMarket(itemId, kinsUsd);
+    }
+
     const path = fillTemplate(cfg.itemStats.pathTemplate, { itemId });
     const url = joinUrl(cfg.baseUrl, path);
     const res = await fetchWithTimeout(url, { timeoutMs: cfg.itemStats.timeoutMs });
     if (!res.ok) throw new Error(`Stats fetch failed: ${res.status}`);
     const json: unknown = await res.json();
+    // If response is a listings array (kintaramarket-style), normalize via stats helper shape
+    if (Array.isArray(json)) {
+      return normalizeItemStats(itemId, {
+        currency: "token",
+        samples: json.slice(0, 30).map((row) => {
+          const r = row as Record<string, unknown>;
+          return {
+            unitPrice: r.unitPrice ?? r.avgUnitPrice,
+            sales: r.sales,
+            quantity: r.quantity,
+            date: r.date,
+          };
+        }),
+      });
+    }
     return normalizeItemStats(itemId, json);
   }
 
   async getSoldHistory(itemId: string, _range?: TimeRange): Promise<SoldSample[]> {
     void _range;
     const cfg = getKintaraApiConfig();
+    if (cfg.provider === "kintaramarket.xyz") {
+      const stats = await this.getItemStats(itemId);
+      return stats.samples;
+    }
     if (!cfg.soldHistory.enabled) return [];
     const path = fillTemplate(cfg.soldHistory.pathTemplate, { itemId });
     const url = joinUrl(cfg.baseUrl, path);
@@ -193,6 +252,16 @@ export class ConfigurableMarketplaceAdapter implements KintaraMarketplaceAdapter
   async getReferencePrices(
     itemIds: string[],
   ): Promise<Record<string, ReferencePrice>> {
+    const cfg = getKintaraApiConfig();
+    if (cfg.provider === "kintaramarket.xyz") {
+      const kinsUsd = await resolveKinsUsd();
+      if (kinsUsd == null) return {};
+      const { getReferencePricesFromKintaraMarket } = await import(
+        "@/lib/kintara/kintaramarket-xyz"
+      );
+      return getReferencePricesFromKintaraMarket(itemIds, kinsUsd);
+    }
+
     const out: Record<string, ReferencePrice> = {};
     for (const itemId of itemIds) {
       try {

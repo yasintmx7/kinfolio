@@ -40,6 +40,41 @@ export function formatQty(value: string | number | Decimal): string {
   return trimTrailingZeros(n.toFixed(8));
 }
 
+/** Compact qty: 5000 → 5k, 1200 → 1.2k, 1500000 → 1.5m */
+export function formatQtyCompact(value: string | number | Decimal): string {
+  const n = d(value);
+  if (!n.isFinite() || n.isZero()) return "0";
+  const abs = n.abs();
+  const sign = n.lt(0) ? "-" : "";
+  if (abs.gte(1_000_000)) {
+    const m = abs.div(1_000_000);
+    return `${sign}${trimTrailingZeros(m.toFixed(m.gte(10) ? 1 : 2))}m`;
+  }
+  if (abs.gte(1_000)) {
+    const k = abs.div(1_000);
+    return `${sign}${trimTrailingZeros(k.toFixed(k.gte(10) ? 1 : 2))}k`;
+  }
+  if (n.isInteger()) return n.toFixed(0);
+  return trimTrailingZeros(n.toFixed(2));
+}
+
+/** Short $ for market lists: $0.1, $1.25, $12 */
+export function formatUsdShort(
+  value: string | number | Decimal | null | undefined,
+): string {
+  if (value === null || value === undefined || value === "") return "—";
+  const n = d(value);
+  if (!n.isFinite()) return "—";
+  const abs = n.abs();
+  let decimals = 2;
+  if (abs.gt(0) && abs.lt(0.01)) decimals = 6;
+  else if (abs.lt(0.1)) decimals = 4;
+  else if (abs.lt(1)) decimals = 3;
+  else if (abs.gte(100)) decimals = 2;
+  const sign = n.lt(0) ? "-" : "";
+  return `${sign}$${trimTrailingZeros(abs.toFixed(decimals))}`;
+}
+
 function trimTrailingZeros(s: string): string {
   if (!s.includes(".")) return s;
   return s.replace(/\.?0+$/, "");

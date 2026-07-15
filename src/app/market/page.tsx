@@ -4,11 +4,14 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { RefreshCw, Star, X } from "lucide-react";
 import { ItemIcon } from "@/components/items/item-icon";
-import { useMarketHub, type MarketFloorItem, type RecentSale } from "@/hooks/use-market-hub";
+import {
+  useMarketHub,
+  type MarketFloorItem,
+  type RecentSale,
+} from "@/hooks/use-market-hub";
 import { useKinsPrice } from "@/hooks/use-kins-price";
 import { useToast } from "@/components/feedback/toast";
-import { d } from "@/lib/accounting/decimal";
-import { formatKins, formatUsd } from "@/lib/formatting/money";
+import { formatQtyCompact, formatUsdShort } from "@/lib/formatting/money";
 import { getWatchlist, toggleWatch } from "@/lib/market/watchlist";
 import { cn } from "@/lib/utils";
 
@@ -35,7 +38,6 @@ function MarketHubInner() {
     setWatch(getWatchlist());
   }, []);
 
-  // Redirect old overview tab to live feed
   useEffect(() => {
     if (!rawTab || rawTab === "overview") {
       const p = new URLSearchParams(searchParams.toString());
@@ -104,37 +106,32 @@ function MarketHubInner() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Simple top bar */}
+    <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-[1.65rem] font-semibold tracking-tight text-primary">
+          <h1 className="text-[1.65rem] font-semibold tracking-tight">
             {tab === "sales" && "Live market"}
             {tab === "floors" && "Floors"}
             {tab === "watch" && "Watchlist"}
           </h1>
           <p className="mt-1 text-sm text-muted">
             {tab === "sales" &&
-              `${hub.sales.length} listings · seller, KINS & $ · every 10s`}
-            {tab === "floors" && `${hub.floors.length} items · lowest price each`}
+              `${hub.sales.length} listings · qty + $ only · 10s`}
+            {tab === "floors" && `${hub.floors.length} items · lowest $ each`}
             {tab === "watch" &&
               (watch.length
-                ? `${watch.length} watched items`
-                : "Star items to watch them")}
+                ? `${watch.length} watched`
+                : "Star items to watch")}
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <div className="rounded-2xl border border-border/60 bg-surface/80 px-4 py-2.5 text-right">
-            <div className="text-[10px] font-medium uppercase tracking-wider text-muted">
+          <div className="rounded-2xl border border-border/50 bg-surface/70 px-4 py-2 text-right">
+            <div className="text-[10px] uppercase tracking-wider text-muted">
               1 KINS
             </div>
             <div className="font-mono text-base font-semibold tabular-nums text-sky-hi">
-              {kinsUsd
-                ? formatUsd(kinsUsd, { maxDecimals: 6 })
-                : hub.loading
-                  ? "…"
-                  : "—"}
+              {kinsUsd ? formatUsdShort(kinsUsd) : hub.loading ? "…" : "—"}
             </div>
           </div>
           <button
@@ -144,7 +141,7 @@ function MarketHubInner() {
               void reloadPrice();
             }}
             disabled={hub.refreshing}
-            className="inline-flex min-h-11 items-center gap-2 rounded-2xl border border-border/60 bg-surface px-3.5 text-sm text-muted hover:text-primary disabled:opacity-50"
+            className="inline-flex min-h-11 items-center gap-2 rounded-2xl border border-border/50 bg-surface px-3.5 text-sm text-muted hover:text-primary disabled:opacity-50"
           >
             <RefreshCw
               className={cn("h-4 w-4", hub.refreshing && "animate-spin")}
@@ -160,8 +157,7 @@ function MarketHubInner() {
         </div>
       </div>
 
-      {/* Clean segment control */}
-      <div className="inline-flex rounded-2xl border border-border/50 bg-surface/60 p-1">
+      <div className="inline-flex rounded-2xl border border-border/40 bg-surface/50 p-1">
         {(
           [
             ["sales", "Live"],
@@ -174,9 +170,9 @@ function MarketHubInner() {
             type="button"
             onClick={() => setTab(id)}
             className={cn(
-              "min-h-9 rounded-xl px-4 text-sm font-medium transition-colors",
+              "min-h-9 rounded-xl px-4 text-sm font-medium",
               tab === id
-                ? "bg-sky text-[#0a121c] shadow-sm"
+                ? "bg-sky text-[#0a121c]"
                 : "text-muted hover:text-primary",
             )}
           >
@@ -186,21 +182,22 @@ function MarketHubInner() {
         ))}
       </div>
 
-      {/* Search */}
       <input
         value={q}
         onChange={(e) => setQ(e.target.value)}
         placeholder={
-          tab === "sales"
-            ? "Search item, seller, listing id…"
-            : "Search items…"
+          tab === "sales" ? "Search item or seller…" : "Search items…"
         }
-        className="min-h-12 w-full rounded-2xl border border-border/50 bg-surface/70 px-4 text-sm text-primary outline-none placeholder:text-muted/60 focus:border-sky/40 focus:ring-2 focus:ring-sky/20"
+        className="min-h-12 w-full rounded-2xl border border-border/40 bg-surface/60 px-4 text-sm outline-none placeholder:text-muted/50 focus:border-sky/40 focus:ring-2 focus:ring-sky/15"
       />
 
-      {/* Main content */}
       {tab === "sales" && (
-        <LiveList rows={filteredLive} onOpen={openItem} onWatch={onWatch} watch={watch} />
+        <LiveList
+          rows={filteredLive}
+          onOpen={openItem}
+          onWatch={onWatch}
+          watch={watch}
+        />
       )}
 
       {(tab === "floors" || tab === "watch") && (
@@ -211,13 +208,12 @@ function MarketHubInner() {
           onWatch={onWatch}
           empty={
             tab === "watch"
-              ? "No watched items yet. Open Live or Floors and tap ★."
+              ? "No watched items yet."
               : "No floors loaded yet."
           }
         />
       )}
 
-      {/* Simple detail sheet */}
       {selectedId && (
         <DetailSheet
           itemId={selectedId}
@@ -225,7 +221,6 @@ function MarketHubInner() {
           floor={selectedFloor}
           rows={selected}
           watching={watch.includes(selectedId)}
-          kinsUsd={kinsUsd}
           onClose={closeItem}
           onWatch={() => onWatch(selectedId)}
         />
@@ -238,6 +233,7 @@ function MarketHubInner() {
   );
 }
 
+/** e.g. "5k Wood" + "$0.10" */
 function LiveList({
   rows,
   onOpen,
@@ -251,123 +247,76 @@ function LiveList({
 }) {
   if (!rows.length) {
     return (
-      <div className="rounded-3xl border border-border/40 bg-surface/50 px-6 py-16 text-center text-sm text-muted">
+      <div className="rounded-3xl border border-border/40 bg-surface/40 px-6 py-16 text-center text-sm text-muted">
         Waiting for listings…
       </div>
     );
   }
 
   return (
-    <div className="overflow-hidden rounded-3xl border border-border/40 bg-surface/40">
-      {/* Desktop header */}
-      <div className="hidden grid-cols-[1.4fr_0.7fr_0.55fr_0.7fr_0.7fr_auto] gap-3 border-b border-border/40 px-4 py-3 text-[11px] font-medium uppercase tracking-wider text-muted md:grid">
-        <span>Item · seller</span>
-        <span>Listing</span>
-        <span className="text-right">Qty</span>
-        <span className="text-right">KINS / unit</span>
-        <span className="text-right">$ / unit</span>
-        <span className="w-9" />
-      </div>
-
-      <div className="max-h-[calc(100dvh-16rem)] divide-y divide-border/30 overflow-y-auto">
+    <div className="overflow-hidden rounded-3xl border border-border/40 bg-surface/35">
+      <div className="max-h-[calc(100dvh-15rem)] divide-y divide-border/25 overflow-y-auto">
         {rows.map((r) => {
           const seller = r.sellerName ?? r.seller ?? "—";
+          const unit$ = r.unitUsd ?? null;
+          const lot$ = r.usdTotal ?? null;
+          const qtyLabel = formatQtyCompact(r.quantity);
+
           return (
             <div
               key={r.id}
-              className="grid grid-cols-1 gap-2 px-4 py-3.5 transition-colors hover:bg-sky/[0.04] md:grid-cols-[1.4fr_0.7fr_0.55fr_0.7fr_0.7fr_auto] md:items-center md:gap-3"
+              className="flex items-center gap-3 px-4 py-3.5 hover:bg-sky/[0.04]"
             >
               <button
                 type="button"
                 onClick={() => onOpen(r.itemType)}
-                className="flex min-w-0 items-center gap-3 text-left"
+                className="flex min-w-0 flex-1 items-center gap-3 text-left"
               >
-                <ItemIcon itemId={r.itemType} name={r.name} size={40} />
+                <ItemIcon itemId={r.itemType} name={r.name} size={42} />
                 <div className="min-w-0">
-                  <div className="truncate text-[15px] font-semibold tracking-tight">
+                  {/* 5k Wood */}
+                  <div className="truncate text-[16px] font-semibold tracking-tight">
+                    <span className="font-mono tabular-nums text-sky-hi">
+                      {qtyLabel}
+                    </span>{" "}
                     {r.name}
                   </div>
-                  <div className="truncate text-[12px] text-muted">
-                    <span className="text-primary/90">{seller}</span>
+                  <div className="mt-0.5 truncate text-[12px] text-muted">
+                    {seller}
                     {r.sellerId ? (
-                      <span className="font-mono text-muted"> · #{r.sellerId}</span>
+                      <span className="font-mono"> · #{r.sellerId}</span>
                     ) : null}
-                  </div>
-                  <div className="mt-0.5 text-[11px] text-muted md:hidden">
-                    #{r.listingId ?? r.id} · {new Date(r.timestamp).toLocaleTimeString()}
-                  </div>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => onOpen(r.itemType)}
-                className="hidden text-left font-mono text-[12px] text-muted md:block"
-              >
-                <div>#{r.listingId ?? r.id}</div>
-                <div className="text-[11px]">
-                  {new Date(r.timestamp).toLocaleTimeString()}
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => onOpen(r.itemType)}
-                className="hidden text-right font-mono text-sm tabular-nums md:block"
-              >
-                {r.quantity}
-              </button>
-
-              {/* Prices — most visible */}
-              <button
-                type="button"
-                onClick={() => onOpen(r.itemType)}
-                className="flex items-center justify-between gap-4 md:block md:text-right"
-              >
-                <div className="md:hidden text-[12px] text-muted">Price</div>
-                <div>
-                  <div className="font-mono text-[15px] font-semibold tabular-nums tracking-tight">
-                    {formatKins(r.unitKins)}{" "}
-                    <span className="text-[11px] font-medium text-muted">KINS</span>
-                  </div>
-                  <div className="font-mono text-[13px] tabular-nums text-sky-hi">
-                    {r.unitUsd
-                      ? formatUsd(r.unitUsd, { maxDecimals: 6 })
-                      : "—"}
-                    <span className="text-muted"> /u</span>
-                  </div>
-                  <div className="mt-0.5 font-mono text-[11px] text-muted md:hidden">
-                    ×{r.quantity}
-                    {r.usdTotal
-                      ? ` · lot ${formatUsd(r.usdTotal, { maxDecimals: 3 })}`
-                      : ""}
-                    {r.totalKins ? ` · ${formatKins(r.totalKins)} KINS` : ""}
+                    <span className="text-muted/70">
+                      {" · "}
+                      {new Date(r.timestamp).toLocaleTimeString()}
+                    </span>
                   </div>
                 </div>
               </button>
 
+              {/* $ only */}
               <button
                 type="button"
                 onClick={() => onOpen(r.itemType)}
-                className="hidden text-right md:block"
+                className="shrink-0 text-right"
               >
-                <div className="font-mono text-[13px] tabular-nums text-sky-hi">
-                  {r.unitUsd
-                    ? formatUsd(r.unitUsd, { maxDecimals: 6 })
-                    : "—"}
+                <div className="font-mono text-[17px] font-semibold tabular-nums text-sky-hi">
+                  {unit$ ? formatUsdShort(unit$) : "—"}
+                  <span className="text-[11px] font-medium text-muted">
+                    /u
+                  </span>
                 </div>
-                <div className="font-mono text-[11px] text-muted">
-                  lot{" "}
-                  {r.usdTotal
-                    ? formatUsd(r.usdTotal, { maxDecimals: 3 })
-                    : "—"}
-                </div>
+                {lot$ && (
+                  <div className="font-mono text-[12px] tabular-nums text-muted">
+                    lot {formatUsdShort(lot$)}
+                  </div>
+                )}
               </button>
 
               <button
                 type="button"
                 onClick={() => onWatch(r.itemType)}
-                className="absolute right-3 top-3 rounded-xl p-2 text-muted hover:bg-raised hover:text-sky md:static md:justify-self-end"
+                className="rounded-xl p-2 text-muted hover:bg-raised hover:text-sky"
                 aria-label="Watch"
               >
                 <Star
@@ -400,72 +349,74 @@ function FloorList({
 }) {
   if (!rows.length) {
     return (
-      <div className="rounded-3xl border border-border/40 bg-surface/50 px-6 py-16 text-center text-sm text-muted">
+      <div className="rounded-3xl border border-border/40 bg-surface/40 px-6 py-16 text-center text-sm text-muted">
         {empty}
       </div>
     );
   }
 
   return (
-    <div className="overflow-hidden rounded-3xl border border-border/40 bg-surface/40">
-      <div className="hidden grid-cols-[1fr_auto_auto] gap-4 border-b border-border/40 px-4 py-3 text-[11px] font-medium uppercase tracking-wider text-muted md:grid">
-        <span>Item</span>
-        <span className="text-right">Lowest price</span>
-        <span className="w-9" />
-      </div>
-      <div className="max-h-[calc(100dvh-16rem)] divide-y divide-border/30 overflow-y-auto">
-        {rows.map((row) => (
-          <div
-            key={row.id}
-            className="flex items-center gap-3 px-4 py-3.5 hover:bg-sky/[0.04]"
-          >
-            <button
-              type="button"
-              onClick={() => onOpen(row.id)}
-              className="flex min-w-0 flex-1 items-center gap-3 text-left"
+    <div className="overflow-hidden rounded-3xl border border-border/40 bg-surface/35">
+      <div className="max-h-[calc(100dvh-15rem)] divide-y divide-border/25 overflow-y-auto">
+        {rows.map((row) => {
+          const qtyLabel =
+            row.totalQty != null ? formatQtyCompact(row.totalQty) : null;
+          return (
+            <div
+              key={row.id}
+              className="flex items-center gap-3 px-4 py-3.5 hover:bg-sky/[0.04]"
             >
-              <ItemIcon itemId={row.id} name={row.name} size={40} />
-              <div className="min-w-0">
-                <div className="truncate text-[15px] font-semibold">
-                  {row.name}
+              <button
+                type="button"
+                onClick={() => onOpen(row.id)}
+                className="flex min-w-0 flex-1 items-center gap-3 text-left"
+              >
+                <ItemIcon itemId={row.id} name={row.name} size={42} />
+                <div className="min-w-0">
+                  <div className="truncate text-[16px] font-semibold">
+                    {qtyLabel ? (
+                      <>
+                        <span className="font-mono tabular-nums text-sky-hi">
+                          {qtyLabel}
+                        </span>{" "}
+                      </>
+                    ) : null}
+                    {row.name}
+                  </div>
+                  <div className="text-[12px] text-muted">
+                    {row.listings ?? 0} listings
+                  </div>
                 </div>
-                <div className="text-[12px] text-muted">
-                  {row.listings ?? 0} open
-                  {row.totalQty != null ? ` · ${row.totalQty} qty` : ""}
+              </button>
+              <button
+                type="button"
+                onClick={() => onOpen(row.id)}
+                className="shrink-0 text-right"
+              >
+                <div className="font-mono text-[17px] font-semibold tabular-nums text-sky-hi">
+                  {row.lowestUsdPerUnit
+                    ? formatUsdShort(row.lowestUsdPerUnit)
+                    : "—"}
+                  <span className="text-[11px] font-medium text-muted">
+                    /u
+                  </span>
                 </div>
-              </div>
-            </button>
-            <button
-              type="button"
-              onClick={() => onOpen(row.id)}
-              className="shrink-0 text-right"
-            >
-              <div className="font-mono text-[15px] font-semibold tabular-nums">
-                {row.lowestKinsPerUnit
-                  ? formatKins(row.lowestKinsPerUnit)
-                  : "—"}{" "}
-                <span className="text-[11px] font-medium text-muted">KINS</span>
-              </div>
-              <div className="font-mono text-[13px] tabular-nums text-sky-hi">
-                {row.lowestUsdPerUnit
-                  ? formatUsd(row.lowestUsdPerUnit, { maxDecimals: 6 })
-                  : "—"}
-              </div>
-            </button>
-            <button
-              type="button"
-              onClick={() => onWatch(row.id)}
-              className="rounded-xl p-2 text-muted hover:bg-raised hover:text-sky"
-            >
-              <Star
-                className={cn(
-                  "h-4 w-4",
-                  watch.includes(row.id) && "fill-sky text-sky",
-                )}
-              />
-            </button>
-          </div>
-        ))}
+              </button>
+              <button
+                type="button"
+                onClick={() => onWatch(row.id)}
+                className="rounded-xl p-2 text-muted hover:bg-raised hover:text-sky"
+              >
+                <Star
+                  className={cn(
+                    "h-4 w-4",
+                    watch.includes(row.id) && "fill-sky text-sky",
+                  )}
+                />
+              </button>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -477,7 +428,6 @@ function DetailSheet({
   floor,
   rows,
   watching,
-  kinsUsd,
   onClose,
   onWatch,
 }: {
@@ -486,7 +436,6 @@ function DetailSheet({
   floor?: MarketFloorItem;
   rows: RecentSale[];
   watching: boolean;
-  kinsUsd?: string;
   onClose: () => void;
   onWatch: () => void;
 }) {
@@ -499,11 +448,19 @@ function DetailSheet({
         onClick={onClose}
       />
       <div className="relative z-10 flex max-h-[88dvh] w-full max-w-md flex-col rounded-t-3xl border border-border bg-surface shadow-2xl sm:mr-4 sm:max-h-[90dvh] sm:rounded-3xl">
-        <div className="flex items-start gap-3 border-b border-border/50 p-5">
+        <div className="flex items-start gap-3 border-b border-border/40 p-5">
           <ItemIcon itemId={itemId} name={name} size={48} />
           <div className="min-w-0 flex-1">
-            <h2 className="text-lg font-semibold tracking-tight">{name}</h2>
-            <p className="font-mono text-xs text-muted">{itemId}</p>
+            <h2 className="text-lg font-semibold">{name}</h2>
+            <p className="text-sm text-muted">
+              Floor{" "}
+              <span className="font-mono font-semibold text-sky-hi">
+                {floor?.lowestUsdPerUnit
+                  ? formatUsdShort(floor.lowestUsdPerUnit)
+                  : "—"}
+              </span>
+              <span className="text-muted"> /u</span>
+            </p>
           </div>
           <button
             type="button"
@@ -514,92 +471,54 @@ function DetailSheet({
           </button>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 border-b border-border/50 p-5">
-          <div className="rounded-2xl bg-surface-2/80 p-3">
-            <div className="text-[10px] uppercase tracking-wider text-muted">
-              Floor KINS
-            </div>
-            <div className="mt-1 font-mono text-lg font-semibold tabular-nums">
-              {floor?.lowestKinsPerUnit
-                ? formatKins(floor.lowestKinsPerUnit)
-                : "—"}
-            </div>
-          </div>
-          <div className="rounded-2xl bg-surface-2/80 p-3">
-            <div className="text-[10px] uppercase tracking-wider text-muted">
-              Floor $
-            </div>
-            <div className="mt-1 font-mono text-lg font-semibold tabular-nums text-sky-hi">
-              {floor?.lowestUsdPerUnit
-                ? formatUsd(floor.lowestUsdPerUnit, { maxDecimals: 6 })
-                : "—"}
-            </div>
-          </div>
-          {kinsUsd && (
-            <p className="col-span-2 text-[11px] text-muted">
-              1 KINS = {formatUsd(kinsUsd, { maxDecimals: 6 })}
-            </p>
-          )}
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-5">
-          <p className="mb-3 text-[11px] font-medium uppercase tracking-wider text-muted">
-            Open listings · {rows.length}
+        <div className="flex-1 overflow-y-auto p-4">
+          <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted">
+            Listings · {rows.length}
           </p>
           <div className="space-y-2">
             {rows.length === 0 && (
-              <p className="text-sm text-muted">None in current feed.</p>
+              <p className="text-sm text-muted">None in feed.</p>
             )}
             {rows.map((s) => (
               <div
                 key={s.id}
-                className="rounded-2xl border border-border/40 bg-surface-2/50 px-3.5 py-3"
+                className="flex items-center justify-between gap-3 rounded-2xl bg-surface-2/60 px-3.5 py-3"
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <div className="text-sm font-medium">
-                      {s.sellerName ?? s.seller ?? "—"}
-                    </div>
-                    <div className="font-mono text-[11px] text-muted">
-                      seller #{s.sellerId ?? "—"} · list #{s.listingId ?? s.id}
-                    </div>
+                <div className="min-w-0">
+                  <div className="text-[15px] font-semibold">
+                    <span className="font-mono tabular-nums text-sky-hi">
+                      {formatQtyCompact(s.quantity)}
+                    </span>{" "}
+                    {name}
                   </div>
-                  <div className="text-right">
-                    <div className="font-mono text-sm font-semibold tabular-nums">
-                      {formatKins(s.unitKins)}{" "}
-                      <span className="text-[10px] text-muted">KINS</span>
-                    </div>
-                    <div className="font-mono text-[13px] tabular-nums text-sky-hi">
-                      {s.unitUsd
-                        ? formatUsd(s.unitUsd, { maxDecimals: 6 })
-                        : "—"}
-                    </div>
+                  <div className="truncate text-[12px] text-muted">
+                    {s.sellerName ?? s.seller ?? "—"}
+                    {s.sellerId ? ` · #${s.sellerId}` : ""}
                   </div>
                 </div>
-                <div className="mt-2 flex justify-between text-[11px] text-muted">
-                  <span>
-                    ×{s.quantity}
-                    {s.totalKins ? ` · ${formatKins(s.totalKins)} KINS lot` : ""}
-                    {s.usdTotal
-                      ? ` · ${formatUsd(s.usdTotal, { maxDecimals: 3 })}`
-                      : ""}
-                  </span>
-                  <span>{new Date(s.timestamp).toLocaleTimeString()}</span>
+                <div className="shrink-0 text-right">
+                  <div className="font-mono text-[16px] font-semibold tabular-nums text-sky-hi">
+                    {s.unitUsd ? formatUsdShort(s.unitUsd) : "—"}
+                    <span className="text-[11px] text-muted">/u</span>
+                  </div>
+                  {s.usdTotal && (
+                    <div className="font-mono text-[12px] text-muted">
+                      lot {formatUsdShort(s.usdTotal)}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
           </div>
         </div>
 
-        <div className="border-t border-border/50 p-4">
+        <div className="border-t border-border/40 p-4">
           <button
             type="button"
             onClick={onWatch}
             className={cn(
               "flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl text-sm font-semibold",
-              watching
-                ? "bg-sky/15 text-sky-hi"
-                : "bg-sky text-[#0a121c]",
+              watching ? "bg-sky/15 text-sky-hi" : "bg-sky text-[#0a121c]",
             )}
           >
             <Star className={cn("h-4 w-4", watching && "fill-sky")} />

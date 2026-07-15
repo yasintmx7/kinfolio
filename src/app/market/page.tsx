@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { memo, Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Lock, RefreshCw, Star, X } from "lucide-react";
 import { ItemIcon } from "@/components/items/item-icon";
@@ -188,7 +188,7 @@ function MarketHubInner() {
   const rawTab = searchParams.get("tab");
   const tab = parseTab(rawTab);
 
-  const hub = useMarketHub(10_000);
+  const hub = useMarketHub(18_000);
   const { price, reload: reloadPrice } = useKinsPrice(10_000);
   const { push } = useToast();
 
@@ -766,7 +766,7 @@ function SoldActivityCard({
         return (
           <div
             key={`${r.id}-${r.timestamp}`}
-            className="flex items-start gap-2.5 px-3 py-2.5"
+            className="list-row-cv flex items-start gap-2.5 px-3 py-2.5"
           >
             <button
               type="button"
@@ -877,6 +877,137 @@ function PriceBlock({
   );
 }
 
+const ListingRow = memo(function ListingRow({
+  r,
+  mode,
+  onOpenItem,
+  onOpenSeller,
+  onWatch,
+  watching,
+  compact,
+}: {
+  r: RecentSale;
+  mode: "listings" | "activity";
+  onOpenItem: (id: string) => void;
+  onOpenSeller: (row: RecentSale) => void;
+  onWatch: (id: string) => void;
+  watching: boolean;
+  compact: boolean;
+}) {
+  const seller = (r.sellerName ?? r.seller ?? "").trim() || "Unknown";
+  const qtyLabel = formatQtyCompact(r.quantity);
+  const locked = isLocked(r);
+  const canOpenSeller = Boolean(
+    (r.sellerName ?? r.seller ?? "").trim() ||
+      r.sellerId != null ||
+      r.sellerWallet,
+  );
+  const iconSize = compact ? 40 : 48;
+
+  return (
+    <div
+      className={cn(
+        "list-row-cv grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 px-2.5 py-2.5 sm:gap-3 sm:px-3 sm:py-3",
+        locked && mode === "listings" && "bg-amber-500/[0.06]",
+      )}
+    >
+      <button
+        type="button"
+        onClick={() => onOpenItem(r.itemType)}
+        className="relative shrink-0 rounded-2xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky"
+        aria-label={`Open ${r.name}`}
+      >
+        <ItemIcon itemId={r.itemType} name={r.name} size={iconSize} clear />
+        {mode === "listings" && locked && (
+          <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-amber-500 text-[#0a121c] shadow">
+            <Lock className="h-3 w-3" strokeWidth={2.5} />
+          </span>
+        )}
+      </button>
+
+      <div className="min-w-0 overflow-hidden">
+        <button
+          type="button"
+          onClick={() => onOpenItem(r.itemType)}
+          className="block w-full min-w-0 truncate text-left text-[14px] font-semibold tracking-tight hover:text-sky-hi sm:text-[15px]"
+        >
+          <span className="font-mono tabular-nums text-sky-hi">{qtyLabel}</span>{" "}
+          {r.name}
+        </button>
+
+        {mode === "listings" && locked && (
+          <div className="mt-0.5 inline-flex items-center gap-1 rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-200">
+            <Lock className="h-2.5 w-2.5" />
+            {lockLabel(r)}
+          </div>
+        )}
+
+        <button
+          type="button"
+          disabled={!canOpenSeller}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onOpenSeller(r);
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+          className={cn(
+            "mt-0.5 flex min-h-7 max-w-full items-center gap-1.5 rounded-lg text-left text-[11px] sm:text-[12px]",
+            canOpenSeller
+              ? "text-sky-hi underline decoration-sky/40 underline-offset-2 hover:bg-sky/10"
+              : "cursor-default text-muted",
+          )}
+          aria-label={`View all listings by ${seller}`}
+        >
+          {canOpenSeller && (
+            <SellerAvatar
+              sellerId={r.sellerId ?? r.sellerWallet}
+              sellerName={r.sellerName ?? r.seller}
+              size={16}
+            />
+          )}
+          <span className="truncate font-medium">{seller}</span>
+          {r.sellerId != null && (
+            <span className="shrink-0 font-mono text-muted">#{r.sellerId}</span>
+          )}
+          <span className="shrink-0 text-muted/70">
+            · {new Date(r.timestamp).toLocaleTimeString()}
+          </span>
+        </button>
+      </div>
+
+      <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
+        <button
+          type="button"
+          onClick={() => onOpenItem(r.itemType)}
+          className="text-right"
+        >
+          <PriceBlock
+            row={r}
+            locked={locked && mode === "listings"}
+            compact={compact}
+          />
+          {mode === "listings" && locked && (
+            <div className="text-[9px] font-semibold uppercase tracking-wide text-amber-300/90">
+              Locked
+            </div>
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={() => onWatch(r.itemType)}
+          className="rounded-lg p-1.5 text-muted hover:bg-raised hover:text-sky"
+          aria-label="Watch"
+        >
+          <Star
+            className={cn("h-3.5 w-3.5", watching && "fill-sky text-sky")}
+          />
+        </button>
+      </div>
+    </div>
+  );
+});
+
 function ListingList({
   rows,
   mode,
@@ -894,7 +1025,6 @@ function ListingList({
   onWatch: (id: string) => void;
   watch: string[];
   compact?: boolean;
-  /** Full-height main listings panel */
   tall?: boolean;
 }) {
   if (!rows.length) {
@@ -916,132 +1046,18 @@ function ListingList({
             : "max-h-[calc(100dvh-15rem)]",
       )}
     >
-      {rows.map((r) => {
-        const seller = (r.sellerName ?? r.seller ?? "").trim() || "Unknown";
-        const qtyLabel = formatQtyCompact(r.quantity);
-        const locked = isLocked(r);
-        const canOpenSeller = Boolean(
-          (r.sellerName ?? r.seller ?? "").trim() || r.sellerId != null,
-        );
-        const iconSize = compact ? 44 : 52;
-
-        return (
-          <div
-            key={r.id}
-            className={cn(
-              "grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 px-2.5 py-2.5 sm:gap-3 sm:px-3 sm:py-3",
-              locked && mode === "listings" && "bg-amber-500/[0.06]",
-            )}
-          >
-            <button
-              type="button"
-              onClick={() => onOpenItem(r.itemType)}
-              className="relative shrink-0 rounded-2xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky"
-              aria-label={`Open ${r.name}`}
-            >
-              <ItemIcon
-                itemId={r.itemType}
-                name={r.name}
-                size={iconSize}
-                clear
-              />
-              {mode === "listings" && locked && (
-                <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-amber-500 text-[#0a121c] shadow">
-                  <Lock className="h-3 w-3" strokeWidth={2.5} />
-                </span>
-              )}
-            </button>
-
-            <div className="min-w-0 overflow-hidden">
-              <button
-                type="button"
-                onClick={() => onOpenItem(r.itemType)}
-                className="block w-full min-w-0 truncate text-left text-[14px] font-semibold tracking-tight hover:text-sky-hi sm:text-[15px]"
-              >
-                <span className="font-mono tabular-nums text-sky-hi">
-                  {qtyLabel}
-                </span>{" "}
-                {r.name}
-              </button>
-
-              {mode === "listings" && locked && (
-                <div className="mt-0.5 inline-flex items-center gap-1 rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-200">
-                  <Lock className="h-2.5 w-2.5" />
-                  {lockLabel(r)}
-                </div>
-              )}
-
-              <button
-                type="button"
-                disabled={!canOpenSeller}
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  onOpenSeller(r);
-                }}
-                onPointerDown={(e) => e.stopPropagation()}
-                className={cn(
-                  "mt-0.5 flex min-h-7 max-w-full items-center gap-1.5 rounded-lg text-left text-[11px] sm:text-[12px]",
-                  canOpenSeller
-                    ? "text-sky-hi underline decoration-sky/40 underline-offset-2 hover:bg-sky/10"
-                    : "cursor-default text-muted",
-                )}
-                aria-label={`View all listings by ${seller}`}
-              >
-                {canOpenSeller && (
-                  <SellerAvatar
-                    sellerId={r.sellerId}
-                    sellerName={r.sellerName ?? r.seller}
-                    size={18}
-                  />
-                )}
-                <span className="truncate font-medium">{seller}</span>
-                {r.sellerId != null && (
-                  <span className="shrink-0 font-mono text-muted">
-                    #{r.sellerId}
-                  </span>
-                )}
-                <span className="shrink-0 text-muted/70">
-                  · {new Date(r.timestamp).toLocaleTimeString()}
-                </span>
-              </button>
-            </div>
-
-            {/* Fixed price column — never shrinks away */}
-            <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
-              <button
-                type="button"
-                onClick={() => onOpenItem(r.itemType)}
-                className="text-right"
-              >
-                <PriceBlock
-                  row={r}
-                  locked={locked && mode === "listings"}
-                  compact={compact}
-                />
-                {mode === "listings" && locked && (
-                  <div className="text-[9px] font-semibold uppercase tracking-wide text-amber-300/90">
-                    Locked
-                  </div>
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => onWatch(r.itemType)}
-                className="rounded-lg p-1.5 text-muted hover:bg-raised hover:text-sky"
-                aria-label="Watch"
-              >
-                <Star
-                  className={cn(
-                    "h-3.5 w-3.5",
-                    watch.includes(r.itemType) && "fill-sky text-sky",
-                  )}
-                />
-              </button>
-            </div>
-          </div>
-        );
-      })}
+      {rows.map((r) => (
+        <ListingRow
+          key={r.id}
+          r={r}
+          mode={mode}
+          onOpenItem={onOpenItem}
+          onOpenSeller={onOpenSeller}
+          onWatch={onWatch}
+          watching={watch.includes(r.itemType)}
+          compact={compact}
+        />
+      ))}
     </div>
   );
 }

@@ -88,8 +88,17 @@ const empty: MarketHubData = {
   refreshing: false,
 };
 
-const LISTINGS_URL = "/api/market/activity?limit=1200&pages=12&gold=1";
-const SOLD_URL = "/api/market/sold?limit=40";
+/** ~500 live listings → 6×100 is enough; fewer pages = snappier polls */
+const LISTINGS_URL = "/api/market/activity?limit=700&pages=7&gold=1";
+const SOLD_URL = "/api/market/sold?limit=30";
+
+function listFingerprint(rows: { id: string; timestamp?: string }[]): string {
+  if (!rows.length) return "0";
+  const a = rows[0];
+  const b = rows[rows.length - 1];
+  const m = rows[Math.floor(rows.length / 2)];
+  return `${rows.length}:${a?.id}:${m?.id}:${b?.id}:${a?.timestamp ?? ""}:${b?.timestamp ?? ""}`;
+}
 
 async function fetchJson(url: string, timeoutMs = 20000): Promise<unknown> {
   const controller = new AbortController();
@@ -185,14 +194,16 @@ function enrichSold(
   });
 }
 
-/** Default poll: 12s */
-export function useMarketHub(pollMs = 12_000) {
+/** Default poll: 18s — less UI thrash while still live-feeling */
+export function useMarketHub(pollMs = 18_000) {
   const [data, setData] = useState<MarketHubData>(empty);
   const listingsInFlight = useRef(false);
   const soldInFlight = useRef(false);
   const floorsInFlight = useRef(false);
   /** listingId → listing for seller name enrichment on sold */
   const knownListingsRef = useRef<Map<string, RecentSale>>(new Map());
+  const lastListingsFp = useRef("");
+  const lastSoldFp = useRef("");
 
   const reloadListings = useCallback(async (opts?: { silent?: boolean }) => {
     if (listingsInFlight.current) return;
@@ -201,7 +212,7 @@ export function useMarketHub(pollMs = 12_000) {
       setData((s) => ({ ...s, refreshing: true }));
     }
     try {
-      const activityRes = (await fetchJson(LISTINGS_URL, 22000)) as {
+      const activityRes = (await fetchJson(LISTINGS_URL, 18000)) as {
         ok?: boolean;
         data?: {
           activity?: RecentSale[];
@@ -217,29 +228,53 @@ export function useMarketHub(pollMs = 12_000) {
             ? activityRes.data!.activity!
             : prev.sales;
 
+        const fp = listFingerprint(nextSales);
+        const sameList =
+          activityRes?.ok &&
+          fp === lastListingsFp.current &&
+          prev.sales.length > 0;
+
         if (activityRes?.ok && Array.isArray(activityRes.data?.activity)) {
-          const map = new Map(knownListingsRef.current);
-          for (const row of nextSales) {
-            map.set(String(row.id), row);
-            if (row.listingId) map.set(String(row.listingId), row);
-          }
-          // Cap memory
-          if (map.size > 4000) {
-            const entries = [...map.entries()].slice(-3000);
-            knownListingsRef.current = new Map(entries);
-          } else {
-            knownListingsRef.current = map;
+          lastListingsFp.current = fp;
+          // Only rebuild known map when book changed
+          if (!sameList) {
+            const map = new Map(knownListingsRef.current);
+            for (const row of nextSales) {
+              map.set(String(row.id), row);
+              if (row.listingId) map.set(String(row.listingId), row);
+            }
+            if (map.size > 3000) {
+              const entries = [...map.entries()].slice(-2000);
+              knownListingsRef.current = new Map(entries);
+            } else {
+              knownListingsRef.current = map;
+            }
           }
         }
 
-        // Re-enrich sold with any new seller names
-        const sold = enrichSold(prev.sold, knownListingsRef.current);
+        // Skip heavy re-render when poll returned same open book
+        if (sameList && opts?.silent) {
+          return {
+            ...prev,
+            kinsUsd: activityRes.data?.kinsUsd ?? prev.kinsUsd,
+            rateSource: activityRes.data?.rateSource ?? prev.rateSource,
+            loading: false,
+            refreshing: false,
+            error: null,
+          };
+        }
+
+        const sold = sameList
+          ? prev.sold
+          : enrichSold(prev.sold, knownListingsRef.current);
 
         return {
           ...prev,
           sales: nextSales,
           sold,
-          byItem: buildByItem(nextSales, prev.floors),
+          byItem: sameList
+            ? prev.byItem
+            : buildByItem(nextSales, prev.floors),
           kinsUsd: activityRes?.ok
             ? (activityRes.data?.kinsUsd ?? prev.kinsUsd)
             : prev.kinsUsd,
@@ -277,14 +312,19 @@ export function useMarketHub(pollMs = 12_000) {
     if (soldInFlight.current) return;
     soldInFlight.current = true;
     try {
-      const soldRes = (await fetchJson(SOLD_URL, 15000)) as {
+      const soldRes = (await fetchJson(SOLD_URL, 12000)) as {
         ok?: boolean;
         data?: { sold?: RecentSale[]; note?: string };
       };
       if (!soldRes?.ok || !Array.isArray(soldRes.data?.sold)) return;
 
+      const raw = soldRes.data!.sold!;
+      const fp = listFingerprint(raw);
+      if (fp === lastSoldFp.current) return;
+      lastSoldFp.current = fp;
+
       setData((prev) => {
-        const sold = enrichSold(soldRes.data!.sold!, knownListingsRef.current);
+        const sold = enrichSold(raw, knownListingsRef.current);
         return {
           ...prev,
           sold,
@@ -354,10 +394,11 @@ export function useMarketHub(pollMs = 12_000) {
       () => void reloadListings({ silent: true }),
       pollMs,
     );
-    const soldId = setInterval(() => void reloadSold(), pollMs);
+    // Sold changes slower — half the poll rate
+    const soldId = setInterval(() => void reloadSold(), pollMs * 1.5);
     const floorsId = setInterval(
       () => void reloadFloors(),
-      Math.max(pollMs * 4, 45_000),
+      Math.max(pollMs * 4, 60_000),
     );
     return () => {
       clearInterval(listingsId);

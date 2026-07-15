@@ -67,6 +67,12 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* Skip layout/paint for off-screen market rows */
+.list-row-cv {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 72px;
+}
+
 /* Quiet wash — keep UI calm and readable */
 .page-glow {
   background:

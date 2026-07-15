@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import {
   resolveProcessedItemIcon,
@@ -20,9 +20,9 @@ type Props = {
 
 /**
  * Item artwork — transparent WebP with consistent padding when available.
- * Falls back to wiki remote, then letter initials.
+ * Memoized to avoid re-resolving images on every parent poll re-render.
  */
-export function ItemIcon({
+export const ItemIcon = memo(function ItemIcon({
   itemId,
   name,
   aliases = [],
@@ -31,31 +31,37 @@ export function ItemIcon({
   className,
   clear = false,
 }: Props) {
-  const aliasList = useMemo(
-    () => [...(name ? [name] : []), ...aliases],
-    [name, aliases],
-  );
+  // Stable alias key (parent often passes inline arrays)
+  const aliasKey = aliases.join("\0");
 
-  const local = resolveProcessedItemIcon(itemId, aliasList);
-  const remote =
-    resolveRemoteWikiItemImage(itemId, aliasList) ||
-    resolveRemoteWikiItemImage(name ?? null);
+  const preferred = useMemo(() => {
+    const aliasList = [
+      ...(name ? [name] : []),
+      ...(aliasKey ? aliasKey.split("\0") : []),
+    ];
+    const local = resolveProcessedItemIcon(itemId, aliasList);
+    const remote =
+      resolveRemoteWikiItemImage(itemId, aliasList) ||
+      resolveRemoteWikiItemImage(name ?? null);
+    const explicitLocal =
+      imageUrl && imageUrl.startsWith("/item-icons/") ? imageUrl : undefined;
+    const explicitRemote =
+      imageUrl && !imageUrl.startsWith("/item-icons/") ? imageUrl : undefined;
+    return {
+      preferred: explicitLocal || local || explicitRemote || remote,
+      local,
+      remote,
+      explicitLocal,
+    };
+  }, [itemId, name, aliasKey, imageUrl]);
 
-  const explicitLocal =
-    imageUrl && imageUrl.startsWith("/item-icons/") ? imageUrl : undefined;
-  const explicitRemote =
-    imageUrl && !imageUrl.startsWith("/item-icons/") ? imageUrl : undefined;
-
-  // Prefer local transparent processed icons over white-plate wiki remotes
-  const preferred = explicitLocal || local || explicitRemote || remote;
-
-  const [src, setSrc] = useState<string | undefined>(preferred);
+  const [src, setSrc] = useState<string | undefined>(preferred.preferred);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    setSrc(preferred);
+    setSrc(preferred.preferred);
     setFailed(false);
-  }, [preferred]);
+  }, [preferred.preferred]);
 
   const showImg = Boolean(src) && !failed;
   const initials = (name || itemId || "?")
@@ -99,18 +105,24 @@ export function ItemIcon({
             padding: imgPad,
           }}
           onError={() => {
-            if (src && local && src === local && remote && remote !== src) {
-              setSrc(remote);
+            if (
+              src &&
+              preferred.local &&
+              src === preferred.local &&
+              preferred.remote &&
+              preferred.remote !== src
+            ) {
+              setSrc(preferred.remote);
               return;
             }
             if (
               src &&
-              explicitLocal &&
-              src === explicitLocal &&
-              remote &&
-              remote !== src
+              preferred.explicitLocal &&
+              src === preferred.explicitLocal &&
+              preferred.remote &&
+              preferred.remote !== src
             ) {
-              setSrc(remote);
+              setSrc(preferred.remote);
               return;
             }
             setFailed(true);
@@ -128,4 +140,4 @@ export function ItemIcon({
       )}
     </div>
   );
-}
+});

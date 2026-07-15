@@ -8,6 +8,7 @@ import { usePortfolioContext } from "@/components/providers/portfolio-provider";
 import { useToast } from "@/components/feedback/toast";
 import { formatKins, formatUsd } from "@/lib/formatting/money";
 import { isValidTxHash } from "@/lib/solana/validation";
+import { ItemIcon } from "@/components/items/item-icon";
 
 export default function HistoryPage() {
   const { transactions, itemMap, removeTransaction, ready } = usePortfolioContext();
@@ -125,12 +126,15 @@ export default function HistoryPage() {
                 className="flex w-full flex-wrap items-start justify-between gap-2 text-left"
                 onClick={() => setExpanded(open ? null : t.id)}
               >
-                <div>
-                  <div className="font-medium">
-                    <span className="capitalize text-sky">{t.type}</span> · {name}
-                  </div>
-                  <div className="mt-0.5 text-xs text-muted">
-                    {new Date(t.transactionAt).toLocaleString()}
+                <div className="flex items-center gap-2">
+                  <ItemIcon itemId={t.itemId} name={name} size={32} />
+                  <div>
+                    <div className="font-medium">
+                      <span className="capitalize text-sky">{t.type}</span> · {name}
+                    </div>
+                    <div className="mt-0.5 text-xs text-muted">
+                      {new Date(t.transactionAt).toLocaleString()}
+                    </div>
                   </div>
                 </div>
                 <div className="text-right font-mono text-sm tabular-nums">

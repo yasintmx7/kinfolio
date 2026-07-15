@@ -9,6 +9,7 @@ import { useKinsPrice } from "@/hooks/use-kins-price";
 import { d } from "@/lib/accounting/decimal";
 import { estimateUnrealized, protectedCost } from "@/lib/accounting/engine";
 import { formatKins, formatUsd, signedClass } from "@/lib/formatting/money";
+import { ItemIcon } from "@/components/items/item-icon";
 
 type Filter =
   | "all"
@@ -128,9 +129,13 @@ export default function InventoryPage() {
           <Card key={pos.itemId} className="space-y-2">
             <div className="flex items-start justify-between gap-2">
               <div className="flex items-center gap-3">
-                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-raised text-xs font-semibold text-sky">
-                  {(item?.name ?? pos.itemId).slice(0, 2).toUpperCase()}
-                </div>
+                <ItemIcon
+                  itemId={pos.itemId}
+                  name={item?.name}
+                  aliases={item?.aliases}
+                  imageUrl={item?.imageUrl}
+                  size={48}
+                />
                 <div>
                   <div className="font-semibold">
                     {item?.name ?? pos.itemId}

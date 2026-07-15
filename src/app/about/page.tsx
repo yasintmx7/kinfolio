@@ -59,6 +59,29 @@ export default function AboutPage() {
         </p>
       </Card>
 
+      <Card className="space-y-3 text-sm text-muted">
+        <CardTitle className="text-primary">Item artwork</CardTitle>
+        <p>
+          Item icons are loaded from the community wiki{" "}
+          <a
+            href="https://kintara.wiki/wiki/Main_Page"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sky underline underline-offset-2"
+          >
+            kintara.wiki
+          </a>
+          . Thanks to wiki contributors for documenting the game.
+        </p>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="https://kintara.wiki/custom-assets/kintara_logo_1x.png"
+          alt="Kintara Wiki"
+          className="h-10 w-auto opacity-90"
+          referrerPolicy="no-referrer"
+        />
+      </Card>
+
       <Card className="space-y-2 text-sm text-muted">
         <CardTitle className="text-primary">Privacy</CardTitle>
         <p>

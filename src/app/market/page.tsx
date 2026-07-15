@@ -10,6 +10,7 @@ import { useKinsPrice } from "@/hooks/use-kins-price";
 import { useToast } from "@/components/feedback/toast";
 import { d } from "@/lib/accounting/decimal";
 import { formatKins, formatUsd } from "@/lib/formatting/money";
+import { ItemIcon } from "@/components/items/item-icon";
 
 type MarketItem = {
   id: string;
@@ -267,7 +268,10 @@ export default function MarketPage() {
               key={row.id}
               className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-surface-2 px-3 py-2 text-sm"
             >
-              <span>{row.name}</span>
+              <span className="flex items-center gap-2">
+                <ItemIcon itemId={row.id} name={row.name} size={32} />
+                {row.name}
+              </span>
               <span className="font-mono text-xs tabular-nums text-muted">
                 floor{" "}
                 {row.marketUsd
@@ -297,28 +301,31 @@ export default function MarketPage() {
               key={s.id}
               className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-surface-2 px-3 py-2 text-sm"
             >
-              <div>
-                <div className="font-medium">
-                  {s.name}{" "}
-                  <span className="font-mono text-xs text-muted">
-                    ×{s.quantity}
-                  </span>
-                </div>
-                <div className="text-[11px] text-muted">
-                  {new Date(s.timestamp).toLocaleString()}
-                  {s.solscanUrl && (
-                    <>
-                      {" · "}
-                      <a
-                        href={s.solscanUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-info underline"
-                      >
-                        Solscan
-                      </a>
-                    </>
-                  )}
+              <div className="flex items-center gap-2">
+                <ItemIcon itemId={s.itemType} name={s.name} size={32} />
+                <div>
+                  <div className="font-medium">
+                    {s.name}{" "}
+                    <span className="font-mono text-xs text-muted">
+                      ×{s.quantity}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-muted">
+                    {new Date(s.timestamp).toLocaleString()}
+                    {s.solscanUrl && (
+                      <>
+                        {" · "}
+                        <a
+                          href={s.solscanUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-info underline"
+                        >
+                          Solscan
+                        </a>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
               <div className="text-right font-mono text-xs tabular-nums">
@@ -351,12 +358,15 @@ export default function MarketPage() {
                 key={i.id}
                 className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 px-3 py-2 text-sm"
               >
-                <div>
-                  <div className="font-medium">{i.name}</div>
-                  <div className="text-[11px] text-muted">
-                    {i.id}
-                    {i.listings != null ? ` · ${i.listings} listings` : ""}
-                    {i.totalQty != null ? ` · qty ${i.totalQty}` : ""}
+                <div className="flex items-center gap-2.5">
+                  <ItemIcon itemId={i.id} name={i.name} size={36} />
+                  <div>
+                    <div className="font-medium">{i.name}</div>
+                    <div className="text-[11px] text-muted">
+                      {i.id}
+                      {i.listings != null ? ` · ${i.listings} listings` : ""}
+                      {i.totalQty != null ? ` · qty ${i.totalQty}` : ""}
+                    </div>
                   </div>
                 </div>
                 <div className="text-right font-mono text-xs tabular-nums">
@@ -380,6 +390,16 @@ export default function MarketPage() {
           </div>
           <p className="mt-2 text-[11px] text-muted">
             Showing up to 100 results. Active listings are not guaranteed sales.
+            Icons from{" "}
+            <a
+              href="https://kintara.wiki/wiki/Main_Page"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sky underline"
+            >
+              kintara.wiki
+            </a>
+            .
           </p>
         </Card>
       )}

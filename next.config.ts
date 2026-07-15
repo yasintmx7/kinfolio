@@ -11,6 +11,7 @@ const nextConfig: NextConfig = {
       {
         protocol: "https",
         hostname: "kintara.wiki",
+        pathname: "/**",
       },
     ],
   },
@@ -32,7 +33,7 @@ const nextConfig: NextConfig = {
               "default-src 'self'",
               "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
               "style-src 'self' 'unsafe-inline'",
-              "img-src 'self' data: blob: https://kintara.wiki",
+              "img-src 'self' data: blob: https://kintara.wiki https://*.kintara.wiki",
               "font-src 'self' data:",
               "connect-src 'self' https://api.dexscreener.com https://api.coingecko.com https://kintara.wiki https://kintaramarket.xyz https://www.kintrade.xyz https://kintara.com https://fanout.kintara.gg",
               "frame-ancestors 'none'",

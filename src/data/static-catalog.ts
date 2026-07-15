@@ -1,5 +1,6 @@
 import type { KintaraItem } from "@/lib/accounting/types";
 import { FAVORITE_ITEM_NAMES } from "@/config/kintara";
+import { resolveWikiItemImage } from "@/lib/kintara/wiki-images";
 
 function slugify(name: string): string {
   return name
@@ -25,6 +26,7 @@ function item(
     source: "static_seed",
     updatedAt: "2026-01-01T00:00:00.000Z",
     wikiUrl: `https://kintara.wiki/wiki/${encodeURIComponent(name.replace(/ /g, "_"))}`,
+    imageUrl: resolveWikiItemImage(id, [name, ...aliases]),
   };
 }
 

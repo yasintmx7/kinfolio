@@ -5,6 +5,7 @@ import { Search } from "lucide-react";
 import type { KintaraItem } from "@/lib/accounting/types";
 import { cn } from "@/lib/utils";
 import { Input, Label } from "@/components/ui/input";
+import { ItemIcon } from "@/components/items/item-icon";
 
 type Props = {
   items: KintaraItem[];
@@ -155,7 +156,14 @@ export function ItemPicker({
                 setOpen(false);
               }}
             >
-              <span>
+              <span className="flex items-center gap-2">
+                <ItemIcon
+                  itemId={item.id}
+                  name={item.name}
+                  aliases={item.aliases}
+                  imageUrl={item.imageUrl}
+                  size={28}
+                />
                 {favoriteIds.includes(item.id) ? "★ " : ""}
                 {item.name}
               </span>

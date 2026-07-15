@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo } from "react";
 import { Card, CardTitle, StatValue } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { CalcDrawer } from "@/components/feedback/calc-drawer";
 import { usePortfolioContext } from "@/components/providers/portfolio-provider";
 import { useKinsPrice } from "@/hooks/use-kins-price";
 import { d } from "@/lib/accounting/decimal";
@@ -16,9 +17,17 @@ import {
 } from "@/lib/formatting/money";
 
 export default function DashboardPage() {
-  const { ready, summary, settings, itemMap, priceMap, loadDemo, transactions } =
-    usePortfolioContext();
-  const { price, loading: priceLoading, stale, source, error: priceError } =
+  const {
+    ready,
+    summary,
+    settings,
+    itemMap,
+    priceMap,
+    loadDemo,
+    transactions,
+    patchSettings,
+  } = usePortfolioContext();
+  const { price, loading: priceLoading, stale, source, error: priceError, reload } =
     useKinsPrice();
 
   const fee = settings?.defaultSellFeePercent ?? "5";
@@ -101,6 +110,26 @@ export default function DashboardPage() {
     };
   }, [summary.positions, itemMap]);
 
+  const nextSteps = useMemo(() => {
+    const steps: { text: string; href?: string; action?: string }[] = [];
+    if (transactions.length === 0) {
+      steps.push({ text: "Paste your first trade alert", href: "/add" });
+    }
+    if (unrealized && unrealized.unpriced > 0) {
+      steps.push({
+        text: `Set prices for ${unrealized.unpriced} holding(s) for better estimates`,
+        href: "/inventory",
+      });
+    }
+    if (stale || priceError) {
+      steps.push({ text: "Refresh KINS price", action: "reload-price" });
+    }
+    if (transactions.length > 0) {
+      steps.push({ text: "Export a backup so you don’t lose data", href: "/settings" });
+    }
+    return steps.slice(0, 3);
+  }, [transactions.length, unrealized, stale, priceError]);
+
   if (!ready) {
     return (
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -118,10 +147,13 @@ export default function DashboardPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Home</h1>
           <p className="mt-1 text-sm text-muted">
-            Local portfolio · weighted-average cost · KINS + USD
+            Your trades & profit — saved only on this device
           </p>
+          <div className="mt-1">
+            <CalcDrawer />
+          </div>
         </div>
         <Link href="/add">
           <Button>Add entry</Button>
@@ -130,29 +162,62 @@ export default function DashboardPage() {
 
       {showOnboarding && (
         <Card className="border-gold/30 bg-gradient-to-br from-raised to-surface">
-          <h2 className="text-lg font-semibold text-gold">Welcome to Kintara Portfolio</h2>
-          <p className="mt-2 max-w-2xl text-sm text-muted">
-            Paste buy/sell alerts, pick the item and quantity, and get correct KINS and
-            USD accounting even when the KINS price changes. All data stays in your
-            browser.
-          </p>
+          <h2 className="text-lg font-semibold text-gold">Welcome — 3 quick steps</h2>
+          <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-muted">
+            <li>Paste a buy/sell alert (or load the demo)</li>
+            <li>Confirm item & quantity, then save</li>
+            <li>Export a backup from Settings later</li>
+          </ol>
           <div className="mt-4 flex flex-wrap gap-2">
             <Link href="/add">
               <Button>Paste first alert</Button>
             </Link>
-            <Button variant="secondary" onClick={() => loadDemo()}>
+            <Button
+              variant="secondary"
+              onClick={async () => {
+                await loadDemo();
+                await patchSettings({ onboardingComplete: true });
+              }}
+            >
               Load demo portfolio
             </Button>
             <Link href="/settings">
-              <Button variant="ghost">Import JSON backup</Button>
+              <Button variant="ghost">Import backup</Button>
             </Link>
           </div>
         </Card>
       )}
 
+      {nextSteps.length > 0 && !showOnboarding && (
+        <Card className="border-border/80">
+          <CardTitle>What to do next</CardTitle>
+          <ul className="mt-2 space-y-2">
+            {nextSteps.map((s) => (
+              <li key={s.text}>
+                {s.href ? (
+                  <Link href={s.href} className="text-sm text-info underline">
+                    {s.text}
+                  </Link>
+                ) : s.action === "reload-price" ? (
+                  <button
+                    type="button"
+                    className="text-sm text-info underline"
+                    onClick={() => reload()}
+                  >
+                    {s.text}
+                  </button>
+                ) : (
+                  <span className="text-sm text-muted">{s.text}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <Card>
-          <CardTitle>Current KINS price</CardTitle>
+          <CardTitle>KINS price now</CardTitle>
           <StatValue>
             {priceLoading && !price
               ? "…"
@@ -163,7 +228,7 @@ export default function DashboardPage() {
           <p className="mt-1 text-xs text-muted">
             {priceError
               ? priceError
-              : `${source ?? "—"}${stale ? " · stale" : ""}${
+              : `${source ?? "—"}${stale ? " · may be outdated" : ""}${
                   price?.change24h != null
                     ? ` · 24h ${formatPercent(price.change24h)}`
                     : ""
@@ -172,53 +237,51 @@ export default function DashboardPage() {
         </Card>
 
         <Card>
-          <CardTitle>Actual inventory cost (USD)</CardTitle>
+          <CardTitle>What you spent</CardTitle>
           <StatValue>{formatUsd(summary.totalUsdCostBasis)}</StatValue>
           <p className="mt-1 text-xs text-muted">
-            {formatKins(summary.totalKinsCostBasis)} KINS cost basis
+            Still invested in inventory · {formatKins(summary.totalKinsCostBasis)} KINS
           </p>
         </Card>
 
         <Card>
-          <CardTitle>Protected cost target</CardTitle>
+          <CardTitle>Safer break-even target</CardTitle>
           <StatValue>{formatUsd(protectedUsd)}</StatValue>
           <p className="mt-1 text-xs text-muted">
-            Fee mode: {mode.replaceAll("_", " ")} ({fee}%)
+            Includes ~{fee}% fee buffer ({mode.replaceAll("_", " ")})
           </p>
         </Card>
 
         <Card>
-          <CardTitle>Est. net current value</CardTitle>
+          <CardTitle>What it might be worth now</CardTitle>
           <StatValue>
             {unrealized ? formatUsd(unrealized.netUsd) : "Not available"}
           </StatValue>
           <p className="mt-1 text-xs text-muted">
-            After {fee}% fee · manual ref prices
+            After {fee}% fee · estimate only
             {unrealized && unrealized.unpriced > 0
-              ? ` · ${unrealized.unpriced} unpriced`
+              ? ` · ${unrealized.unpriced} need prices`
               : ""}
           </p>
         </Card>
 
         <Card>
-          <CardTitle>Realized USD profit</CardTitle>
+          <CardTitle>Profit after sales</CardTitle>
           <StatValue className={signedClass(summary.totalRealizedUsdProfit)}>
             {formatUsd(summary.totalRealizedUsdProfit)}
           </StatValue>
-          <p className="mt-1 text-xs text-muted">
-            From historical alert USD values
-          </p>
+          <p className="mt-1 text-xs text-muted">Locked in from completed sells</p>
         </Card>
 
         <Card>
-          <CardTitle>Realized KINS profit</CardTitle>
+          <CardTitle>Profit after sales (KINS)</CardTitle>
           <StatValue className={signedClass(summary.totalRealizedKinsProfit)}>
             {formatKins(summary.totalRealizedKinsProfit)} KINS
           </StatValue>
         </Card>
 
         <Card>
-          <CardTitle>Unrealized USD (est.)</CardTitle>
+          <CardTitle>Paper profit / loss (USD)</CardTitle>
           <StatValue
             className={
               unrealized ? signedClass(unrealized.unrealizedUsd) : "text-muted"
@@ -226,10 +289,11 @@ export default function DashboardPage() {
           >
             {unrealized ? formatUsd(unrealized.unrealizedUsd) : "Not available"}
           </StatValue>
+          <p className="mt-1 text-xs text-muted">If you sold inventory at your prices</p>
         </Card>
 
         <Card>
-          <CardTitle>Unrealized KINS (est.)</CardTitle>
+          <CardTitle>Paper profit / loss (KINS)</CardTitle>
           <StatValue
             className={
               unrealized ? signedClass(unrealized.unrealizedKins) : "text-muted"
@@ -242,41 +306,41 @@ export default function DashboardPage() {
         </Card>
 
         <Card>
-          <CardTitle>Earned / mined qty</CardTitle>
+          <CardTitle>Mined & earned items</CardTitle>
           <StatValue>{formatKins(summary.totalEarnedQuantity)}</StatValue>
           <p className="mt-1 text-xs text-muted">
-            Purchased qty: {formatKins(summary.totalPurchasedQuantity)}
+            Bought: {formatKins(summary.totalPurchasedQuantity)}
           </p>
         </Card>
 
         <Card>
-          <CardTitle>Net sales received</CardTitle>
+          <CardTitle>Cash from sales</CardTitle>
           <StatValue>{formatUsd(summary.totalNetSalesUsd)}</StatValue>
           <p className="mt-1 text-xs text-muted">
-            {formatKins(summary.totalNetSalesKins)} KINS
+            {formatKins(summary.totalNetSalesKins)} KINS received
           </p>
         </Card>
 
         <Card>
-          <CardTitle>Best-performing item</CardTitle>
+          <CardTitle>Best seller</CardTitle>
           <StatValue className="text-lg">
             {bestItem ? bestItem.name : "—"}
           </StatValue>
           {bestItem && (
             <p className={`mt-1 text-xs ${signedClass(bestItem.profit)}`}>
-              {formatUsd(bestItem.profit)} realized
+              {formatUsd(bestItem.profit)} profit
             </p>
           )}
         </Card>
 
         <Card>
-          <CardTitle>Largest holding</CardTitle>
+          <CardTitle>Biggest holding</CardTitle>
           <StatValue className="text-lg">
             {largest ? largest.name : "—"}
           </StatValue>
           {largest && (
             <p className="mt-1 text-xs text-muted">
-              qty {largest.qty} · cost {formatUsd(largest.cost)}
+              qty {largest.qty} · spent {formatUsd(largest.cost)}
             </p>
           )}
         </Card>
@@ -284,27 +348,39 @@ export default function DashboardPage() {
 
       {unrealized && unrealized.unpriced > 0 && (
         <div className="rounded-lg border border-gold/30 bg-gold/10 px-3 py-2 text-sm text-gold-hi">
-          {unrealized.unpriced} holding(s) lack a manual reference price. Set prices
-          in Inventory for estimated net liquidation value.
+          {unrealized.unpriced} item(s) need a price for estimates.{" "}
+          <Link href="/inventory" className="underline">
+            Set prices in Inventory
+          </Link>
         </div>
       )}
 
       <Card>
-        <CardTitle>Recent realized sales</CardTitle>
+        <CardTitle>Recent sales</CardTitle>
         <div className="mt-3 space-y-2">
-          {summary.realizedSales.slice(-5).reverse().map((s) => (
-            <div
-              key={s.transactionId}
-              className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-surface-2 px-3 py-2 text-sm"
-            >
-              <span>{itemMap.get(s.itemId)?.name ?? s.itemId}</span>
-              <span className={`font-mono tabular-nums ${signedClass(s.realizedUsdProfit)}`}>
-                {formatUsd(s.realizedUsdProfit)} · {formatPercent(s.usdROI)}
-              </span>
-            </div>
-          ))}
+          {summary.realizedSales
+            .slice(-5)
+            .reverse()
+            .map((s) => (
+              <div
+                key={s.transactionId}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-surface-2 px-3 py-2 text-sm"
+              >
+                <span>{itemMap.get(s.itemId)?.name ?? s.itemId}</span>
+                <span
+                  className={`font-mono tabular-nums ${signedClass(s.realizedUsdProfit)}`}
+                >
+                  {formatUsd(s.realizedUsdProfit)} · {formatPercent(s.usdROI)}
+                </span>
+              </div>
+            ))}
           {!summary.realizedSales.length && (
-            <p className="text-sm text-muted">No sales yet. Add a buy, then a sell.</p>
+            <p className="text-sm text-muted">
+              No sales yet.{" "}
+              <Link href="/add" className="text-info underline">
+                Add a buy, then a sell
+              </Link>
+            </p>
           )}
         </div>
       </Card>

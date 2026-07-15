@@ -162,13 +162,14 @@ function MarketHubInner() {
     return list;
   }, [hub.sales, q]);
 
-  const activityRows = useMemo(() => {
-    let list = [...hub.sales];
+  /** Sold-only activity (small card) */
+  const soldRows = useMemo(() => {
+    let list = [...(hub.sold ?? [])];
     const query = q.trim().toLowerCase();
     if (query) list = list.filter((s) => searchMatch(s, query));
     list.sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp));
     return list;
-  }, [hub.sales, q]);
+  }, [hub.sold, q]);
 
   const filteredFloors = useMemo(() => {
     let list = hub.floors;
@@ -271,7 +272,7 @@ function MarketHubInner() {
           </h1>
           <p className="mt-1 text-sm text-muted">
             {tab === "market" &&
-              `${hub.sales.length} listings · ${openCount} open · ${lockedCount} locked · 10s`}
+              `${hub.sales.length} listings · ${openCount} open · ${(hub.sold ?? []).length} sold · 12s`}
             {tab === "floors" && `${hub.floors.length} items · lowest $ each`}
             {tab === "watch" &&
               (watch.length
@@ -349,11 +350,17 @@ function MarketHubInner() {
       />
 
       {tab === "market" && (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-5">
-          <Panel
-            title="Listings"
-            subtitle={`${listingRows.length} · cheapest · lock status`}
-          >
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:gap-5">
+          {/* BIG listings — full open book */}
+          <section className="min-w-0 flex-1 overflow-hidden rounded-3xl border border-border/40 bg-surface/35">
+            <header className="flex shrink-0 items-baseline justify-between gap-2 border-b border-border/30 px-4 py-3">
+              <h2 className="text-[16px] font-semibold tracking-tight">
+                Listings
+              </h2>
+              <p className="truncate text-[11px] text-muted">
+                {listingRows.length} · all · lock · cheapest first
+              </p>
+            </header>
             <ListingList
               rows={listingRows}
               mode="listings"
@@ -361,23 +368,36 @@ function MarketHubInner() {
               onOpenSeller={openSeller}
               onWatch={onWatch}
               watch={watch}
-              compact
+              compact={false}
+              tall
             />
-          </Panel>
-          <Panel
-            title="Activity"
-            subtitle={`${activityRows.length} · newest first`}
-          >
-            <ListingList
-              rows={activityRows}
-              mode="activity"
-              onOpenItem={openItem}
-              onOpenSeller={openSeller}
-              onWatch={onWatch}
-              watch={watch}
-              compact
-            />
-          </Panel>
+          </section>
+
+          {/* SMALL activity — sold only + seller username */}
+          <aside className="w-full shrink-0 lg:sticky lg:top-4 lg:w-[20rem]">
+            <section className="overflow-hidden rounded-3xl border border-border/40 bg-surface/50 shadow-sm">
+              <header className="border-b border-border/30 px-3.5 py-2.5">
+                <div className="flex items-baseline justify-between gap-2">
+                  <h2 className="text-[14px] font-semibold tracking-tight">
+                    Activity
+                  </h2>
+                  <span className="rounded-full bg-forest/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-forest">
+                    Sold
+                  </span>
+                </div>
+                <p className="mt-0.5 text-[11px] text-muted">
+                  {soldRows.length
+                    ? `${soldRows.length} recent · seller shown`
+                    : "Watching for sales…"}
+                </p>
+              </header>
+              <SoldActivityCard
+                rows={soldRows}
+                onOpenItem={openItem}
+                onOpenSeller={openSeller}
+              />
+            </section>
+          </aside>
         </div>
       )}
 
@@ -438,23 +458,92 @@ function MarketHubInner() {
   );
 }
 
-function Panel({
-  title,
-  subtitle,
-  children,
+/** Compact sold-only activity feed with seller username. */
+function SoldActivityCard({
+  rows,
+  onOpenItem,
+  onOpenSeller,
 }: {
-  title: string;
-  subtitle: string;
-  children: React.ReactNode;
+  rows: RecentSale[];
+  onOpenItem: (id: string) => void;
+  onOpenSeller: (row: RecentSale) => void;
 }) {
+  if (!rows.length) {
+    return (
+      <div className="px-4 py-10 text-center text-[12px] leading-relaxed text-muted">
+        No sales yet this session.
+        <br />
+        Sold items appear when a listing leaves the book.
+      </div>
+    );
+  }
+
   return (
-    <section className="flex min-h-0 flex-col overflow-hidden rounded-3xl border border-border/40 bg-surface/35">
-      <header className="flex shrink-0 items-baseline justify-between gap-2 border-b border-border/30 px-4 py-3">
-        <h2 className="text-[15px] font-semibold tracking-tight">{title}</h2>
-        <p className="truncate text-[11px] text-muted">{subtitle}</p>
-      </header>
-      <div className="min-h-0 flex-1">{children}</div>
-    </section>
+    <div className="max-h-[min(42dvh,22rem)] divide-y divide-border/25 overflow-y-auto lg:max-h-[calc(100dvh-14rem)]">
+      {rows.map((r) => {
+        const seller = (r.sellerName ?? r.seller ?? "").trim() || "Unknown";
+        const lot$ = lotTotal(r);
+        const unit$ = unitPrice(r);
+        const gold$ = goldTotal(r);
+        return (
+          <div
+            key={`${r.id}-${r.timestamp}`}
+            className="flex items-start gap-2.5 px-3 py-2.5"
+          >
+            <button
+              type="button"
+              onClick={() => onOpenItem(r.itemType)}
+              className="shrink-0"
+              aria-label={r.name}
+            >
+              <ItemIcon itemId={r.itemType} name={r.name} size={40} clear />
+            </button>
+            <div className="min-w-0 flex-1">
+              <button
+                type="button"
+                onClick={() => onOpenItem(r.itemType)}
+                className="block w-full truncate text-left text-[13px] font-semibold hover:text-sky-hi"
+              >
+                <span className="font-mono tabular-nums text-sky-hi">
+                  {formatQtyCompact(r.quantity)}
+                </span>{" "}
+                {r.name}
+              </button>
+              {/* Seller username — always visible on sold cards */}
+              <button
+                type="button"
+                onClick={() => onOpenSeller(r)}
+                className="mt-0.5 block max-w-full truncate text-left text-[12px] font-medium text-sky-hi underline decoration-sky/40 underline-offset-2 hover:bg-sky/10"
+              >
+                {seller}
+                {r.sellerId != null ? (
+                  <span className="font-mono text-muted"> #{r.sellerId}</span>
+                ) : null}
+              </button>
+              <div className="mt-0.5 text-[10px] text-muted">
+                sold · {new Date(r.timestamp).toLocaleTimeString()}
+              </div>
+            </div>
+            <div className="shrink-0 text-right">
+              <div className="font-mono text-[13px] font-bold tabular-nums text-sky-hi">
+                {lot$
+                  ? formatUsdShort(lot$)
+                  : unit$
+                    ? formatUsdShort(unit$)
+                    : gold$
+                      ? `${formatQtyCompact(gold$)}g`
+                      : "—"}
+              </div>
+              {unit$ && (
+                <div className="font-mono text-[10px] tabular-nums text-muted">
+                  {formatUsdPer1k(unit$)}/1k
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -523,6 +612,7 @@ function ListingList({
   onWatch,
   watch,
   compact = false,
+  tall = false,
 }: {
   rows: RecentSale[];
   mode: "listings" | "activity";
@@ -531,6 +621,8 @@ function ListingList({
   onWatch: (id: string) => void;
   watch: string[];
   compact?: boolean;
+  /** Full-height main listings panel */
+  tall?: boolean;
 }) {
   if (!rows.length) {
     return (
@@ -544,9 +636,11 @@ function ListingList({
     <div
       className={cn(
         "divide-y divide-border/25 overflow-y-auto",
-        compact
-          ? "max-h-[min(70dvh,36rem)] lg:max-h-[calc(100dvh-16rem)]"
-          : "max-h-[calc(100dvh-15rem)]",
+        tall
+          ? "max-h-[min(78dvh,52rem)] lg:max-h-[calc(100dvh-13rem)]"
+          : compact
+            ? "max-h-[min(70dvh,36rem)] lg:max-h-[calc(100dvh-16rem)]"
+            : "max-h-[calc(100dvh-15rem)]",
       )}
     >
       {rows.map((r) => {

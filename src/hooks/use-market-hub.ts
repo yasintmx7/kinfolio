@@ -36,11 +36,16 @@ export type RecentSale = {
   reserved?: boolean;
   reservedUntilMs?: number | null;
   itemDurability?: string | null;
+  /** true when row is a detected sale (listing left the live book) */
+  isSold?: boolean;
 };
 
 export type MarketHubData = {
   floors: MarketFloorItem[];
+  /** Live open listings (big list) */
   sales: RecentSale[];
+  /** Detected sold / gone listings (activity card) */
+  sold: RecentSale[];
   byItem: {
     itemType: string;
     name: string;
@@ -68,6 +73,7 @@ export type MarketHubData = {
 const empty: MarketHubData = {
   floors: [],
   sales: [],
+  sold: [],
   byItem: [],
   kinsUsd: null,
   goldFloorUsd: null,
@@ -79,8 +85,8 @@ const empty: MarketHubData = {
   refreshing: false,
 };
 
-/** Light activity query — parallel pages on server, fits 10s poll */
 const ACTIVITY_URL = "/api/market/activity?limit=800&pages=8&gold=1";
+const MAX_SOLD = 40;
 
 async function fetchJson(url: string, timeoutMs = 20000): Promise<unknown> {
   const controller = new AbortController();
@@ -132,11 +138,48 @@ function buildByItem(
   });
 }
 
-/** Default poll: 12s for live feed (activity is lighter now) */
+/**
+ * Detect sold items: listing IDs that were in the previous poll but are
+ * gone now (official API has no sold-history feed).
+ */
+function detectSold(
+  prev: Map<string, RecentSale>,
+  next: RecentSale[],
+  prevSold: RecentSale[],
+): RecentSale[] {
+  if (prev.size === 0) return prevSold;
+  const nextIds = new Set(next.map((r) => String(r.id)));
+  const now = new Date().toISOString();
+  const newlySold: RecentSale[] = [];
+  for (const [id, row] of prev) {
+    if (nextIds.has(id)) continue;
+    newlySold.push({
+      ...row,
+      isSold: true,
+      timestamp: now,
+    });
+  }
+  if (!newlySold.length) return prevSold;
+  // newest first, dedupe by listing id
+  const seen = new Set<string>();
+  const merged: RecentSale[] = [];
+  for (const row of [...newlySold, ...prevSold]) {
+    const key = String(row.listingId ?? row.id);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(row);
+    if (merged.length >= MAX_SOLD) break;
+  }
+  return merged;
+}
+
+/** Default poll: 12s */
 export function useMarketHub(pollMs = 12_000) {
   const [data, setData] = useState<MarketHubData>(empty);
   const activityInFlight = useRef(false);
   const floorsInFlight = useRef(false);
+  /** Previous open-book snapshot for sold detection */
+  const prevListingsRef = useRef<Map<string, RecentSale>>(new Map());
 
   const reloadActivity = useCallback(async (opts?: { silent?: boolean }) => {
     if (activityInFlight.current) return;
@@ -157,15 +200,29 @@ export function useMarketHub(pollMs = 12_000) {
       };
 
       setData((prev) => {
-        // Never wipe good data on failure
         const nextSales =
           activityRes?.ok && Array.isArray(activityRes.data?.activity)
             ? activityRes.data!.activity!
             : prev.sales;
 
+        const sold =
+          activityRes?.ok && Array.isArray(activityRes.data?.activity)
+            ? detectSold(prevListingsRef.current, nextSales, prev.sold)
+            : prev.sold;
+
+        // Update snapshot only on successful fetch
+        if (activityRes?.ok && Array.isArray(activityRes.data?.activity)) {
+          const map = new Map<string, RecentSale>();
+          for (const row of nextSales) {
+            map.set(String(row.id), row);
+          }
+          prevListingsRef.current = map;
+        }
+
         return {
           ...prev,
           sales: nextSales,
+          sold,
           byItem: buildByItem(nextSales, prev.floors),
           kinsUsd: activityRes?.ok
             ? (activityRes.data?.kinsUsd ?? prev.kinsUsd)
@@ -177,7 +234,10 @@ export function useMarketHub(pollMs = 12_000) {
             ? (activityRes.data?.note ?? prev.salesNote)
             : prev.salesNote,
           activityCount: nextSales.length,
-          lastActivityAt: nextSales[0]?.timestamp ?? prev.lastActivityAt,
+          lastActivityAt:
+            sold[0]?.timestamp ??
+            nextSales[0]?.timestamp ??
+            prev.lastActivityAt,
           configured: Boolean(activityRes?.ok || prev.configured),
           error:
             !activityRes?.ok && prev.sales.length === 0
@@ -192,7 +252,6 @@ export function useMarketHub(pollMs = 12_000) {
         ...s,
         loading: false,
         refreshing: false,
-        // keep previous sales — do not blank prices on network blip
         error:
           s.sales.length === 0 ? "Network error loading market" : s.error,
       }));
@@ -231,7 +290,7 @@ export function useMarketHub(pollMs = 12_000) {
         };
       });
     } catch {
-      // floors optional for price display
+      // floors optional
     } finally {
       floorsInFlight.current = false;
     }

@@ -8,7 +8,7 @@ export const MARKET_TYPE_TO_PORTFOLIO_ID: Record<string, string> = {
   metal: "metal",
   gold: "gold",
   fish: "fish",
-  cooked_fish_meat: "cooked-fish",
+  cooked_fish_meat: "cooked-fish-meat",
   molten_rock: "molten-rock",
   brute_horn: "brute-horn",
   potion_health: "health-potion",
@@ -25,7 +25,7 @@ export const MARKET_TYPE_TO_PORTFOLIO_ID: Record<string, string> = {
 /** Human-readable title from market itemType */
 export function humanizeItemType(itemType: string): string {
   const mapped: Record<string, string> = {
-    cooked_fish_meat: "Cooked Fish",
+    cooked_fish_meat: "Cooked Fish Meat",
     potion_health: "Health Potion",
     potion_shield: "Shield Potion",
     potion_strength: "Strength Potion",

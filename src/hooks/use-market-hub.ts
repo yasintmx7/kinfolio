@@ -85,7 +85,8 @@ const empty: MarketHubData = {
   refreshing: false,
 };
 
-const ACTIVITY_URL = "/api/market/activity?limit=800&pages=8&gold=1";
+/** Full-ish open book (token+gold), pages until empty up to 12×100 */
+const ACTIVITY_URL = "/api/market/activity?limit=1200&pages=12&gold=1";
 const MAX_SOLD = 40;
 
 async function fetchJson(url: string, timeoutMs = 20000): Promise<unknown> {
@@ -96,6 +97,9 @@ async function fetchJson(url: string, timeoutMs = 20000): Promise<unknown> {
       cache: "no-store",
       signal: controller.signal,
     });
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status} for ${url}`);
+    }
     return await res.json();
   } finally {
     clearTimeout(timer);
@@ -141,6 +145,9 @@ function buildByItem(
 /**
  * Detect sold items: listing IDs that were in the previous poll but are
  * gone now (official API has no sold-history feed).
+ *
+ * Guards against false positives from partial/failed refreshes — those used
+ * to wipe half the book and flood Activity with fake "sold" rows.
  */
 function detectSold(
   prev: Map<string, RecentSale>,
@@ -148,7 +155,17 @@ function detectSold(
   prevSold: RecentSale[],
 ): RecentSale[] {
   if (prev.size === 0) return prevSold;
+  // Thin / failed snapshot — do not treat missing IDs as sold
+  if (next.length === 0) return prevSold;
+  if (next.length < Math.max(40, Math.floor(prev.size * 0.7))) {
+    return prevSold;
+  }
   const nextIds = new Set(next.map((r) => String(r.id)));
+  const disappeared = prev.size - [...nextIds].filter((id) => prev.has(id)).length;
+  // Mass vanish (API glitch / pagination hole) — ignore
+  if (disappeared > Math.max(25, Math.floor(prev.size * 0.25))) {
+    return prevSold;
+  }
   const now = new Date().toISOString();
   const newlySold: RecentSale[] = [];
   for (const [id, row] of prev) {
@@ -160,7 +177,6 @@ function detectSold(
     });
   }
   if (!newlySold.length) return prevSold;
-  // newest first, dedupe by listing id
   const seen = new Set<string>();
   const merged: RecentSale[] = [];
   for (const row of [...newlySold, ...prevSold]) {

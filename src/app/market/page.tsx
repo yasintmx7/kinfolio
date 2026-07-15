@@ -388,7 +388,7 @@ function MarketHubInner() {
                 <p className="mt-0.5 text-[11px] text-muted">
                   {soldRows.length
                     ? `${soldRows.length} recent · seller shown`
-                    : "Watching for sales…"}
+                    : "Watching for sales… (needs 2+ live polls)"}
                 </p>
               </header>
               <SoldActivityCard
@@ -471,9 +471,9 @@ function SoldActivityCard({
   if (!rows.length) {
     return (
       <div className="px-4 py-10 text-center text-[12px] leading-relaxed text-muted">
-        No sales yet this session.
+        No confirmed sales yet.
         <br />
-        Sold items appear when a listing leaves the book.
+        After ~12s, listings that leave the live book show here with seller name.
       </div>
     );
   }

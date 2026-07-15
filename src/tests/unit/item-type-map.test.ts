@@ -9,7 +9,7 @@ describe("item-type-map", () => {
   it("maps common market types to catalog ids", () => {
     expect(marketTypeToPortfolioId("stone", STATIC_CATALOG)).toBe("stone");
     expect(marketTypeToPortfolioId("cooked_fish_meat", STATIC_CATALOG)).toBe(
-      "cooked-fish",
+      "cooked-fish-meat",
     );
     expect(marketTypeToPortfolioId("molten_rock", STATIC_CATALOG)).toBe(
       "molten-rock",
@@ -20,7 +20,7 @@ describe("item-type-map", () => {
   });
 
   it("humanizes item types", () => {
-    expect(humanizeItemType("cooked_fish_meat")).toBe("Cooked Fish");
+    expect(humanizeItemType("cooked_fish_meat")).toBe("Cooked Fish Meat");
     expect(humanizeItemType("potion_health")).toBe("Health Potion");
   });
 });

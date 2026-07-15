@@ -304,28 +304,40 @@ export async function fetchOfficialRecentActivity(options?: {
     : ["token"];
 
   for (const currency of currencies) {
-    // Parallel chunks of 4 pages — much faster than sequential 50×
+    // Parallel chunks of 4 — never treat a failed page as "empty book"
+    // (empty catch used to mass-mark listings as sold on the client).
     const PARALLEL = 4;
-    let stopped = false;
-    for (let start = 0; start < pages && !stopped; start += PARALLEL) {
+    let endOffset: number | null = null;
+    for (let start = 0; start < pages; start += PARALLEL) {
+      if (endOffset != null && start * pageSize >= endOffset) break;
       const idxs = Array.from(
         { length: Math.min(PARALLEL, pages - start) },
         (_, i) => start + i,
       );
-      const batches = await Promise.all(
-        idxs.map((p) =>
-          fetchOfficialListings({
-            sort,
-            currency,
-            category: "all",
-            limit: pageSize,
-            offset: p * pageSize,
-            cacheTtlSeconds: 6,
-          }).catch(() => [] as OfficialListing[]),
-        ),
+      const settled = await Promise.all(
+        idxs.map(async (p) => {
+          try {
+            const batch = await fetchOfficialListings({
+              sort,
+              currency,
+              category: "all",
+              limit: pageSize,
+              offset: p * pageSize,
+              cacheTtlSeconds: 6,
+            });
+            return { p, batch, ok: true as const };
+          } catch {
+            return { p, batch: [] as OfficialListing[], ok: false as const };
+          }
+        }),
       );
-      for (let i = 0; i < batches.length; i++) {
-        const batch = batches[i] ?? [];
+      // Process in page order so short-page stop is correct
+      settled.sort((a, b) => a.p - b.p);
+      for (const { p, batch, ok } of settled) {
+        if (!ok) {
+          // skip failed page — do NOT treat as end-of-book
+          continue;
+        }
         for (const row of batch) {
           const id = String(row.id);
           if (seen.has(id)) continue;
@@ -333,11 +345,12 @@ export async function fetchOfficialRecentActivity(options?: {
           collected.push(row);
         }
         if (batch.length < pageSize) {
-          stopped = true;
-          // still process remaining parallel results but don't request more
+          endOffset = p * pageSize + batch.length;
+          break;
         }
       }
       if (collected.length >= maxRows) break;
+      if (endOffset != null) break;
     }
     if (collected.length >= maxRows) break;
   }

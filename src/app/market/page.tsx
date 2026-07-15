@@ -2,7 +2,7 @@
 
 import { memo, Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Lock, RefreshCw, Star, X } from "lucide-react";
+import { ChevronDown, Lock, RefreshCw, SlidersHorizontal, Star, X } from "lucide-react";
 import { ItemIcon } from "@/components/items/item-icon";
 import { SellerAvatar } from "@/components/sellers/seller-avatar";
 import {
@@ -211,6 +211,7 @@ function MarketHubInner() {
   const [sortFilter, setSortFilter] = useState<SortFilter>("cheap");
   const [hideLocked, setHideLocked] = useState(true);
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
     setWatch(getWatchlist());
@@ -454,131 +455,100 @@ function MarketHubInner() {
     push(next.includes(id) ? "Watching" : "Removed", "ok");
   }
 
-  return (
-    <div className="space-y-4">
-      {/* Hero header — first paint for / → market */}
-      <section className="card-hero rounded-3xl px-4 py-4 sm:px-5 sm:py-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-hi/90">
-              Kintara · read-only
-            </p>
-            <h1 className="mt-1 text-[1.7rem] font-semibold tracking-tight text-primary sm:text-[1.85rem]">
-              {tab === "market" && "Market"}
-              {tab === "floors" && "Floors"}
-              {tab === "watch" && "Watchlist"}
-            </h1>
-            <p className="mt-1 max-w-xl text-sm text-muted">
-              {tab === "market" &&
-                "Live book · listings + recent sold · $ pricing"}
-              {tab === "floors" && "Lowest open unit price per item"}
-              {tab === "watch" &&
-                (watch.length
-                  ? `${watch.length} watched items`
-                  : "Star items from listings to watch floors")}
-            </p>
-          </div>
+  const advancedActive =
+    !hideLocked || categoryFilter !== "all" || sortFilter === "qty";
 
-          <div className="flex flex-wrap items-center gap-2.5">
-            <div className="rounded-2xl border border-border/45 bg-app/40 px-3.5 py-2 text-right backdrop-blur-sm">
-              <div className="text-[10px] font-medium uppercase tracking-wider text-muted">
-                1 KINS
-              </div>
-              <div className="font-mono text-base font-semibold tabular-nums text-sky-hi">
-                {kinsUsd ? formatUsdShort(kinsUsd) : hub.loading ? "…" : "—"}
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                void hub.reload();
-                void reloadPrice();
-              }}
-              disabled={hub.refreshing}
-              className="inline-flex min-h-11 items-center gap-2 rounded-2xl border border-sky/30 bg-sky/14 px-3.5 text-sm font-semibold text-sky-hi shadow-[0_0_20px_color-mix(in_srgb,var(--sky)_12%,transparent)] transition-colors hover:bg-sky/22 disabled:opacity-50"
-            >
-              <RefreshCw
-                className={cn("h-4 w-4", hub.refreshing && "animate-spin")}
-              />
-              <span
-                className={cn(
-                  hub.refreshing ? "live-dot-busy" : "live-dot",
-                )}
-              />
-              Live
-            </button>
-          </div>
+  const pageTitle =
+    tab === "market" ? "Market" : tab === "floors" ? "Floors" : "Watchlist";
+
+  return (
+    <div className="space-y-3">
+      {/* Compact pro toolbar */}
+      <header className="card-quiet flex flex-wrap items-center gap-2.5 rounded-2xl px-3 py-2.5 sm:gap-3 sm:px-4">
+        <div className="flex min-w-0 items-center gap-2">
+          <span
+            className={cn(
+              "h-2 w-2 shrink-0 rounded-full",
+              hub.refreshing ? "live-dot-busy" : "live-dot",
+            )}
+          />
+          <h1 className="truncate text-[1.15rem] font-semibold tracking-tight sm:text-[1.25rem]">
+            {pageTitle}
+          </h1>
         </div>
 
-        {tab === "market" && (
-          <div className="relative z-[1] mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <HeroStat label="Listings" value={String(hub.sales.length)} />
-            <HeroStat label="Open" value={String(openCount)} tone="sky" />
-            <HeroStat
-              label="Locked"
-              value={String(lockedCount)}
-              tone="amber"
-            />
-            <HeroStat
-              label="Recent sold"
-              value={String((hub.sold ?? []).length)}
-              tone="forest"
-            />
+        {/* Desktop tabs (mobile uses bottom nav) */}
+        <div className="seg-shell hidden md:inline-flex">
+          {(
+            [
+              ["market", "Market"],
+              ["floors", "Floors"],
+              ["watch", "Watch"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setTab(id)}
+              className={cn("seg-item", tab === id && "seg-item-active")}
+            >
+              {label}
+              {id === "watch" && watch.length > 0 ? (
+                <span className="ml-1 tabular-nums opacity-80">
+                  {watch.length}
+                </span>
+              ) : null}
+            </button>
+          ))}
+        </div>
+
+        <div className="ml-auto flex items-center gap-2">
+          <div className="rounded-xl border border-border/40 bg-app/40 px-2.5 py-1.5 text-right">
+            <div className="text-[9px] font-medium uppercase tracking-wider text-muted">
+              KINS
+            </div>
+            <div className="font-mono text-[13px] font-semibold tabular-nums text-sky-hi sm:text-sm">
+              {kinsUsd ? formatUsdShort(kinsUsd) : hub.loading ? "…" : "—"}
+            </div>
           </div>
-        )}
-      </section>
-
-      <div className="seg-shell">
-        {(
-          [
-            ["market", "Market"],
-            ["floors", "Floors"],
-            ["watch", "Watch"],
-          ] as const
-        ).map(([id, label]) => (
           <button
-            key={id}
             type="button"
-            onClick={() => setTab(id)}
-            className={cn(
-              "seg-item",
-              tab === id && "seg-item-active",
-            )}
+            onClick={() => {
+              void hub.reload();
+              void reloadPrice();
+            }}
+            disabled={hub.refreshing}
+            className="inline-flex min-h-9 items-center gap-1.5 rounded-xl border border-border/50 bg-surface-2/80 px-2.5 text-[13px] font-medium text-muted transition-colors hover:border-sky/30 hover:text-sky-hi disabled:opacity-50"
+            aria-label="Refresh market"
           >
-            {label}
-            {id === "watch" && watch.length > 0 ? (
-              <span className="ml-1 tabular-nums opacity-80">
-                {watch.length}
-              </span>
-            ) : null}
+            <RefreshCw
+              className={cn("h-3.5 w-3.5", hub.refreshing && "animate-spin")}
+            />
+            <span className="hidden sm:inline">Refresh</span>
           </button>
-        ))}
-      </div>
+        </div>
+      </header>
 
-      <input
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        placeholder={
-          tab === "market"
-            ? "Search item, seller, reserved…"
-            : "Search items…"
-        }
-        className="field"
-      />
-
-      {tab === "market" && (
-        <div className="space-y-3">
-          {/* Filters — currency · sort · locked · category */}
-          <div className="card-quiet flex flex-col gap-2.5 rounded-2xl p-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted/80">
-                Currency
-              </span>
+      {/* Sticky search + primary filters */}
+      <div className="sticky top-[3.25rem] z-20 space-y-2 rounded-2xl border border-border/35 bg-app/90 p-2.5 backdrop-blur-xl md:top-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder={
+              tab === "market"
+                ? "Search item, seller, reserved…"
+                : "Search items…"
+            }
+            className="field min-h-10 flex-1"
+          />
+          {tab === "market" && (
+            <div className="flex flex-wrap items-center gap-1.5">
               {(
                 [
-                  ["all", `All ${hub.sales.length}`],
-                  ["token", `Token ${filterCounts.token}`],
-                  ["gold", `Gold ${filterCounts.gold}`],
+                  ["all", "All"],
+                  ["token", "Token"],
+                  ["gold", "Gold"],
                 ] as const
               ).map(([id, label]) => (
                 <button
@@ -586,22 +556,18 @@ function MarketHubInner() {
                   type="button"
                   onClick={() => setCurrencyFilter(id)}
                   className={cn(
-                    "chip",
+                    "chip min-h-9",
                     currencyFilter === id && "chip-active",
                   )}
                 >
                   {label}
                 </button>
               ))}
-              <span className="mx-1 hidden h-4 w-px bg-border/50 sm:inline" />
-              <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted/80">
-                Sort
-              </span>
+              <span className="mx-0.5 hidden h-4 w-px bg-border/50 sm:inline" />
               {(
                 [
-                  ["cheap", "Cheapest"],
-                  ["new", "Newest"],
-                  ["qty", "Qty"],
+                  ["cheap", "Cheap"],
+                  ["new", "New"],
                 ] as const
               ).map(([id, label]) => (
                 <button
@@ -609,7 +575,7 @@ function MarketHubInner() {
                   type="button"
                   onClick={() => setSortFilter(id)}
                   className={cn(
-                    "chip",
+                    "chip min-h-9",
                     sortFilter === id && "chip-active",
                   )}
                 >
@@ -618,9 +584,47 @@ function MarketHubInner() {
               ))}
               <button
                 type="button"
+                onClick={() => setFiltersOpen((v) => !v)}
+                className={cn(
+                  "chip min-h-9 inline-flex items-center gap-1.5",
+                  (filtersOpen || advancedActive) && "chip-soft-active",
+                )}
+                aria-expanded={filtersOpen}
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+                Filters
+                {advancedActive ? (
+                  <span className="font-mono text-[10px] text-sky-hi">•</span>
+                ) : null}
+                <ChevronDown
+                  className={cn(
+                    "h-3.5 w-3.5 transition-transform",
+                    filtersOpen && "rotate-180",
+                  )}
+                />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {tab === "market" && filtersOpen && (
+          <div className="flex flex-col gap-2 border-t border-border/30 pt-2">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setSortFilter("qty")}
+                className={cn(
+                  "chip min-h-8",
+                  sortFilter === "qty" && "chip-active",
+                )}
+              >
+                Qty
+              </button>
+              <button
+                type="button"
                 onClick={() => setHideLocked((v) => !v)}
                 className={cn(
-                  "chip ml-auto inline-flex items-center gap-1.5",
+                  "chip min-h-8 inline-flex items-center gap-1.5",
                   hideLocked && "chip-soft-active",
                 )}
               >
@@ -631,9 +635,6 @@ function MarketHubInner() {
               </button>
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="mr-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted/80">
-                Type
-              </span>
               {CATEGORY_CHIPS.map(({ id, label }) => (
                 <button
                   key={id}
@@ -651,67 +652,69 @@ function MarketHubInner() {
               ))}
             </div>
           </div>
+        )}
+      </div>
 
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:gap-5">
-          {/* BIG listings — full open book */}
-          <section className="card-quiet min-w-0 flex-1 overflow-hidden rounded-3xl">
-            <header className="panel-head">
-              <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-sky-hi shadow-[0_0_8px_var(--sky-hi)]" />
-                <h2 className="text-[15px] font-semibold tracking-tight">
-                  Listings
-                </h2>
-              </div>
-              <p className="truncate text-[11px] text-muted">
-                {listingRows.length} shown
-                {currencyFilter !== "all" ? ` · ${currencyFilter}` : ""}
-                {` · ${sortFilter === "cheap" ? "cheapest" : sortFilter === "new" ? "newest" : "qty"}`}
-                {hideLocked ? " · open only" : ""}
-                {categoryFilter !== "all" ? ` · ${categoryFilter}` : ""}
-              </p>
-            </header>
-            <ListingList
-              rows={listingRows}
-              mode="listings"
-              onOpenItem={openItem}
-              onOpenSeller={openSeller}
-              onWatch={onWatch}
-              watch={watch}
-              compact={false}
-              tall
-            />
-          </section>
+      {tab === "market" && (
+        <section className="card-quiet overflow-hidden rounded-2xl lg:rounded-3xl">
+          <div className="flex min-h-0 flex-col lg:flex-row">
+            {/* Listings — primary pane */}
+            <div className="min-w-0 flex-1 border-b border-border/30 lg:border-b-0 lg:border-r">
+              <header className="panel-head !py-2.5">
+                <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                  <h2 className="text-[14px] font-semibold tracking-tight">
+                    Listings
+                  </h2>
+                  <p className="truncate font-mono text-[11px] tabular-nums text-muted">
+                    <span className="text-sky-hi">{openCount}</span> open
+                    <span className="text-muted/50"> · </span>
+                    <span className="text-amber-200/90">{lockedCount}</span>{" "}
+                    locked
+                    <span className="text-muted/50"> · </span>
+                    {listingRows.length} shown
+                    {currencyFilter !== "all" ? ` · ${currencyFilter}` : ""}
+                    {hideLocked ? " · open only" : ""}
+                    {categoryFilter !== "all" ? ` · ${categoryFilter}` : ""}
+                  </p>
+                </div>
+              </header>
+              <ListingList
+                rows={listingRows}
+                mode="listings"
+                onOpenItem={openItem}
+                onOpenSeller={openSeller}
+                onWatch={onWatch}
+                watch={watch}
+                compact={false}
+                tall
+              />
+            </div>
 
-          {/* SMALL activity — sold only + seller username */}
-          <aside className="w-full shrink-0 lg:sticky lg:top-4 lg:w-[20rem]">
-            <section className="card-quiet overflow-hidden rounded-3xl">
-              <header className="panel-head flex-col !items-stretch gap-1">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full bg-forest-hi shadow-[0_0_8px_var(--forest-hi)]" />
-                    <h2 className="text-[14px] font-semibold tracking-tight">
-                      Activity
-                    </h2>
-                  </div>
-                  <span className="rounded-full bg-forest/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-forest-hi">
+            {/* Activity — sold pane */}
+            <div className="flex w-full shrink-0 flex-col lg:w-[20.5rem] xl:w-[22rem]">
+              <header className="panel-head !py-2.5">
+                <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                  <h2 className="text-[14px] font-semibold tracking-tight">
+                    Activity
+                  </h2>
+                  <span className="rounded-md bg-forest/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-forest-hi">
                     Sold
                   </span>
+                  <p className="font-mono text-[11px] tabular-nums text-muted">
+                    {soldRows.length
+                      ? `${soldRows.length} sales`
+                      : "loading…"}
+                  </p>
                 </div>
-                <p className="text-[11px] text-muted">
-                  {soldRows.length
-                    ? `${soldRows.length} completed sales`
-                    : "Loading completed sales…"}
-                </p>
               </header>
               <SoldActivityCard
                 rows={soldRows}
                 onOpenItem={openItem}
                 onOpenSeller={openSeller}
               />
-            </section>
-          </aside>
-        </div>
-        </div>
+            </div>
+          </div>
+        </section>
       )}
 
       {(tab === "floors" || tab === "watch") && (
@@ -795,7 +798,7 @@ function SoldActivityCard({
   }
 
   return (
-    <div className="max-h-[min(42dvh,22rem)] divide-y divide-border/20 overflow-y-auto lg:max-h-[calc(100dvh-14rem)]">
+    <div className="max-h-[min(38dvh,20rem)] divide-y divide-border/20 overflow-y-auto lg:max-h-[calc(100dvh-12rem)]">
       {rows.map((r) => {
         const seller = sellerDisplay(r);
         const buyer = buyerLabel(r);
@@ -1971,35 +1974,6 @@ function DetailSheet({
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-function HeroStat({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string;
-  tone?: "sky" | "forest" | "amber";
-}) {
-  return (
-    <div className="rounded-2xl border border-border/40 bg-app/45 px-3 py-2.5 shadow-[inset_0_1px_0_color-mix(in_srgb,#fff_4%,transparent)] backdrop-blur-sm">
-      <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted/90">
-        {label}
-      </p>
-      <p
-        className={cn(
-          "mt-0.5 font-mono text-[1.2rem] font-bold tabular-nums tracking-tight",
-          tone === "forest" && "text-forest-hi",
-          tone === "amber" && "text-amber-200",
-          tone === "sky" && "text-sky-hi",
-          !tone && "text-primary",
-        )}
-      >
-        {value}
-      </p>
     </div>
   );
 }

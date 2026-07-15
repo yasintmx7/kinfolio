@@ -103,6 +103,20 @@ const CHEAP_URL =
 const NEW_URL = "/api/market/activity?limit=400&pages=4&gold=1&sort=new";
 const SOLD_URL = "/api/market/sold?limit=40";
 
+function bestSellerName(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): string | null {
+  const pick = (s: string | null | undefined) => {
+    const t = (s ?? "").trim();
+    if (!t) return null;
+    // Never promote raw solana wallet into name
+    if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(t)) return null;
+    return t;
+  };
+  return pick(a) ?? pick(b);
+}
+
 function mergeListingFeeds(
   cheap: RecentSale[],
   newest: RecentSale[],
@@ -118,27 +132,56 @@ function mergeListingFeeds(
       map.set(id, row);
       continue;
     }
-    // Prefer row with fresher lock/price info (reserved or newer ts)
+    // Prefer newer lock/price fields; never drop a lock if either side has it
     const prevTs = Date.parse(prev.timestamp) || 0;
     const nextTs = Date.parse(row.timestamp) || 0;
-    const preferNew =
-      Boolean(row.reserved) !== Boolean(prev.reserved) ||
-      (row.buyerId ?? "") !== (prev.buyerId ?? "") ||
-      nextTs >= prevTs;
-    if (preferNew) {
-      map.set(id, {
-        ...prev,
-        ...row,
-        // Keep best seller name from either side
-        sellerName: row.sellerName || prev.sellerName,
-        seller: row.sellerName || prev.sellerName || row.seller || prev.seller,
-        sellerId: row.sellerId ?? prev.sellerId,
-      });
-    } else if (!prev.sellerName && row.sellerName) {
-      map.set(id, { ...prev, sellerName: row.sellerName, seller: row.sellerName });
-    }
+    const base = nextTs >= prevTs ? { ...prev, ...row } : { ...row, ...prev };
+    const name = bestSellerName(row.sellerName, prev.sellerName);
+    const reserved = Boolean(prev.reserved || row.reserved);
+    const reservedUntilMs =
+      Math.max(prev.reservedUntilMs ?? 0, row.reservedUntilMs ?? 0) || null;
+    map.set(id, {
+      ...base,
+      reserved,
+      reservedUntilMs:
+        reservedUntilMs && reservedUntilMs > 0 ? reservedUntilMs : null,
+      buyerId: row.buyerId ?? prev.buyerId ?? null,
+      sellerName: name,
+      seller: name,
+      sellerId: row.sellerId ?? prev.sellerId,
+    });
   }
   return [...map.values()];
+}
+
+function actFromSettled(
+  settled: PromiseSettledResult<unknown>,
+): {
+  ok: boolean;
+  activity: RecentSale[];
+  kinsUsd: string | null;
+  rateSource: string | null;
+} {
+  if (settled.status !== "fulfilled") {
+    return { ok: false, activity: [], kinsUsd: null, rateSource: null };
+  }
+  const body = settled.value as {
+    ok?: boolean;
+    data?: {
+      activity?: RecentSale[];
+      kinsUsd?: string | null;
+      rateSource?: string | null;
+    };
+  };
+  if (!body?.ok || !Array.isArray(body.data?.activity)) {
+    return { ok: false, activity: [], kinsUsd: null, rateSource: null };
+  }
+  return {
+    ok: true,
+    activity: body.data!.activity!,
+    kinsUsd: body.data?.kinsUsd ?? null,
+    rateSource: body.data?.rateSource ?? null,
+  };
 }
 
 /**
@@ -358,30 +401,22 @@ export function useMarketHub(pollMs = 5_000) {
       setData((s) => ({ ...s, refreshing: true }));
     }
     try {
-      type ActRes = {
-        ok?: boolean;
-        data?: {
-          activity?: RecentSale[];
-          kinsUsd?: string | null;
-          rateSource?: string | null;
-          note?: string;
-        };
-      };
-
-      // Parallel: full cheap book + newest listings (so "New" is never empty of latest)
-      const [cheapRes, newRes] = (await Promise.all([
+      // Promise.allSettled: one feed failing must not drop the other
+      const [cheapSettled, newSettled] = await Promise.allSettled([
         fetchJson(CHEAP_URL, 18000),
         fetchJson(NEW_URL, 12000),
-      ])) as [ActRes, ActRes];
-
-      const cheapOk =
-        cheapRes?.ok && Array.isArray(cheapRes.data?.activity);
-      const newOk = newRes?.ok && Array.isArray(newRes.data?.activity);
-      const feedOk = cheapOk || newOk;
+      ]);
+      const cheap = actFromSettled(cheapSettled);
+      const newest = actFromSettled(newSettled);
+      const feedOk = cheap.ok || newest.ok;
 
       setData((prev) => {
-        const cheapRows = cheapOk ? cheapRes.data!.activity! : [];
-        const newRows = newOk ? newRes.data!.activity! : [];
+        const cheapRows = cheap.ok
+          ? cheap.activity
+          : newest.ok
+            ? prev.sales
+            : [];
+        const newRows = newest.ok ? newest.activity : [];
         const nextSalesRaw = feedOk
           ? mergeListingFeeds(
               cheapRows.length ? cheapRows : prev.sales,
@@ -419,12 +454,9 @@ export function useMarketHub(pollMs = 5_000) {
           }
         }
 
-        const kinsUsd =
-          cheapRes.data?.kinsUsd ?? newRes.data?.kinsUsd ?? prev.kinsUsd;
+        const kinsUsd = cheap.kinsUsd ?? newest.kinsUsd ?? prev.kinsUsd;
         const rateSource =
-          cheapRes.data?.rateSource ??
-          newRes.data?.rateSource ??
-          prev.rateSource;
+          cheap.rateSource ?? newest.rateSource ?? prev.rateSource;
 
         if (sameList && opts?.silent) {
           return {
@@ -443,7 +475,6 @@ export function useMarketHub(pollMs = 5_000) {
           sellerIdNameRef.current,
         );
 
-        // Newest timestamp in merged set for header freshness
         let lastAt = prev.lastActivityAt;
         for (const r of nextSales) {
           if (!lastAt || Date.parse(r.timestamp) > Date.parse(lastAt)) {
@@ -497,14 +528,30 @@ export function useMarketHub(pollMs = 5_000) {
 
       const raw = soldRes.data!.sold!;
       const fp = listFingerprint(raw);
-      if (fp === lastSoldFp.current) return;
+      const sameSales = fp === lastSoldFp.current;
       lastSoldFp.current = fp;
 
       setData((prev) => {
+        // Always re-enrich: open-book may have gained seller usernames
         const sold = resolveLockerNames(
           enrichSold(raw, knownListingsRef.current),
           sellerIdNameRef.current,
         );
+        if (sameSales && prev.sold.length === sold.length) {
+          let improved = false;
+          for (let i = 0; i < sold.length; i++) {
+            const a = sold[i];
+            const b = prev.sold[i];
+            if (
+              (a?.sellerName && a.sellerName !== b?.sellerName) ||
+              (a?.sellerId && a.sellerId !== b?.sellerId)
+            ) {
+              improved = true;
+              break;
+            }
+          }
+          if (!improved) return prev;
+        }
         return {
           ...prev,
           sold,

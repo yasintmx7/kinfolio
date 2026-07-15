@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 /**
  * Live marketplace feed — official listings.
  * Query: limit (default 800), pages (default 8 × 100 parallel), gold=1.
- * Fast enough for ~10s client poll without hanging refresh.
+ * Fast enough for ~5s client poll (in-flight guard + short CDN cache).
  */
 export async function GET(request: Request) {
   const sp = new URL(request.url).searchParams;
@@ -58,13 +58,13 @@ export async function GET(request: Request) {
         kinsUsd: rate != null ? String(rate.kinsUsd) : null,
         rateSource: rate?.source ?? null,
         note:
-          "Sales activity = newest official listings (live market). Full feed until API empty. ~10s refresh. Read-only.",
+          "Live official listings (cheap book). ~5s client poll. Read-only.",
       },
       {
         source: "kintara.com",
         updatedAt: new Date().toISOString(),
-        // short browser/CDN cache so 10s polling gets fresh data
-        cacheControl: "public, s-maxage=5, stale-while-revalidate=15",
+        // Match ~5s client poll
+        cacheControl: "public, s-maxage=3, stale-while-revalidate=8",
       },
     );
   } catch (e) {

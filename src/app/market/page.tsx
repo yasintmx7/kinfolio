@@ -237,8 +237,8 @@ function MarketHubInner() {
   const rawTab = searchParams.get("tab");
   const tab = parseTab(rawTab);
 
-  const hub = useMarketHub(18_000);
-  const { price, reload: reloadPrice } = useKinsPrice(10_000);
+  const hub = useMarketHub(5_000);
+  const { price, reload: reloadPrice } = useKinsPrice(15_000);
   const { push } = useToast();
 
   const [q, setQ] = useState("");

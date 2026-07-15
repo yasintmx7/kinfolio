@@ -1,26 +1,77 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --app: #070a12;
+  --surface: #0f1422;
+  --surface-2: #121826;
+  --raised: #181f2d;
+  --border: #273142;
+  --primary: #f5f7fb;
+  --muted: #95a1b3;
+  --gold: #f2b84b;
+  --gold-hi: #ffd978;
+  --profit: #24c16b;
+  --info: #52a7ff;
+  --loss: #ff647c;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-app: var(--app);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-raised: var(--raised);
+  --color-border: var(--border);
+  --color-primary: var(--primary);
+  --color-muted: var(--muted);
+  --color-gold: var(--gold);
+  --color-gold-hi: var(--gold-hi);
+  --color-profit: var(--profit);
+  --color-info: var(--info);
+  --color-loss: var(--loss);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--app);
+  color: var(--primary);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--gold) 35%, transparent);
+}
+
+/* Tabular numerals for money */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Subtle page glow */
+.page-glow {
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -20%, color-mix(in srgb, var(--gold) 12%, transparent), transparent),
+    var(--app);
+}
+
+/* Scrollbar */
+@media (pointer: fine) {
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 999px;
+  }
 }

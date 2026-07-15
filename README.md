@@ -1,36 +1,61 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Kintara Portfolio
 
-## Getting Started
+**Track trades, mining, inventory, and real profit.**
 
-First, run the development server:
+Community-built, local-first portfolio tool for Kintara players. Paste buy/sell transaction alerts, select item and quantity, and get deterministic KINS + USD accounting with weighted-average cost.
+
+> Not affiliated with Kintara. Market values are estimates, not guaranteed sale prices.  
+> No wallet signing, seed phrases, private keys, or personal game cookies.
+
+## Features
+
+- Alert parser (multi-line Sent/Received, fingerprints, duplicate warnings)
+- Decimal-safe weighted-average cost engine (USD + KINS ledgers)
+- Buy / sell / mined-earned entries with oversell protection
+- Actual cost vs protected fee targets (display-only)
+- IndexedDB persistence (Dexie) — per-browser portfolios
+- Dashboard, inventory, mining, analytics, history, settings
+- Live KINS price: DexScreener → CoinGecko → cache → manual
+- Optional read-only Helius wallet routes
+- Marketplace adapter slots (configure after F12 mapping)
+- JSON backup import/export, CSV history export
+- PWA manifest + production service worker
+- Unit tests for parser + accounting acceptance cases
+
+## Quick start
 
 ```bash
+npm install
+cp .env.example .env.local
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm run test      # Vitest unit tests
+npm run build     # Production build
+npm run lint
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Stack
 
-## Learn More
+Next.js App Router · TypeScript strict · Tailwind CSS · Dexie · Zod · decimal.js · Vitest
 
-To learn more about Next.js, take a look at the following resources:
+## Project layout
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+See `src/` for app routes, accounting engine (`src/lib/accounting`), parser (`src/lib/parser`), and API routes (`src/app/api`). Docs live in `docs/`.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Security
 
-## Deploy on Vercel
+- Portfolio math runs in the browser.
+- Server APIs never accept client-controlled upstream URLs.
+- Secrets are server-only (no `NEXT_PUBLIC_` for keys).
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Deploy
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
+## Still needed for live marketplace prices
+
+Exact public Kintara endpoint URLs after sanitized F12 capture — see [docs/KINTARA_F12_API_MAPPING.md](docs/KINTARA_F12_API_MAPPING.md).

@@ -61,11 +61,26 @@ function lockLabel(r: RecentSale): string {
   return buyer ? `Reserved by ${buyer}` : "Reserved";
 }
 
-/** Best buyer label: username if ever available, else #id */
+function shortWallet(w: string | null | undefined): string | null {
+  if (!w || w.length < 10) return w || null;
+  return `${w.slice(0, 4)}…${w.slice(-4)}`;
+}
+
+/** Best buyer label: name → #id → short wallet */
 function buyerLabel(r: RecentSale): string | null {
   if (r.buyerName && r.buyerName.trim()) return r.buyerName.trim();
   if (r.buyerId != null && String(r.buyerId).trim()) return `#${r.buyerId}`;
-  return null;
+  return shortWallet(r.buyerWallet);
+}
+
+function sellerDisplay(r: RecentSale): string {
+  const name = (r.sellerName ?? r.seller ?? "").trim();
+  if (name && !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(name)) return name;
+  // Raw solana address as seller
+  if (r.sellerWallet) return shortWallet(r.sellerWallet) || "Seller";
+  if (name) return shortWallet(name) || name;
+  if (r.sellerId != null) return `#${r.sellerId}`;
+  return "Unknown";
 }
 
 /** Single path for row prices — never re-derive ad-hoc in UI. */
@@ -404,8 +419,8 @@ function MarketHubInner() {
                 </div>
                 <p className="mt-0.5 text-[11px] text-muted">
                   {soldRows.length
-                    ? `${soldRows.length} recent · seller shown`
-                    : "Watching for sales… (needs 2+ live polls)"}
+                    ? `${soldRows.length} completed sales`
+                    : "Loading completed sales…"}
                 </p>
               </header>
               <SoldActivityCard
@@ -490,9 +505,9 @@ function SoldActivityCard({
   if (!rows.length) {
     return (
       <div className="px-4 py-10 text-center text-[12px] leading-relaxed text-muted">
-        No confirmed sales yet.
+        No completed sales loaded yet.
         <br />
-        After ~12s, listings that leave the live book show here with seller name.
+        Activity shows real sales (not cancels or delists).
       </div>
     );
   }
@@ -500,7 +515,8 @@ function SoldActivityCard({
   return (
     <div className="max-h-[min(42dvh,22rem)] divide-y divide-border/25 overflow-y-auto lg:max-h-[calc(100dvh-14rem)]">
       {rows.map((r) => {
-        const seller = (r.sellerName ?? r.seller ?? "").trim() || "Unknown";
+        const seller = sellerDisplay(r);
+        const buyer = buyerLabel(r);
         return (
           <div
             key={`${r.id}-${r.timestamp}`}
@@ -531,24 +547,33 @@ function SoldActivityCard({
                 className="mt-0.5 flex max-w-full items-center gap-1.5 text-left text-[12px] font-medium text-sky-hi underline decoration-sky/40 underline-offset-2 hover:bg-sky/10"
               >
                 <SellerAvatar
-                  sellerId={r.sellerId}
+                  sellerId={r.sellerId ?? r.sellerWallet}
                   sellerName={r.sellerName ?? r.seller}
                   size={18}
                 />
-                <span className="truncate">
-                  {seller}
-                  {r.sellerId != null ? (
-                    <span className="font-mono text-muted"> #{r.sellerId}</span>
-                  ) : null}
-                </span>
+                <span className="truncate font-mono text-[11px]">{seller}</span>
               </button>
               <div className="mt-0.5 text-[10px] text-muted">
                 sold · {new Date(r.timestamp).toLocaleTimeString()}
-                {buyerLabel(r) ? (
+                {buyer ? (
                   <span className="text-sky-hi">
                     {" · buyer "}
-                    {buyerLabel(r)}
+                    <span className="font-mono">{buyer}</span>
                   </span>
+                ) : null}
+                {r.solscanUrl ? (
+                  <>
+                    {" · "}
+                    <a
+                      href={r.solscanUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-sky-hi underline-offset-2 hover:underline"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      tx
+                    </a>
+                  </>
                 ) : null}
               </div>
             </div>

@@ -6,24 +6,27 @@ import { z } from "zod";
 
 const BASE = "https://www.kintrade.xyz";
 
-const saleSchema = z.object({
-  _id: z.string().optional(),
-  itemType: z.string(),
-  quantity: z.number(),
-  kinsTotal: z.number(),
-  treasuryKins: z.number().optional(),
-  usd: z.number().optional(),
-  ts: z.number().optional(),
-  _creationTime: z.number().optional(),
-  signature: z.string().optional(),
-  listingId: z.union([z.string(), z.number()]).optional(),
-  buyer: z.string().optional(),
-  seller: z.string().optional(),
-});
+/** Live feed is uneven — some rows omit itemType/quantity/listingId. */
+const saleSchema = z
+  .object({
+    _id: z.string().optional(),
+    itemType: z.string().optional(),
+    quantity: z.number().optional(),
+    kinsTotal: z.number().optional(),
+    treasuryKins: z.number().optional(),
+    usd: z.number().optional(),
+    ts: z.number().optional(),
+    _creationTime: z.number().optional(),
+    signature: z.string().optional(),
+    listingId: z.union([z.string(), z.number()]).optional(),
+    buyer: z.string().optional(),
+    seller: z.string().optional(),
+  })
+  .passthrough();
 
 const responseSchema = z.object({
   ok: z.boolean().optional(),
-  sales: z.array(saleSchema),
+  sales: z.array(z.unknown()),
 });
 
 export type KinTradeSale = {
@@ -44,6 +47,8 @@ export type KinTradeSale = {
   listingId?: string;
   buyer?: string;
   seller?: string;
+  /** True when row has enough fields to show as an item sale */
+  hasItem: boolean;
 };
 
 function timestampMs(sale: z.infer<typeof saleSchema>): number {
@@ -55,22 +60,29 @@ function timestampMs(sale: z.infer<typeof saleSchema>): number {
 }
 
 export function normalizeSale(raw: z.infer<typeof saleSchema>): KinTradeSale {
-  const qty = Math.max(raw.quantity || 1, 1);
-  const unitKins = d(raw.kinsTotal).div(qty);
+  const hasItem = Boolean(raw.itemType);
+  const qty = Math.max(raw.quantity && raw.quantity > 0 ? raw.quantity : 1, 1);
+  const kinsTotal =
+    raw.kinsTotal != null && Number.isFinite(raw.kinsTotal) ? raw.kinsTotal : 0;
+  const unitKins = d(kinsTotal).div(qty);
   const treasury = raw.treasuryKins != null ? d(raw.treasuryKins) : null;
   const netSeller =
-    treasury != null ? d(raw.kinsTotal).minus(treasury).div(qty) : null;
+    treasury != null ? d(kinsTotal).minus(treasury).div(qty) : null;
   const unitUsd =
     raw.usd != null && Number.isFinite(raw.usd)
       ? d(raw.usd).div(qty)
       : null;
+  const itemType = raw.itemType || "unknown";
 
   return {
-    id: raw._id ?? raw.signature ?? `${raw.itemType}-${timestampMs(raw)}`,
-    itemType: raw.itemType,
-    name: humanizeItemType(raw.itemType),
+    id:
+      raw._id ??
+      raw.signature ??
+      `${itemType}-${timestampMs(raw)}-${raw.listingId ?? ""}`,
+    itemType,
+    name: hasItem ? humanizeItemType(itemType) : "Sale",
     quantity: String(qty),
-    kinsTotal: String(raw.kinsTotal),
+    kinsTotal: String(kinsTotal),
     treasuryKins: treasury != null ? treasury.toFixed() : null,
     unitKins: unitKins.toFixed(),
     unitKinsNetSeller: netSeller != null ? netSeller.toFixed() : null,
@@ -81,14 +93,17 @@ export function normalizeSale(raw: z.infer<typeof saleSchema>): KinTradeSale {
     listingId: raw.listingId != null ? String(raw.listingId) : undefined,
     buyer: raw.buyer,
     seller: raw.seller,
+    hasItem,
   };
 }
 
 export async function fetchRecentSales(options?: {
   itemType?: string;
   limit?: number;
+  /** Prefer rows that include itemType (default true for activity UI) */
+  requireItem?: boolean;
 }): Promise<KinTradeSale[]> {
-  const cacheKey = "kintrade:recent-sales";
+  const cacheKey = "kintrade:recent-sales:v2";
   const cached = getCached<KinTradeSale[]>(cacheKey);
   let all: KinTradeSale[];
 
@@ -109,8 +124,21 @@ export async function fetchRecentSales(options?: {
       if (cached) return filterSales(cached.value, options);
       throw new Error("Unexpected kintrade recent-sales shape");
     }
-    all = parsed.data.sales.map(normalizeSale);
-    setCache(cacheKey, all, 45);
+    const out: KinTradeSale[] = [];
+    for (const row of parsed.data.sales) {
+      const one = saleSchema.safeParse(row);
+      if (!one.success) continue;
+      // Need at least a price signal
+      if (one.data.usd == null && one.data.kinsTotal == null) continue;
+      out.push(normalizeSale(one.data));
+    }
+    // Newest first
+    out.sort(
+      (a, b) =>
+        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+    );
+    all = out;
+    setCache(cacheKey, all, 20);
   }
 
   return filterSales(all, options);
@@ -118,9 +146,12 @@ export async function fetchRecentSales(options?: {
 
 function filterSales(
   sales: KinTradeSale[],
-  options?: { itemType?: string; limit?: number },
+  options?: { itemType?: string; limit?: number; requireItem?: boolean },
 ): KinTradeSale[] {
   let out = sales;
+  if (options?.requireItem !== false) {
+    out = out.filter((s) => s.hasItem && s.itemType !== "unknown");
+  }
   if (options?.itemType) {
     const t = options.itemType.toLowerCase();
     out = out.filter(
@@ -170,6 +201,7 @@ export type ItemSalesSummary = {
 export function summarizeSalesByItem(sales: KinTradeSale[]): ItemSalesSummary[] {
   const by = new Map<string, KinTradeSale[]>();
   for (const s of sales) {
+    if (!s.hasItem) continue;
     const list = by.get(s.itemType) ?? [];
     list.push(s);
     by.set(s.itemType, list);

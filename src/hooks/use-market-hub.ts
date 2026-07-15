@@ -33,13 +33,13 @@ export type RecentSale = {
   seller?: string | null;
   sellerName?: string | null;
   sellerId?: string | null;
-  /** Buyer user id when listing was reserved (official API — no username) */
   buyerId?: string | null;
   buyerName?: string | null;
+  buyerWallet?: string | null;
+  sellerWallet?: string | null;
   reserved?: boolean;
   reservedUntilMs?: number | null;
   itemDurability?: string | null;
-  /** true when row is a detected sale (listing left the live book) */
   isSold?: boolean;
 };
 
@@ -47,7 +47,7 @@ export type MarketHubData = {
   floors: MarketFloorItem[];
   /** Live open listings (big list) */
   sales: RecentSale[];
-  /** Detected sold / gone listings (activity card) */
+  /** Real completed sales (activity card) */
   sold: RecentSale[];
   byItem: {
     itemType: string;
@@ -88,9 +88,8 @@ const empty: MarketHubData = {
   refreshing: false,
 };
 
-/** Full-ish open book (token+gold), pages until empty up to 12×100 */
-const ACTIVITY_URL = "/api/market/activity?limit=1200&pages=12&gold=1";
-const MAX_SOLD = 40;
+const LISTINGS_URL = "/api/market/activity?limit=1200&pages=12&gold=1";
+const SOLD_URL = "/api/market/sold?limit=40";
 
 async function fetchJson(url: string, timeoutMs = 20000): Promise<unknown> {
   const controller = new AbortController();
@@ -146,72 +145,48 @@ function buildByItem(
 }
 
 /**
- * Detect sold items: listing IDs that were in the previous poll but are
- * gone now (official API has no sold-history feed).
- *
- * Guards against false positives from partial/failed refreshes — those used
- * to wipe half the book and flood Activity with fake "sold" rows.
+ * Attach seller username from live/known listings when sold row has listingId.
  */
-function detectSold(
-  prev: Map<string, RecentSale>,
-  next: RecentSale[],
-  prevSold: RecentSale[],
+function enrichSold(
+  sold: RecentSale[],
+  known: Map<string, RecentSale>,
 ): RecentSale[] {
-  if (prev.size === 0) return prevSold;
-  // Thin / failed snapshot — do not treat missing IDs as sold
-  if (next.length === 0) return prevSold;
-  if (next.length < Math.max(40, Math.floor(prev.size * 0.7))) {
-    return prevSold;
-  }
-  const nextIds = new Set(next.map((r) => String(r.id)));
-  const disappeared = prev.size - [...nextIds].filter((id) => prev.has(id)).length;
-  // Mass vanish (API glitch / pagination hole) — ignore
-  if (disappeared > Math.max(25, Math.floor(prev.size * 0.25))) {
-    return prevSold;
-  }
-  const now = new Date().toISOString();
-  const newlySold: RecentSale[] = [];
-  for (const [id, row] of prev) {
-    if (nextIds.has(id)) continue;
-    newlySold.push({
+  return sold.map((row) => {
+    const lid = row.listingId != null ? String(row.listingId) : "";
+    const hit = lid ? known.get(lid) : undefined;
+    if (!hit) return { ...row, isSold: true };
+    return {
       ...row,
       isSold: true,
-      timestamp: now,
-    });
-  }
-  if (!newlySold.length) return prevSold;
-  const seen = new Set<string>();
-  const merged: RecentSale[] = [];
-  for (const row of [...newlySold, ...prevSold]) {
-    const key = String(row.listingId ?? row.id);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    merged.push(row);
-    if (merged.length >= MAX_SOLD) break;
-  }
-  return merged;
+      sellerName: hit.sellerName ?? row.sellerName,
+      sellerId: hit.sellerId ?? row.sellerId,
+      seller: hit.sellerName ?? hit.seller ?? row.seller,
+      // Prefer known buyer id from reserve if we had it
+      buyerId: hit.buyerId ?? row.buyerId,
+    };
+  });
 }
 
 /** Default poll: 12s */
 export function useMarketHub(pollMs = 12_000) {
   const [data, setData] = useState<MarketHubData>(empty);
-  const activityInFlight = useRef(false);
+  const listingsInFlight = useRef(false);
+  const soldInFlight = useRef(false);
   const floorsInFlight = useRef(false);
-  /** Previous open-book snapshot for sold detection */
-  const prevListingsRef = useRef<Map<string, RecentSale>>(new Map());
+  /** listingId → listing for seller name enrichment on sold */
+  const knownListingsRef = useRef<Map<string, RecentSale>>(new Map());
 
-  const reloadActivity = useCallback(async (opts?: { silent?: boolean }) => {
-    if (activityInFlight.current) return;
-    activityInFlight.current = true;
+  const reloadListings = useCallback(async (opts?: { silent?: boolean }) => {
+    if (listingsInFlight.current) return;
+    listingsInFlight.current = true;
     if (!opts?.silent) {
       setData((s) => ({ ...s, refreshing: true }));
     }
     try {
-      const activityRes = (await fetchJson(ACTIVITY_URL, 22000)) as {
+      const activityRes = (await fetchJson(LISTINGS_URL, 22000)) as {
         ok?: boolean;
         data?: {
           activity?: RecentSale[];
-          count?: number;
           kinsUsd?: string | null;
           rateSource?: string | null;
           note?: string;
@@ -224,19 +199,23 @@ export function useMarketHub(pollMs = 12_000) {
             ? activityRes.data!.activity!
             : prev.sales;
 
-        const sold =
-          activityRes?.ok && Array.isArray(activityRes.data?.activity)
-            ? detectSold(prevListingsRef.current, nextSales, prev.sold)
-            : prev.sold;
-
-        // Update snapshot only on successful fetch
         if (activityRes?.ok && Array.isArray(activityRes.data?.activity)) {
-          const map = new Map<string, RecentSale>();
+          const map = new Map(knownListingsRef.current);
           for (const row of nextSales) {
             map.set(String(row.id), row);
+            if (row.listingId) map.set(String(row.listingId), row);
           }
-          prevListingsRef.current = map;
+          // Cap memory
+          if (map.size > 4000) {
+            const entries = [...map.entries()].slice(-3000);
+            knownListingsRef.current = new Map(entries);
+          } else {
+            knownListingsRef.current = map;
+          }
         }
+
+        // Re-enrich sold with any new seller names
+        const sold = enrichSold(prev.sold, knownListingsRef.current);
 
         return {
           ...prev,
@@ -253,10 +232,7 @@ export function useMarketHub(pollMs = 12_000) {
             ? (activityRes.data?.note ?? prev.salesNote)
             : prev.salesNote,
           activityCount: nextSales.length,
-          lastActivityAt:
-            sold[0]?.timestamp ??
-            nextSales[0]?.timestamp ??
-            prev.lastActivityAt,
+          lastActivityAt: nextSales[0]?.timestamp ?? prev.lastActivityAt,
           configured: Boolean(activityRes?.ok || prev.configured),
           error:
             !activityRes?.ok && prev.sales.length === 0
@@ -275,7 +251,33 @@ export function useMarketHub(pollMs = 12_000) {
           s.sales.length === 0 ? "Network error loading market" : s.error,
       }));
     } finally {
-      activityInFlight.current = false;
+      listingsInFlight.current = false;
+    }
+  }, []);
+
+  const reloadSold = useCallback(async () => {
+    if (soldInFlight.current) return;
+    soldInFlight.current = true;
+    try {
+      const soldRes = (await fetchJson(SOLD_URL, 15000)) as {
+        ok?: boolean;
+        data?: { sold?: RecentSale[]; note?: string };
+      };
+      if (!soldRes?.ok || !Array.isArray(soldRes.data?.sold)) return;
+
+      setData((prev) => {
+        const sold = enrichSold(soldRes.data!.sold!, knownListingsRef.current);
+        return {
+          ...prev,
+          sold,
+          lastActivityAt: sold[0]?.timestamp ?? prev.lastActivityAt,
+          salesNote: soldRes.data?.note ?? prev.salesNote,
+        };
+      });
+    } catch {
+      // keep previous sold
+    } finally {
+      soldInFlight.current = false;
     }
   }, []);
 
@@ -317,29 +319,34 @@ export function useMarketHub(pollMs = 12_000) {
 
   const reload = useCallback(
     async (opts?: { silent?: boolean; floors?: boolean }) => {
-      await reloadActivity({ silent: opts?.silent });
+      await Promise.all([
+        reloadListings({ silent: opts?.silent }),
+        reloadSold(),
+      ]);
       if (opts?.floors !== false) {
         void reloadFloors();
       }
     },
-    [reloadActivity, reloadFloors],
+    [reloadListings, reloadSold, reloadFloors],
   );
 
   useEffect(() => {
     void reload({ floors: true });
-    const activityId = setInterval(
-      () => void reloadActivity({ silent: true }),
+    const listingsId = setInterval(
+      () => void reloadListings({ silent: true }),
       pollMs,
     );
+    const soldId = setInterval(() => void reloadSold(), pollMs);
     const floorsId = setInterval(
       () => void reloadFloors(),
       Math.max(pollMs * 4, 45_000),
     );
     return () => {
-      clearInterval(activityId);
+      clearInterval(listingsId);
+      clearInterval(soldId);
       clearInterval(floorsId);
     };
-  }, [reload, reloadActivity, reloadFloors, pollMs]);
+  }, [reload, reloadListings, reloadSold, reloadFloors, pollMs]);
 
   return {
     ...data,

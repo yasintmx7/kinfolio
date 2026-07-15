@@ -149,26 +149,57 @@ function lockLabel(r: RecentSale): string {
   return buyer ? `Reserved by ${buyer}` : "Reserved";
 }
 
-function shortWallet(w: string | null | undefined): string | null {
-  if (!w || w.length < 10) return w || null;
-  return `${w.slice(0, 4)}…${w.slice(-4)}`;
+/** Solana base58 pubkey-ish (32–44 chars) — never treat as a username. */
+function isWalletAddress(s: string | null | undefined): boolean {
+  if (!s) return false;
+  const t = s.trim();
+  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(t);
 }
 
-/** Best buyer label: name → #id → short wallet */
+function shortWallet(w: string | null | undefined): string | null {
+  if (!w || w.length < 8) return w || null;
+  const t = w.trim();
+  if (t.length < 10) return t;
+  return `${t.slice(0, 4)}…${t.slice(-4)}`;
+}
+
+/**
+ * Human label only — never a full wallet as "username".
+ * Order: real name → #gameId → short wallet → Unknown
+ */
+function displayName(
+  name: string | null | undefined,
+  id: string | number | null | undefined,
+  wallet: string | null | undefined,
+): string {
+  const n = (name ?? "").trim();
+  if (n && !isWalletAddress(n) && !n.startsWith("#")) return n;
+  if (id != null && String(id).trim() && /^\d+$/.test(String(id).trim())) {
+    return `#${String(id).trim()}`;
+  }
+  if (n && isWalletAddress(n)) return shortWallet(n) || "Unknown";
+  if (wallet && isWalletAddress(wallet)) return shortWallet(wallet) || "Unknown";
+  if (wallet) return shortWallet(wallet) || "Unknown";
+  if (n) return n;
+  return "Unknown";
+}
+
+/** Best buyer label: locker name → #id → short wallet (never full address) */
 function buyerLabel(r: RecentSale): string | null {
   const locker = lockerLabel(r);
   if (locker) return locker;
-  return shortWallet(r.buyerWallet);
+  if (r.buyerId != null && String(r.buyerId).trim()) {
+    return `#${String(r.buyerId).trim()}`;
+  }
+  return shortWallet(r.buyerWallet ?? r.buyerName);
 }
 
 function sellerDisplay(r: RecentSale): string {
-  const name = (r.sellerName ?? r.seller ?? "").trim();
-  if (name && !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(name)) return name;
-  // Raw solana address as seller
-  if (r.sellerWallet) return shortWallet(r.sellerWallet) || "Seller";
-  if (name) return shortWallet(name) || name;
-  if (r.sellerId != null) return `#${r.sellerId}`;
-  return "Unknown";
+  return displayName(
+    r.sellerName ?? r.seller,
+    r.sellerId,
+    r.sellerWallet ?? (isWalletAddress(r.seller) ? r.seller : null),
+  );
 }
 
 /** Single path for row prices — never re-derive ad-hoc in UI. */
@@ -422,25 +453,25 @@ function MarketHubInner() {
   }
 
   function openSeller(row: RecentSale) {
-    const wallet = (row.sellerWallet ?? "").trim() || null;
-    const name = (row.sellerName ?? "").trim() || null;
-    // Prefer numeric game id; else wallet for sold-feed matching
+    const wallet =
+      (row.sellerWallet ?? "").trim() ||
+      (isWalletAddress(row.seller) ? String(row.seller).trim() : null) ||
+      null;
+    const rawName = (row.sellerName ?? "").trim() || null;
+    const name =
+      rawName && !isWalletAddress(rawName) ? rawName : null;
+    // Prefer numeric game id; else wallet for sold-feed matching only
     const id =
       row.sellerId != null && String(row.sellerId).trim() !== ""
         ? String(row.sellerId)
         : wallet;
-    // Display name: username, else short wallet
-    const display =
-      name ||
-      (wallet ? shortWallet(wallet) : null) ||
-      (row.seller && !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(row.seller)
-        ? row.seller.trim()
-        : shortWallet(row.seller));
-    if (!display && !id) return;
+    const display = displayName(name, row.sellerId, wallet);
+    if (display === "Unknown" && !id) return;
     setItemFocus(null);
     setSellerFocus({
       sellerId: id,
-      sellerName: display || id,
+      // Never store full wallet as the visible "username"
+      sellerName: display,
     });
   }
 
@@ -852,10 +883,10 @@ function SoldActivityCard({
               >
                 <SellerAvatar
                   sellerId={r.sellerId ?? r.sellerWallet}
-                  sellerName={r.sellerName ?? r.seller}
+                  sellerName={seller}
                   size={18}
                 />
-                <span className="truncate font-mono text-[11px]">{seller}</span>
+                <span className="truncate text-[11px] font-medium">{seller}</span>
               </button>
               <div className="mt-0.5 text-[10px] text-muted">
                 sold · {new Date(r.timestamp).toLocaleTimeString()}
@@ -954,13 +985,15 @@ const ListingRow = memo(function ListingRow({
   watching: boolean;
   compact: boolean;
 }) {
-  const seller = (r.sellerName ?? r.seller ?? "").trim() || "Unknown";
+  const seller = sellerDisplay(r);
   const qtyLabel = formatQtyCompact(r.quantity);
   const locked = isLocked(r);
   const canOpenSeller = Boolean(
-    (r.sellerName ?? r.seller ?? "").trim() ||
+    (r.sellerName && !isWalletAddress(r.sellerName)) ||
       r.sellerId != null ||
-      r.sellerWallet,
+      r.sellerWallet ||
+      isWalletAddress(r.seller) ||
+      (r.seller && r.seller.trim()),
   );
   const iconSize = compact ? 40 : 48;
 
@@ -1022,12 +1055,12 @@ const ListingRow = memo(function ListingRow({
           {canOpenSeller && (
             <SellerAvatar
               sellerId={r.sellerId ?? r.sellerWallet}
-              sellerName={r.sellerName ?? r.seller}
+              sellerName={seller}
               size={16}
             />
           )}
           <span className="truncate font-medium">{seller}</span>
-          {r.sellerId != null && (
+          {r.sellerId != null && !seller.startsWith("#") && (
             <span className="shrink-0 font-mono text-muted">#{r.sellerId}</span>
           )}
           <span className="shrink-0 text-muted/70">
@@ -1420,18 +1453,22 @@ function SheetListingRow({
             >
               <SellerAvatar
                 sellerId={s.sellerId}
-                sellerName={s.sellerName ?? s.seller}
+                sellerName={sellerDisplay(s)}
                 size={20}
               />
-              {s.sellerName ?? s.seller ?? "—"}
-              {s.sellerId != null ? ` · #${s.sellerId}` : ""}
+              {sellerDisplay(s)}
+              {s.sellerId != null && !sellerDisplay(s).startsWith("#")
+                ? ` · #${s.sellerId}`
+                : ""}
             </button>
           ) : (
             <span>
-              {mode === "item" && (s.sellerName || s.seller) ? (
+              {mode === "item" && sellerDisplay(s) !== "Unknown" ? (
                 <>
-                  {s.sellerName ?? s.seller}
-                  {s.sellerId != null ? ` · #${s.sellerId}` : ""}
+                  {sellerDisplay(s)}
+                  {s.sellerId != null && !sellerDisplay(s).startsWith("#")
+                    ? ` · #${s.sellerId}`
+                    : ""}
                   {" · "}
                 </>
               ) : null}

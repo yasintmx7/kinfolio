@@ -37,15 +37,12 @@ export async function GET(request: Request) {
           priceGold: null,
           currency: "token",
           timestamp: s.timestamp,
-          // Wallets when usernames unknown — UI shows truncated if needed
-          seller: s.seller ?? null,
+          // On-chain only has wallets — never put address in sellerName
+          seller: null as string | null,
           sellerName: null as string | null,
           sellerId: null as string | null,
           buyerId: null as string | null,
-          // Keep wallet for display as short buyer label
-          buyerName: s.buyer
-            ? `${s.buyer.slice(0, 4)}…${s.buyer.slice(-4)}`
-            : null,
+          buyerName: null as string | null,
           buyerWallet: s.buyer ?? null,
           sellerWallet: s.seller ?? null,
           reserved: false,

@@ -238,6 +238,11 @@ function resolveLockerNames(
  * Attach seller username / item meta from known open-book listings.
  * Never overwrite sale qty/price with live listing (partial fills stay accurate).
  */
+function isWalletish(s: string | null | undefined): boolean {
+  if (!s) return false;
+  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(s.trim());
+}
+
 function enrichSold(
   sold: RecentSale[],
   known: Map<string, RecentSale>,
@@ -246,21 +251,31 @@ function enrichSold(
     const lid = row.listingId != null ? String(row.listingId) : "";
     const hit = lid ? known.get(lid) : undefined;
     if (!hit) {
+      // No open-book match — keep wallets only in *Wallet fields
       return {
         ...row,
         isSold: true,
-        // Keep wallet on seller field for matching
-        seller: row.sellerName ?? row.seller ?? row.sellerWallet ?? null,
+        sellerName: row.sellerName && !isWalletish(row.sellerName)
+          ? row.sellerName
+          : null,
+        seller: null,
+        sellerWallet: row.sellerWallet ?? (isWalletish(row.seller) ? row.seller : null),
       };
     }
+    const bookName =
+      hit.sellerName && !isWalletish(hit.sellerName) ? hit.sellerName : null;
     return {
       ...row,
       isSold: true,
-      // Prefer display name from live book; keep wallets
-      sellerName: hit.sellerName ?? row.sellerName,
+      // Prefer real username from live book; never promote wallet → name
+      sellerName: bookName ?? (row.sellerName && !isWalletish(row.sellerName) ? row.sellerName : null),
       sellerId: hit.sellerId ?? row.sellerId,
-      seller: hit.sellerName ?? hit.seller ?? row.seller ?? row.sellerWallet,
-      sellerWallet: row.sellerWallet,
+      seller: bookName,
+      sellerWallet:
+        row.sellerWallet ??
+        (isWalletish(row.seller) ? row.seller : null) ??
+        hit.sellerWallet ??
+        null,
       buyerId: hit.buyerId ?? row.buyerId,
       // Fill missing item label only — never invent qty/price
       name:

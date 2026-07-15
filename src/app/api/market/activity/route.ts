@@ -46,6 +46,8 @@ export async function GET(request: Request) {
           sellerName: r.sellerName,
           sellerId: r.sellerId,
           seller: r.sellerName,
+          buyerId: r.buyerId,
+          buyerName: r.buyerName,
           reserved: r.reserved,
           reservedUntilMs: r.reservedUntilMs,
           itemDurability: r.itemDurability,

@@ -280,6 +280,19 @@ export async function buildOfficialFloorBoard(options?: {
   return rows;
 }
 
+function reservedById(v: unknown): string | null {
+  if (v == null) return null;
+  if (typeof v === "number" && Number.isFinite(v)) return String(v);
+  if (typeof v === "string" && v.trim()) return v.trim();
+  if (typeof v === "object" && v !== null) {
+    const o = v as Record<string, unknown>;
+    if (o.id != null) return String(o.id);
+    if (o.userId != null) return String(o.userId);
+    if (o.name != null) return String(o.name);
+  }
+  return null;
+}
+
 export type OfficialActivityRow = {
   id: string;
   listingId: string;
@@ -296,6 +309,9 @@ export type OfficialActivityRow = {
   timestamp: string;
   sellerName: string | null;
   sellerId: string | null;
+  /** Buyer user id when reserved (official API has no buyer username) */
+  buyerId: string | null;
+  buyerName: string | null;
   reserved: boolean;
   reservedUntilMs: number | null;
   itemDurability: string | null;
@@ -433,6 +449,9 @@ export async function fetchOfficialRecentActivity(options?: {
       timestamp: r.createdAt ?? new Date().toISOString(),
       sellerName: r.sellerName ?? null,
       sellerId: r.sellerId != null ? String(r.sellerId) : null,
+      buyerId: reservedById(r.reservedBy),
+      // Public API never returns buyer username — only numeric id on reserve
+      buyerName: null,
       reserved: r.isReserved,
       reservedUntilMs:
         typeof r.reservedUntilMs === "number" ? r.reservedUntilMs : null,

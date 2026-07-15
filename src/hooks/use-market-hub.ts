@@ -33,6 +33,9 @@ export type RecentSale = {
   seller?: string | null;
   sellerName?: string | null;
   sellerId?: string | null;
+  /** Buyer user id when listing was reserved (official API — no username) */
+  buyerId?: string | null;
+  buyerName?: string | null;
   reserved?: boolean;
   reservedUntilMs?: number | null;
   itemDurability?: string | null;

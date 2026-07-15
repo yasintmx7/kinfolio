@@ -43,14 +43,29 @@ function isLocked(r: RecentSale): boolean {
 }
 
 function lockLabel(r: RecentSale): string {
+  const buyer =
+    (r.buyerName && r.buyerName.trim()) ||
+    (r.buyerId != null && String(r.buyerId).trim()
+      ? `#${r.buyerId}`
+      : null);
   if (r.reservedUntilMs != null && r.reservedUntilMs > Date.now()) {
     try {
-      return `Locked · until ${new Date(r.reservedUntilMs).toLocaleTimeString()}`;
+      const until = new Date(r.reservedUntilMs).toLocaleTimeString();
+      return buyer
+        ? `Locked by ${buyer} · until ${until}`
+        : `Locked · until ${until}`;
     } catch {
-      return "Locked";
+      return buyer ? `Locked by ${buyer}` : "Locked";
     }
   }
-  return "Reserved";
+  return buyer ? `Reserved by ${buyer}` : "Reserved";
+}
+
+/** Best buyer label: username if ever available, else #id */
+function buyerLabel(r: RecentSale): string | null {
+  if (r.buyerName && r.buyerName.trim()) return r.buyerName.trim();
+  if (r.buyerId != null && String(r.buyerId).trim()) return `#${r.buyerId}`;
+  return null;
 }
 
 /** Single path for row prices — never re-derive ad-hoc in UI. */
@@ -529,6 +544,12 @@ function SoldActivityCard({
               </button>
               <div className="mt-0.5 text-[10px] text-muted">
                 sold · {new Date(r.timestamp).toLocaleTimeString()}
+                {buyerLabel(r) ? (
+                  <span className="text-sky-hi">
+                    {" · buyer "}
+                    {buyerLabel(r)}
+                  </span>
+                ) : null}
               </div>
             </div>
             <PriceBlock row={r} compact />
@@ -974,8 +995,14 @@ function DetailSheet({
                       </div>
                     )}
                     {sold && (
-                      <div className="mt-0.5 text-[11px] font-semibold uppercase tracking-wide text-forest-hi">
+                      <div className="mt-0.5 text-[11px] font-semibold text-forest-hi">
                         Sold
+                        {buyerLabel(s) ? (
+                          <span className="font-medium text-sky-hi">
+                            {" · buyer "}
+                            {buyerLabel(s)}
+                          </span>
+                        ) : null}
                       </div>
                     )}
                     {locked && !sold && (

@@ -7,6 +7,7 @@ import { STATIC_CATALOG } from "@/data/static-catalog";
 import {
   fetchOfficialItemStats,
   fetchOfficialListings,
+  reservedById,
   type OfficialListing,
 } from "@/lib/kintara/official-marketplace";
 import { resolveKinsUsd } from "@/lib/prices/resolve-kins-usd";
@@ -24,6 +25,10 @@ function toMarketType(itemId: string): string {
   return itemId.replace(/-/g, "_");
 }
 
+/**
+ * Official listings endpoint ignores itemType filter — must scan the book.
+ * Parallel pages (same pattern as floor board) to keep detail sheet snappy.
+ */
 async function collectItemListings(
   marketType: string,
 ): Promise<OfficialListing[]> {
@@ -31,29 +36,54 @@ async function collectItemListings(
   const collected: OfficialListing[] = [];
   const seen = new Set<string>();
   const pageSize = 100;
-  const pages = 8;
+  const pages = 10;
+  const PARALLEL = 4;
 
   for (const currency of ["token", "gold"] as const) {
-    for (let p = 0; p < pages; p++) {
-      const batch = await fetchOfficialListings({
-        sort: "cheap",
-        currency,
-        category: "all",
-        limit: pageSize,
-        offset: p * pageSize,
-      });
-      for (const row of batch) {
-        if (row.itemType.toLowerCase() !== want) continue;
-        const id = String(row.id);
-        if (seen.has(id)) continue;
-        seen.add(id);
-        collected.push(row);
+    let endOffset: number | null = null;
+    for (let start = 0; start < pages; start += PARALLEL) {
+      if (endOffset != null && start * pageSize >= endOffset) break;
+      const idxs = Array.from(
+        { length: Math.min(PARALLEL, pages - start) },
+        (_, i) => start + i,
+      );
+      const settled = await Promise.all(
+        idxs.map(async (p) => {
+          try {
+            const batch = await fetchOfficialListings({
+              sort: "cheap",
+              currency,
+              category: "all",
+              limit: pageSize,
+              offset: p * pageSize,
+              cacheTtlSeconds: 20,
+            });
+            return { p, batch, ok: true as const };
+          } catch {
+            return { p, batch: [] as OfficialListing[], ok: false as const };
+          }
+        }),
+      );
+      settled.sort((a, b) => a.p - b.p);
+      for (const { p, batch, ok } of settled) {
+        if (!ok) continue;
+        for (const row of batch) {
+          if (row.itemType.toLowerCase() !== want) continue;
+          const id = String(row.id);
+          if (seen.has(id)) continue;
+          seen.add(id);
+          collected.push(row);
+        }
+        if (batch.length < pageSize) {
+          endOffset = p * pageSize + batch.length;
+          break;
+        }
       }
-      if (batch.length < pageSize) break;
+      if (endOffset != null) break;
     }
   }
 
-  // Open first, then cheapest unit USD (gold last)
+  // Open first, then cheapest unit USD (gold-only last)
   collected.sort((a, b) => {
     const la = a.isReserved ? 1 : 0;
     const lb = b.isReserved ? 1 : 0;
@@ -104,10 +134,12 @@ export async function GET(
               unitUsds[unitUsds.length / 2]!) /
             2;
 
-    // official.avg30dKins is USD/unit when kinsUsd was not passed
-    const avg30dUsd = official?.avg30dKins
-      ? Number(official.avg30dKins)
-      : null;
+    // official.avg30dKins holds USD/unit when kinsUsd was not passed
+    const avg30dRaw =
+      official?.avg30dKins != null && official.avg30dKins !== ""
+        ? Number(official.avg30dKins)
+        : NaN;
+    const avg30dUsd = Number.isFinite(avg30dRaw) ? avg30dRaw : null;
     const avg30dKins =
       avg30dUsd != null && kinsUsd && kinsUsd > 0
         ? String(avg30dUsd / kinsUsd)
@@ -167,8 +199,7 @@ export async function GET(
               typeof l.reservedUntilMs === "number"
                 ? l.reservedUntilMs
                 : null,
-            buyerId:
-              l.reservedBy != null ? String(l.reservedBy as string | number) : null,
+            buyerId: reservedById(l.reservedBy),
             timestamp: l.createdAt ?? null,
           };
         }),

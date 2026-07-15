@@ -296,7 +296,8 @@ export async function buildOfficialFloorBoard(options?: {
   return rows;
 }
 
-function reservedById(v: unknown): string | null {
+/** Official reservedBy is usually a number; sometimes an object with id. */
+export function reservedById(v: unknown): string | null {
   if (v == null) return null;
   if (typeof v === "number" && Number.isFinite(v)) return String(v);
   if (typeof v === "string" && v.trim()) return v.trim();

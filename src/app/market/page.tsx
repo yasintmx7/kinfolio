@@ -1210,10 +1210,32 @@ type ItemStatsPayload = {
   listings: ItemStatsListing[];
 };
 
+/** Stats payload must match the focused item (prevents flash of previous item). */
+function statsMatchesItem(
+  stats: ItemStatsPayload | null,
+  itemId: string | undefined,
+): stats is ItemStatsPayload {
+  if (!stats || !itemId) return false;
+  const id = itemId.toLowerCase();
+  const dashed = id.replace(/_/g, "-");
+  const underscored = id.replace(/-/g, "_");
+  const candidates = [
+    stats.itemId.toLowerCase(),
+    stats.marketType.toLowerCase(),
+    stats.marketType.toLowerCase().replace(/_/g, "-"),
+  ];
+  return (
+    candidates.includes(id) ||
+    candidates.includes(dashed) ||
+    candidates.includes(underscored)
+  );
+}
+
 function statsListingToSale(
   l: ItemStatsListing,
   itemId: string,
   name: string,
+  lockerName?: string | null,
 ): RecentSale {
   return {
     id: l.id,
@@ -1232,6 +1254,7 @@ function statsListingToSale(
     seller: l.sellerName,
     sellerId: l.sellerId,
     buyerId: l.buyerId,
+    buyerName: lockerName ?? null,
     reserved: l.reserved,
     reservedUntilMs: l.reservedUntilMs,
     isSold: false,
@@ -1383,9 +1406,12 @@ function DetailSheet({
     if (mode !== "item" || !itemId) {
       setStats(null);
       setStatsError(null);
+      setStatsLoading(false);
       return;
     }
     let cancelled = false;
+    // Drop previous item immediately so we never flash wrong floor/listings
+    setStats(null);
     setStatsLoading(true);
     setStatsError(null);
     fetch(`/api/market/items/${encodeURIComponent(itemId)}/stats`)
@@ -1417,17 +1443,55 @@ function DetailSheet({
     };
   }, [mode, itemId]);
 
-  const displayName = stats?.name ?? title;
+  const liveStats = statsMatchesItem(stats, itemId) ? stats : null;
+  const displayName = liveStats?.name ?? title;
 
-  // Prefer full official item listings; fall back to hub feed slice
-  const openListings = useMemo(() => {
-    if (mode === "item" && stats?.listings?.length) {
-      return stats.listings.map((l) =>
-        statsListingToSale(l, itemId ?? stats.itemId, displayName),
-      );
+  // sellerId → name for locker reverse-map (hub already resolves when possible)
+  const lockerNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const r of rows) {
+      if (r.sellerId != null && r.sellerName && !r.sellerName.startsWith("#")) {
+        map.set(String(r.sellerId), r.sellerName);
+      }
+      if (
+        r.buyerId != null &&
+        r.buyerName &&
+        !r.buyerName.startsWith("#")
+      ) {
+        map.set(String(r.buyerId), r.buyerName);
+      }
     }
-    return rows.filter((r) => !r.isSold);
-  }, [mode, stats, rows, itemId, displayName]);
+    return map;
+  }, [rows]);
+
+  // Prefer official item listings; merge hub rows for any ids the scan missed
+  const openListings = useMemo(() => {
+    const hubOpen = rows.filter((r) => !r.isSold);
+    if (mode !== "item") return hubOpen;
+
+    if (liveStats?.listings?.length) {
+      const fromStats = liveStats.listings.map((l) => {
+        const locker =
+          l.buyerId != null ? lockerNameById.get(String(l.buyerId)) : null;
+        return statsListingToSale(
+          l,
+          itemId ?? liveStats.itemId,
+          displayName,
+          locker,
+        );
+      });
+      const seen = new Set(fromStats.map((r) => String(r.id)));
+      // Fill gaps: hub may still have listings the cheap-scan missed
+      for (const r of hubOpen) {
+        if (!seen.has(String(r.id))) {
+          seen.add(String(r.id));
+          fromStats.push(r);
+        }
+      }
+      return fromStats;
+    }
+    return hubOpen;
+  }, [mode, liveStats, rows, itemId, displayName, lockerNameById]);
 
   const recentSold = useMemo(() => {
     if (mode !== "item") return rows.filter((r) => r.isSold);
@@ -1438,12 +1502,18 @@ function DetailSheet({
   }, [mode, rows, soldRows]);
 
   const openCount =
-    mode === "item" && stats
-      ? stats.openCount
+    mode === "item" && liveStats
+      ? Math.max(
+          liveStats.openCount,
+          openListings.filter((r) => !isLocked(r)).length,
+        )
       : openListings.filter((r) => !isLocked(r)).length;
   const lockedCount =
-    mode === "item" && stats
-      ? stats.lockedCount
+    mode === "item" && liveStats
+      ? Math.max(
+          liveStats.lockedCount,
+          openListings.filter(isLocked).length,
+        )
       : openListings.filter(isLocked).length;
   const soldCount =
     mode === "seller"
@@ -1451,8 +1521,8 @@ function DetailSheet({
       : recentSold.length;
 
   const liveSubtitle =
-    mode === "item" && stats?.floorUsd
-      ? `Floor ${formatUsdShort(stats.floorUsd)}/u · ${formatUsdPer1k(stats.floorUsd)}/1k`
+    mode === "item" && liveStats?.floorUsd
+      ? `Floor ${formatUsdShort(liveStats.floorUsd)}/u · ${formatUsdPer1k(liveStats.floorUsd)}/1k`
       : subtitle;
 
   return (
@@ -1519,70 +1589,70 @@ function DetailSheet({
         <div className="flex-1 overflow-y-auto p-4">
           {mode === "item" && (
             <div className="mb-4 space-y-3">
-              {statsLoading && !stats && (
+              {statsLoading && !liveStats && (
                 <p className="text-sm text-muted">Loading floor & 30d stats…</p>
               )}
-              {statsError && !stats && (
+              {statsError && !liveStats && (
                 <p className="text-sm text-loss">{statsError}</p>
               )}
-              {stats && (
+              {liveStats && (
                 <>
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                     <StatChip
                       label="Floor"
                       value={
-                        stats.floorUsd
-                          ? formatUsdShort(stats.floorUsd)
+                        liveStats.floorUsd
+                          ? formatUsdShort(liveStats.floorUsd)
                           : "—"
                       }
                       hint={
-                        stats.floorUsd
-                          ? `${formatUsdPer1k(stats.floorUsd)}/1k`
+                        liveStats.floorUsd
+                          ? `${formatUsdPer1k(liveStats.floorUsd)}/1k`
                           : undefined
                       }
                     />
                     <StatChip
                       label="Median"
                       value={
-                        stats.medianUsd
-                          ? formatUsdShort(stats.medianUsd)
+                        liveStats.medianUsd
+                          ? formatUsdShort(liveStats.medianUsd)
                           : "—"
                       }
                       hint={
-                        stats.medianUsd
-                          ? `${formatUsdPer1k(stats.medianUsd)}/1k`
+                        liveStats.medianUsd
+                          ? `${formatUsdPer1k(liveStats.medianUsd)}/1k`
                           : undefined
                       }
                     />
                     <StatChip
                       label="30d avg"
                       value={
-                        stats.avg30dUsd
-                          ? formatUsdShort(stats.avg30dUsd)
+                        liveStats.avg30dUsd
+                          ? formatUsdShort(liveStats.avg30dUsd)
                           : "—"
                       }
                       hint={
-                        stats.avg30dUsd
-                          ? `${formatUsdPer1k(stats.avg30dUsd)}/1k`
+                        liveStats.avg30dUsd
+                          ? `${formatUsdPer1k(liveStats.avg30dUsd)}/1k`
                           : undefined
                       }
                     />
                     <StatChip
                       label="30d sales"
                       value={
-                        stats.sales30d != null
-                          ? String(stats.sales30d)
+                        liveStats.sales30d != null
+                          ? String(liveStats.sales30d)
                           : "—"
                       }
                     />
                   </div>
-                  {stats.samples.length > 0 && (
+                  {liveStats.samples.length > 0 && (
                     <div>
                       <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-muted">
                         Recent samples
                       </p>
                       <div className="flex flex-wrap gap-1.5">
-                        {stats.samples.slice(0, 8).map((s, i) => (
+                        {liveStats.samples.slice(0, 8).map((s, i) => (
                           <span
                             key={`${s.date}-${i}`}
                             className="rounded-lg bg-surface-2/80 px-2 py-1 font-mono text-[11px] tabular-nums text-muted"
@@ -1632,7 +1702,7 @@ function DetailSheet({
             <>
               <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted">
                 Open listings · {openListings.length}
-                {statsLoading && stats ? " · refreshing…" : ""}
+                {statsLoading && liveStats ? " · refreshing…" : ""}
               </p>
               <div className="space-y-2">
                 {openListings.length === 0 && (

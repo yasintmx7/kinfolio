@@ -1,34 +1,27 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import {
-  ArrowUpDown,
-  Calculator,
-  RefreshCw,
-  Star,
-  X,
-} from "lucide-react";
-import { Card, CardTitle, StatValue } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { RefreshCw, Star, X } from "lucide-react";
 import { ItemIcon } from "@/components/items/item-icon";
-import { useMarketHub, type MarketFloorItem } from "@/hooks/use-market-hub";
+import { useMarketHub, type MarketFloorItem, type RecentSale } from "@/hooks/use-market-hub";
 import { useKinsPrice } from "@/hooks/use-kins-price";
 import { useToast } from "@/components/feedback/toast";
 import { d } from "@/lib/accounting/decimal";
-import { formatKins, formatUsd, signedClass } from "@/lib/formatting/money";
+import { formatKins, formatUsd } from "@/lib/formatting/money";
 import { getWatchlist, toggleWatch } from "@/lib/market/watchlist";
 import { cn } from "@/lib/utils";
 
-type Tab = "overview" | "floors" | "sales" | "watch";
-type SortKey = "listings" | "floorUsd" | "name" | "qty";
+type Tab = "sales" | "floors" | "watch";
 
 function MarketHubInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const tab = (searchParams.get("tab") as Tab) || "overview";
+  const rawTab = searchParams.get("tab");
+  const tab: Tab =
+    rawTab === "floors" || rawTab === "watch" || rawTab === "sales"
+      ? rawTab
+      : "sales";
   const selectedId = searchParams.get("item") || "";
 
   const hub = useMarketHub(10_000);
@@ -36,69 +29,42 @@ function MarketHubInner() {
   const { push } = useToast();
 
   const [q, setQ] = useState("");
-  const [activityQ, setActivityQ] = useState("");
-  const [sort, setSort] = useState<SortKey>("listings");
   const [watch, setWatch] = useState<string[]>([]);
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [detailStats, setDetailStats] = useState<{
-    avg30dKins?: string;
-    medianRecentSalesKins?: string;
-    lowestActiveKins?: string;
-    sales30d?: number;
-    sources?: Record<string, string | null>;
-  } | null>(null);
 
   useEffect(() => {
     setWatch(getWatchlist());
   }, []);
 
+  // Redirect old overview tab to live feed
   useEffect(() => {
-    if (!selectedId) {
-      setDetailStats(null);
-      return;
+    if (!rawTab || rawTab === "overview") {
+      const p = new URLSearchParams(searchParams.toString());
+      p.set("tab", "sales");
+      router.replace(`/market?${p.toString()}`);
     }
-    setDetailLoading(true);
-    fetch(`/api/market/items/${encodeURIComponent(selectedId)}/stats`)
-      .then((r) => r.json())
-      .then((j) => {
-        if (j.ok) setDetailStats(j.data);
-        else setDetailStats(null);
-      })
-      .catch(() => setDetailStats(null))
-      .finally(() => setDetailLoading(false));
-  }, [selectedId]);
+  }, [rawTab, router, searchParams]);
 
   const kinsUsd = price?.priceUsd ?? hub.kinsUsd ?? undefined;
-  const fee = 0.05;
 
-  const saleMedianByType = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const row of hub.byItem) {
-      if (row.medianUnitKins) m.set(row.itemType, row.medianUnitKins);
-    }
-    return m;
-  }, [hub.byItem]);
-
-  const enriched = useMemo(() => {
-    return hub.floors.map((f) => {
-      const saleMed = saleMedianByType.get(f.id);
-      const floorK = f.lowestKinsPerUnit ? d(f.lowestKinsPerUnit) : null;
-      const saleK = saleMed ? d(saleMed) : null;
-      let edge: string | null = null;
-      if (floorK && saleK && saleK.gt(0)) {
-        // positive = floor cheaper than recent median sale (potential under floor vs sales)
-        edge = saleK.minus(floorK).div(saleK).mul(100).toFixed(1);
-      }
-      return { ...f, saleMedianKins: saleMed ?? null, edgePct: edge };
-    });
-  }, [hub.floors, saleMedianByType]);
-
-  const filtered = useMemo(() => {
+  const filteredLive = useMemo(() => {
     const query = q.trim().toLowerCase();
-    let list = enriched;
-    if (tab === "watch") {
-      list = list.filter((i) => watch.includes(i.id));
-    }
+    if (!query) return hub.sales;
+    return hub.sales.filter((s) => {
+      const seller = (s.sellerName ?? s.seller ?? "").toLowerCase();
+      return (
+        s.name.toLowerCase().includes(query) ||
+        s.itemType.toLowerCase().includes(query) ||
+        seller.includes(query) ||
+        String(s.sellerId ?? "").includes(query) ||
+        String(s.listingId ?? s.id).includes(query)
+      );
+    });
+  }, [hub.sales, q]);
+
+  const filteredFloors = useMemo(() => {
+    let list = hub.floors;
+    if (tab === "watch") list = list.filter((i) => watch.includes(i.id));
+    const query = q.trim().toLowerCase();
     if (query) {
       list = list.filter(
         (i) =>
@@ -106,48 +72,22 @@ function MarketHubInner() {
           i.id.toLowerCase().includes(query),
       );
     }
-    return [...list].sort((a, b) => {
-      if (sort === "name") return a.name.localeCompare(b.name);
-      if (sort === "qty") return (b.totalQty ?? 0) - (a.totalQty ?? 0);
-      if (sort === "floorUsd") {
-        return d(b.lowestUsdPerUnit ?? "0").cmp(d(a.lowestUsdPerUnit ?? "0"));
-      }
-      return (b.listings ?? 0) - (a.listings ?? 0);
-    });
-  }, [enriched, q, sort, tab, watch]);
+    return [...list].sort((a, b) => (b.listings ?? 0) - (a.listings ?? 0));
+  }, [hub.floors, q, tab, watch]);
 
-  const hotSales = hub.sales.slice(0, 40);
-  const filteredActivity = useMemo(() => {
-    const query = activityQ.trim().toLowerCase();
-    if (!query) return hub.sales;
-    return hub.sales.filter((s) => {
-      const seller = (s.sellerName ?? s.seller ?? "").toLowerCase();
-      const sid = (s.sellerId ?? "").toLowerCase();
-      return (
-        s.name.toLowerCase().includes(query) ||
-        s.itemType.toLowerCase().includes(query) ||
-        seller.includes(query) ||
-        sid.includes(query) ||
-        String(s.listingId ?? s.id).includes(query)
-      );
-    });
-  }, [hub.sales, activityQ]);
-  const selectedFloor = enriched.find((i) => i.id === selectedId);
-  const selectedSales = hub.sales.filter((s) => s.itemType === selectedId);
+  const selected = hub.sales.filter((s) => s.itemType === selectedId);
+  const selectedFloor = hub.floors.find((f) => f.id === selectedId);
 
   function setTab(next: Tab) {
-    const p = new URLSearchParams(searchParams.toString());
-    if (next === "overview") p.delete("tab");
-    else p.set("tab", next);
+    const p = new URLSearchParams();
+    p.set("tab", next);
     router.push(`/market?${p.toString()}`);
   }
 
   function openItem(id: string) {
     const p = new URLSearchParams(searchParams.toString());
     p.set("item", id);
-    if (!p.get("tab") || p.get("tab") === "overview") {
-      // keep overview or current
-    }
+    if (!p.get("tab")) p.set("tab", tab);
     router.push(`/market?${p.toString()}`);
   }
 
@@ -157,764 +97,516 @@ function MarketHubInner() {
     router.push(`/market?${p.toString()}`);
   }
 
-  function onToggleWatch(id: string) {
+  function onWatch(id: string) {
     const next = toggleWatch(id);
     setWatch(next);
-    push(next.includes(id) ? "Added to watchlist" : "Removed from watchlist", "ok");
+    push(next.includes(id) ? "Watching" : "Removed", "ok");
   }
-
-  async function refreshAll() {
-    await Promise.all([hub.reload(), reloadPrice()]);
-    push("Market refreshed", "ok");
-  }
-
-  const tabs: { id: Tab; label: string }[] = [
-    { id: "overview", label: "Overview" },
-    { id: "floors", label: "Floors" },
-    { id: "sales", label: "Activity" },
-    { id: "watch", label: "Watchlist" },
-  ];
 
   return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className="space-y-6">
+      {/* Simple top bar */}
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-xs font-medium uppercase tracking-[0.14em] text-sky">
-            Market hub
-          </p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">
-            Floors + live sales
+          <h1 className="text-[1.65rem] font-semibold tracking-tight text-primary">
+            {tab === "sales" && "Live market"}
+            {tab === "floors" && "Floors"}
+            {tab === "watch" && "Watchlist"}
           </h1>
-          <p className="mt-1.5 max-w-xl text-sm text-muted">
-            Live floors and newest listings from the official Kintara marketplace.
-            Watchlist, edge vs recent listing prices, and item drill-down.
+          <p className="mt-1 text-sm text-muted">
+            {tab === "sales" &&
+              `${hub.sales.length} listings · seller, KINS & $ · every 10s`}
+            {tab === "floors" && `${hub.floors.length} items · lowest price each`}
+            {tab === "watch" &&
+              (watch.length
+                ? `${watch.length} watched items`
+                : "Star items to watch them")}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <div className="flex items-center gap-2 text-xs text-muted">
-            <span
-              className={cn(
-                "inline-flex h-2 w-2 rounded-full",
-                hub.refreshing ? "animate-pulse bg-sky" : "bg-forest",
-              )}
-            />
-            Live · 10s
-            {hub.lastActivityAt && (
-              <span className="hidden sm:inline">
-                · top {new Date(hub.lastActivityAt).toLocaleTimeString()}
-              </span>
-            )}
+
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="rounded-2xl border border-border/60 bg-surface/80 px-4 py-2.5 text-right">
+            <div className="text-[10px] font-medium uppercase tracking-wider text-muted">
+              1 KINS
+            </div>
+            <div className="font-mono text-base font-semibold tabular-nums text-sky-hi">
+              {kinsUsd
+                ? formatUsd(kinsUsd, { maxDecimals: 6 })
+                : hub.loading
+                  ? "…"
+                  : "—"}
+            </div>
           </div>
-          <Button
-            variant="secondary"
-            onClick={refreshAll}
-            disabled={hub.loading || hub.refreshing}
+          <button
+            type="button"
+            onClick={() => {
+              void hub.reload();
+              void reloadPrice();
+            }}
+            disabled={hub.refreshing}
+            className="inline-flex min-h-11 items-center gap-2 rounded-2xl border border-border/60 bg-surface px-3.5 text-sm text-muted hover:text-primary disabled:opacity-50"
           >
             <RefreshCw
+              className={cn("h-4 w-4", hub.refreshing && "animate-spin")}
+            />
+            <span
               className={cn(
-                "h-4 w-4",
-                (hub.loading || hub.refreshing) && "animate-spin",
+                "h-1.5 w-1.5 rounded-full",
+                hub.refreshing ? "bg-sky" : "bg-forest",
               )}
             />
-            Refresh
-          </Button>
-          <Link href="/calculator">
-            <Button variant="ghost" className="text-muted">
-              <Calculator className="h-4 w-4" />
-              Calc
-            </Button>
-          </Link>
+            Live
+          </button>
         </div>
       </div>
 
-      {/* Ticker strip */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardTitle>1 KINS =</CardTitle>
-          <StatValue>
-            {kinsUsd
-              ? formatUsd(kinsUsd, { maxDecimals: 8 })
-              : hub.loading
-                ? "…"
-                : "Not available"}
-          </StatValue>
-          <p className="mt-1 text-[11px] text-muted">
-            Live rate · {hub.rateSource ?? price?.source ?? "—"}
-          </p>
-        </Card>
-        <Card>
-          <CardTitle>Tracked items</CardTitle>
-          <StatValue>{hub.floors.length || "—"}</StatValue>
-          <p className="mt-1 text-[11px] text-muted">Floor board</p>
-        </Card>
-        <Card>
-          <CardTitle>Listings in floors</CardTitle>
-          <StatValue>
-            {hub.floors.reduce((a, f) => a + (f.listings ?? 0), 0) || "—"}
-          </StatValue>
-          <p className="mt-1 text-[11px] text-muted">Official marketplace</p>
-        </Card>
-        <Card>
-          <CardTitle>Live feed rows</CardTitle>
-          <StatValue>
-            {(hub.activityCount ?? hub.sales.length) || "—"}
-          </StatValue>
-          <p className="mt-1 text-[11px] text-muted">
-            All prices in KINS + $ · 10s
-          </p>
-        </Card>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex flex-wrap gap-1.5">
-        {tabs.map((t) => (
+      {/* Clean segment control */}
+      <div className="inline-flex rounded-2xl border border-border/50 bg-surface/60 p-1">
+        {(
+          [
+            ["sales", "Live"],
+            ["floors", "Floors"],
+            ["watch", "Watch"],
+          ] as const
+        ).map(([id, label]) => (
           <button
-            key={t.id}
+            key={id}
             type="button"
-            onClick={() => setTab(t.id)}
+            onClick={() => setTab(id)}
             className={cn(
-              "min-h-10 rounded-xl px-3.5 text-sm font-medium transition-colors",
-              tab === t.id
-                ? "bg-sky text-[#0a121c]"
-                : "bg-raised text-muted hover:text-primary",
+              "min-h-9 rounded-xl px-4 text-sm font-medium transition-colors",
+              tab === id
+                ? "bg-sky text-[#0a121c] shadow-sm"
+                : "text-muted hover:text-primary",
             )}
           >
-            {t.label}
-            {t.id === "watch" && watch.length > 0 ? ` (${watch.length})` : ""}
+            {label}
+            {id === "watch" && watch.length > 0 ? ` ${watch.length}` : ""}
           </button>
         ))}
       </div>
 
-      {/* Overview */}
-      {(tab === "overview" || tab === "floors" || tab === "watch") && (
-        <>
-          {tab === "overview" && (
-            <div className="grid gap-4 lg:grid-cols-5">
-              <Card className="lg:col-span-3">
-                <div className="mb-3 flex items-center justify-between gap-2">
-                  <CardTitle>Hottest floors</CardTitle>
-                  <button
-                    type="button"
-                    className="text-xs text-sky"
-                    onClick={() => setTab("floors")}
-                  >
-                    View all
-                  </button>
-                </div>
-                <FloorTable
-                  rows={filtered.slice(0, 12)}
-                  watch={watch}
-                  onOpen={openItem}
-                  onWatch={onToggleWatch}
-                  compact
-                />
-              </Card>
-              <Card className="lg:col-span-2">
-                <div className="mb-3 flex items-center justify-between gap-2">
-                  <CardTitle>Newest listings</CardTitle>
-                  <button
-                    type="button"
-                    className="text-xs text-sky"
-                    onClick={() => setTab("sales")}
-                  >
-                    View all
-                  </button>
-                </div>
-                <SalesTape sales={hotSales} onOpen={openItem} />
-              </Card>
-            </div>
-          )}
+      {/* Search */}
+      <input
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder={
+          tab === "sales"
+            ? "Search item, seller, listing id…"
+            : "Search items…"
+        }
+        className="min-h-12 w-full rounded-2xl border border-border/50 bg-surface/70 px-4 text-sm text-primary outline-none placeholder:text-muted/60 focus:border-sky/40 focus:ring-2 focus:ring-sky/20"
+      />
 
-          {(tab === "floors" || tab === "watch") && (
-            <Card>
-              <div className="mb-3 flex flex-wrap items-center gap-2">
-                <Input
-                  className="max-w-xs"
-                  placeholder="Search items…"
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                />
-                <div className="flex flex-wrap gap-1">
-                  {(
-                    [
-                      ["listings", "Listings"],
-                      ["floorUsd", "Floor $"],
-                      ["qty", "Qty"],
-                      ["name", "Name"],
-                    ] as const
-                  ).map(([k, label]) => (
-                    <button
-                      key={k}
-                      type="button"
-                      onClick={() => setSort(k)}
-                      className={cn(
-                        "inline-flex min-h-9 items-center gap-1 rounded-lg px-2.5 text-xs",
-                        sort === k
-                          ? "bg-sky/15 text-sky-hi"
-                          : "bg-surface-2 text-muted",
-                      )}
-                    >
-                      <ArrowUpDown className="h-3 w-3" />
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {tab === "watch" && !watch.length && (
-                <p className="mb-3 text-sm text-muted">
-                  Star items on the floors list to build your watchlist.
-                </p>
-              )}
-              <FloorTable
-                rows={filtered}
-                watch={watch}
-                onOpen={openItem}
-                onWatch={onToggleWatch}
-              />
-              <p className="mt-3 text-[11px] text-muted">
-                Floor = lowest active listing (USD). Activity med = median unit price
-                from recent listings. Edge ≈ floor vs that median.
-              </p>
-            </Card>
-          )}
-        </>
-      )}
-
+      {/* Main content */}
       {tab === "sales" && (
-        <Card>
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <CardTitle>Live marketplace feed</CardTitle>
-              <p className="mt-1 text-xs text-muted">
-                {hub.sales.length} listings · seller, id, qty, prices · auto every
-                10s
-              </p>
-            </div>
-            <Input
-              className="max-w-xs"
-              placeholder="Filter item / seller / listing id…"
-              value={activityQ}
-              onChange={(e) => setActivityQ(e.target.value)}
-            />
-          </div>
-          {hub.salesNote && (
-            <p className="mb-2 text-xs text-muted">{hub.salesNote}</p>
-          )}
-          <ActivityTable rows={filteredActivity} onOpen={openItem} />
-        </Card>
+        <LiveList rows={filteredLive} onOpen={openItem} onWatch={onWatch} watch={watch} />
       )}
 
-      {/* Item detail drawer */}
+      {(tab === "floors" || tab === "watch") && (
+        <FloorList
+          rows={filteredFloors}
+          watch={watch}
+          onOpen={openItem}
+          onWatch={onWatch}
+          empty={
+            tab === "watch"
+              ? "No watched items yet. Open Live or Floors and tap ★."
+              : "No floors loaded yet."
+          }
+        />
+      )}
+
+      {/* Simple detail sheet */}
       {selectedId && (
-        <div className="fixed inset-0 z-50 flex justify-end">
-          <button
-            type="button"
-            className="absolute inset-0 bg-black/50"
-            aria-label="Close"
-            onClick={closeItem}
-          />
-          <div className="relative z-10 flex h-full w-full max-w-md flex-col border-l border-border bg-surface shadow-2xl">
-            <div className="flex items-start justify-between gap-2 border-b border-border p-4">
-              <div className="flex items-center gap-3">
-                <ItemIcon
-                  itemId={selectedId}
-                  name={selectedFloor?.name ?? selectedId}
-                  size={48}
-                />
-                <div>
-                  <h2 className="text-lg font-semibold">
-                    {selectedFloor?.name ?? selectedId}
-                  </h2>
-                  <p className="font-mono text-xs text-muted">{selectedId}</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={closeItem}
-                className="rounded-lg p-2 text-muted hover:bg-raised hover:text-primary"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <div className="flex-1 space-y-4 overflow-y-auto p-4">
-              <div className="grid grid-cols-2 gap-2">
-                <Metric
-                  label="Floor KINS / unit"
-                  value={
-                    selectedFloor?.lowestKinsPerUnit
-                      ? formatKins(selectedFloor.lowestKinsPerUnit)
-                      : "—"
-                  }
-                />
-                <Metric
-                  label="Floor $ / unit"
-                  value={
-                    selectedFloor?.lowestUsdPerUnit
-                      ? formatUsd(selectedFloor.lowestUsdPerUnit, {
-                          maxDecimals: 8,
-                        })
-                      : "—"
-                  }
-                  className="text-sky-hi"
-                />
-                <Metric
-                  label="Activity med (KINS)"
-                  value={
-                    selectedFloor?.saleMedianKins
-                      ? formatKins(selectedFloor.saleMedianKins)
-                      : "—"
-                  }
-                />
-                <Metric
-                  label="Edge vs activity"
-                  value={
-                    selectedFloor?.edgePct != null
-                      ? `${selectedFloor.edgePct}%`
-                      : "—"
-                  }
-                  className={
-                    selectedFloor?.edgePct
-                      ? signedClass(selectedFloor.edgePct)
-                      : ""
-                  }
-                />
-              </div>
-              {kinsUsd && (
-                <p className="text-[11px] text-muted">
-                  Rate: 1 KINS = {formatUsd(kinsUsd, { maxDecimals: 8 })} · all
-                  $ values use this live rate
-                </p>
-              )}
-
-              {detailLoading && (
-                <p className="text-sm text-muted">Loading stats…</p>
-              )}
-              {detailStats && (
-                <div className="rounded-xl border border-border bg-surface-2 p-3 text-sm">
-                  <p className="text-xs uppercase tracking-wide text-muted">
-                    Marketplace stats
-                  </p>
-                  <ul className="mt-2 space-y-1 font-mono text-xs text-muted">
-                    {detailStats.avg30dKins && (
-                      <li>30d avg: {formatKins(detailStats.avg30dKins)} KINS/u</li>
-                    )}
-                    {detailStats.lowestActiveKins && (
-                      <li>
-                        Lowest listing:{" "}
-                        {formatKins(detailStats.lowestActiveKins)} KINS/u
-                      </li>
-                    )}
-                    {detailStats.sales30d != null && (
-                      <li>History samples: {detailStats.sales30d}</li>
-                    )}
-                  </ul>
-                  {selectedFloor?.lowestKinsPerUnit && kinsUsd && (
-                    <p className="mt-2 text-xs text-muted">
-                      Est. net after 5% fee:{" "}
-                      {formatUsd(
-                        d(selectedFloor.lowestKinsPerUnit)
-                          .mul(d(kinsUsd))
-                          .mul(1 - fee)
-                          .toFixed(),
-                        { maxDecimals: 6 },
-                      )}{" "}
-                      / unit
-                    </p>
-                  )}
-                </div>
-              )}
-
-              <div>
-                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted">
-                  Live listings of this item ({selectedSales.length})
-                </p>
-                {selectedSales.length === 0 && (
-                  <p className="text-sm text-muted">
-                    No recent activity for this item in the scanned pages.
-                  </p>
-                )}
-                <div className="max-h-64 space-y-1.5 overflow-y-auto">
-                  {selectedSales.map((s) => (
-                    <div
-                      key={s.id}
-                      className="rounded-lg bg-surface-2 px-2.5 py-2 text-xs"
-                    >
-                      <div className="flex justify-between gap-2">
-                        <span className="font-medium">
-                          {(s.sellerName ?? s.seller) || "—"}
-                          {s.sellerId ? (
-                            <span className="font-mono text-muted">
-                              {" "}
-                              #{s.sellerId}
-                            </span>
-                          ) : null}
-                        </span>
-                        <span className="text-right font-mono tabular-nums">
-                          <span className="block">
-                            {formatKins(s.unitKins)} KINS/u
-                          </span>
-                          <span className="block text-sky-hi">
-                            {s.unitUsd
-                              ? formatUsd(s.unitUsd, { maxDecimals: 6 })
-                              : "—"}
-                            /u
-                          </span>
-                        </span>
-                      </div>
-                      <div className="mt-0.5 flex justify-between text-[10px] text-muted">
-                        <span>
-                          id {s.listingId ?? s.id} · ×{s.quantity}
-                          {s.reserved ? " · reserved" : ""}
-                        </span>
-                        <span>{new Date(s.timestamp).toLocaleString()}</span>
-                      </div>
-                      <div className="mt-0.5 font-mono text-[10px] text-muted">
-                        lot{" "}
-                        {s.totalKins
-                          ? `${formatKins(s.totalKins)} KINS`
-                          : "—"}
-                        {" · "}
-                        {s.usdTotal
-                          ? formatUsd(s.usdTotal, { maxDecimals: 4 })
-                          : "—"}
-                        {s.currency ? ` · ${s.currency}` : ""}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-2 border-t border-border p-4">
-              <Button
-                variant="secondary"
-                className="flex-1"
-                onClick={() => onToggleWatch(selectedId)}
-              >
-                <Star
-                  className={cn(
-                    "h-4 w-4",
-                    watch.includes(selectedId) && "fill-sky text-sky",
-                  )}
-                />
-                {watch.includes(selectedId) ? "Watching" : "Watch"}
-              </Button>
-              <Link
-                href={`/calculator`}
-                className="flex-1"
-              >
-                <Button className="w-full" variant="ghost">
-                  Calculator
-                </Button>
-              </Link>
-            </div>
-          </div>
-        </div>
+        <DetailSheet
+          itemId={selectedId}
+          name={selectedFloor?.name ?? selectedId}
+          floor={selectedFloor}
+          rows={selected}
+          watching={watch.includes(selectedId)}
+          kinsUsd={kinsUsd}
+          onClose={closeItem}
+          onWatch={() => onWatch(selectedId)}
+        />
       )}
 
       {hub.error && (
-        <p className="text-sm text-loss">{hub.error}</p>
+        <p className="text-center text-sm text-loss">{hub.error}</p>
       )}
     </div>
   );
 }
 
-function Metric({
-  label,
-  value,
-  className,
+function LiveList({
+  rows,
+  onOpen,
+  onWatch,
+  watch,
 }: {
-  label: string;
-  value: string;
-  className?: string;
+  rows: RecentSale[];
+  onOpen: (id: string) => void;
+  onWatch: (id: string) => void;
+  watch: string[];
 }) {
+  if (!rows.length) {
+    return (
+      <div className="rounded-3xl border border-border/40 bg-surface/50 px-6 py-16 text-center text-sm text-muted">
+        Waiting for listings…
+      </div>
+    );
+  }
+
   return (
-    <div className="rounded-xl bg-surface-2 px-3 py-2">
-      <div className="text-[10px] uppercase tracking-wide text-muted">{label}</div>
-      <div className={cn("mt-0.5 font-mono text-sm tabular-nums", className)}>
-        {value}
+    <div className="overflow-hidden rounded-3xl border border-border/40 bg-surface/40">
+      {/* Desktop header */}
+      <div className="hidden grid-cols-[1.4fr_0.7fr_0.55fr_0.7fr_0.7fr_auto] gap-3 border-b border-border/40 px-4 py-3 text-[11px] font-medium uppercase tracking-wider text-muted md:grid">
+        <span>Item · seller</span>
+        <span>Listing</span>
+        <span className="text-right">Qty</span>
+        <span className="text-right">KINS / unit</span>
+        <span className="text-right">$ / unit</span>
+        <span className="w-9" />
+      </div>
+
+      <div className="max-h-[calc(100dvh-16rem)] divide-y divide-border/30 overflow-y-auto">
+        {rows.map((r) => {
+          const seller = r.sellerName ?? r.seller ?? "—";
+          return (
+            <div
+              key={r.id}
+              className="grid grid-cols-1 gap-2 px-4 py-3.5 transition-colors hover:bg-sky/[0.04] md:grid-cols-[1.4fr_0.7fr_0.55fr_0.7fr_0.7fr_auto] md:items-center md:gap-3"
+            >
+              <button
+                type="button"
+                onClick={() => onOpen(r.itemType)}
+                className="flex min-w-0 items-center gap-3 text-left"
+              >
+                <ItemIcon itemId={r.itemType} name={r.name} size={40} />
+                <div className="min-w-0">
+                  <div className="truncate text-[15px] font-semibold tracking-tight">
+                    {r.name}
+                  </div>
+                  <div className="truncate text-[12px] text-muted">
+                    <span className="text-primary/90">{seller}</span>
+                    {r.sellerId ? (
+                      <span className="font-mono text-muted"> · #{r.sellerId}</span>
+                    ) : null}
+                  </div>
+                  <div className="mt-0.5 text-[11px] text-muted md:hidden">
+                    #{r.listingId ?? r.id} · {new Date(r.timestamp).toLocaleTimeString()}
+                  </div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onOpen(r.itemType)}
+                className="hidden text-left font-mono text-[12px] text-muted md:block"
+              >
+                <div>#{r.listingId ?? r.id}</div>
+                <div className="text-[11px]">
+                  {new Date(r.timestamp).toLocaleTimeString()}
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onOpen(r.itemType)}
+                className="hidden text-right font-mono text-sm tabular-nums md:block"
+              >
+                {r.quantity}
+              </button>
+
+              {/* Prices — most visible */}
+              <button
+                type="button"
+                onClick={() => onOpen(r.itemType)}
+                className="flex items-center justify-between gap-4 md:block md:text-right"
+              >
+                <div className="md:hidden text-[12px] text-muted">Price</div>
+                <div>
+                  <div className="font-mono text-[15px] font-semibold tabular-nums tracking-tight">
+                    {formatKins(r.unitKins)}{" "}
+                    <span className="text-[11px] font-medium text-muted">KINS</span>
+                  </div>
+                  <div className="font-mono text-[13px] tabular-nums text-sky-hi">
+                    {r.unitUsd
+                      ? formatUsd(r.unitUsd, { maxDecimals: 6 })
+                      : "—"}
+                    <span className="text-muted"> /u</span>
+                  </div>
+                  <div className="mt-0.5 font-mono text-[11px] text-muted md:hidden">
+                    ×{r.quantity}
+                    {r.usdTotal
+                      ? ` · lot ${formatUsd(r.usdTotal, { maxDecimals: 3 })}`
+                      : ""}
+                    {r.totalKins ? ` · ${formatKins(r.totalKins)} KINS` : ""}
+                  </div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onOpen(r.itemType)}
+                className="hidden text-right md:block"
+              >
+                <div className="font-mono text-[13px] tabular-nums text-sky-hi">
+                  {r.unitUsd
+                    ? formatUsd(r.unitUsd, { maxDecimals: 6 })
+                    : "—"}
+                </div>
+                <div className="font-mono text-[11px] text-muted">
+                  lot{" "}
+                  {r.usdTotal
+                    ? formatUsd(r.usdTotal, { maxDecimals: 3 })
+                    : "—"}
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onWatch(r.itemType)}
+                className="absolute right-3 top-3 rounded-xl p-2 text-muted hover:bg-raised hover:text-sky md:static md:justify-self-end"
+                aria-label="Watch"
+              >
+                <Star
+                  className={cn(
+                    "h-4 w-4",
+                    watch.includes(r.itemType) && "fill-sky text-sky",
+                  )}
+                />
+              </button>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
 }
 
-function FloorTable({
+function FloorList({
   rows,
   watch,
   onOpen,
   onWatch,
-  compact,
+  empty,
 }: {
-  rows: (MarketFloorItem & {
-    saleMedianKins?: string | null;
-    edgePct?: string | null;
-  })[];
+  rows: MarketFloorItem[];
   watch: string[];
   onOpen: (id: string) => void;
   onWatch: (id: string) => void;
-  compact?: boolean;
+  empty: string;
 }) {
   if (!rows.length) {
-    return <p className="text-sm text-muted">No items to show.</p>;
+    return (
+      <div className="rounded-3xl border border-border/40 bg-surface/50 px-6 py-16 text-center text-sm text-muted">
+        {empty}
+      </div>
+    );
   }
+
   return (
-    <div className={cn("space-y-1", !compact && "max-h-[32rem] overflow-y-auto")}>
-      {rows.map((row) => (
-        <div
-          key={row.id}
-          className="flex items-center gap-2 rounded-xl border border-border/50 bg-surface-2/60 px-2 py-2 hover:border-sky/30"
-        >
-          <button
-            type="button"
-            className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
-            onClick={() => onOpen(row.id)}
+    <div className="overflow-hidden rounded-3xl border border-border/40 bg-surface/40">
+      <div className="hidden grid-cols-[1fr_auto_auto] gap-4 border-b border-border/40 px-4 py-3 text-[11px] font-medium uppercase tracking-wider text-muted md:grid">
+        <span>Item</span>
+        <span className="text-right">Lowest price</span>
+        <span className="w-9" />
+      </div>
+      <div className="max-h-[calc(100dvh-16rem)] divide-y divide-border/30 overflow-y-auto">
+        {rows.map((row) => (
+          <div
+            key={row.id}
+            className="flex items-center gap-3 px-4 py-3.5 hover:bg-sky/[0.04]"
           >
-            <ItemIcon itemId={row.id} name={row.name} size={36} />
-            <div className="min-w-0">
-              <div className="truncate text-sm font-medium">{row.name}</div>
-              <div className="text-[11px] text-muted">
-                {row.listings ?? 0} listings
-                {row.totalQty != null ? ` · qty ${row.totalQty}` : ""}
+            <button
+              type="button"
+              onClick={() => onOpen(row.id)}
+              className="flex min-w-0 flex-1 items-center gap-3 text-left"
+            >
+              <ItemIcon itemId={row.id} name={row.name} size={40} />
+              <div className="min-w-0">
+                <div className="truncate text-[15px] font-semibold">
+                  {row.name}
+                </div>
+                <div className="text-[12px] text-muted">
+                  {row.listings ?? 0} open
+                  {row.totalQty != null ? ` · ${row.totalQty} qty` : ""}
+                </div>
               </div>
-            </div>
-          </button>
-          <div className="shrink-0 text-right font-mono text-[11px] tabular-nums">
-            <div className="font-medium text-primary">
-              {row.lowestKinsPerUnit
-                ? `${formatKins(row.lowestKinsPerUnit)} KINS`
-                : "—"}
-            </div>
-            <div className="text-sky-hi">
-              {row.lowestUsdPerUnit
-                ? formatUsd(row.lowestUsdPerUnit, { maxDecimals: 6 })
-                : "—"}
-              <span className="text-muted"> /u</span>
-            </div>
-            {row.saleMedianKins && (
-              <div className="text-muted">
-                act {formatKins(row.saleMedianKins)} KINS
+            </button>
+            <button
+              type="button"
+              onClick={() => onOpen(row.id)}
+              className="shrink-0 text-right"
+            >
+              <div className="font-mono text-[15px] font-semibold tabular-nums">
+                {row.lowestKinsPerUnit
+                  ? formatKins(row.lowestKinsPerUnit)
+                  : "—"}{" "}
+                <span className="text-[11px] font-medium text-muted">KINS</span>
               </div>
-            )}
-            {row.edgePct != null && (
-              <div className={signedClass(row.edgePct)}>edge {row.edgePct}%</div>
-            )}
+              <div className="font-mono text-[13px] tabular-nums text-sky-hi">
+                {row.lowestUsdPerUnit
+                  ? formatUsd(row.lowestUsdPerUnit, { maxDecimals: 6 })
+                  : "—"}
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => onWatch(row.id)}
+              className="rounded-xl p-2 text-muted hover:bg-raised hover:text-sky"
+            >
+              <Star
+                className={cn(
+                  "h-4 w-4",
+                  watch.includes(row.id) && "fill-sky text-sky",
+                )}
+              />
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DetailSheet({
+  itemId,
+  name,
+  floor,
+  rows,
+  watching,
+  kinsUsd,
+  onClose,
+  onWatch,
+}: {
+  itemId: string;
+  name: string;
+  floor?: MarketFloorItem;
+  rows: RecentSale[];
+  watching: boolean;
+  kinsUsd?: string;
+  onClose: () => void;
+  onWatch: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:justify-end">
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/55"
+        aria-label="Close"
+        onClick={onClose}
+      />
+      <div className="relative z-10 flex max-h-[88dvh] w-full max-w-md flex-col rounded-t-3xl border border-border bg-surface shadow-2xl sm:mr-4 sm:max-h-[90dvh] sm:rounded-3xl">
+        <div className="flex items-start gap-3 border-b border-border/50 p-5">
+          <ItemIcon itemId={itemId} name={name} size={48} />
+          <div className="min-w-0 flex-1">
+            <h2 className="text-lg font-semibold tracking-tight">{name}</h2>
+            <p className="font-mono text-xs text-muted">{itemId}</p>
           </div>
           <button
             type="button"
-            className="rounded-lg p-2 text-muted hover:bg-raised hover:text-sky"
-            onClick={() => onWatch(row.id)}
-            aria-label="Toggle watch"
+            onClick={onClose}
+            className="rounded-xl p-2 text-muted hover:bg-raised"
           >
-            <Star
-              className={cn(
-                "h-4 w-4",
-                watch.includes(row.id) && "fill-sky text-sky",
-              )}
-            />
+            <X className="h-5 w-5" />
           </button>
         </div>
-      ))}
-    </div>
-  );
-}
 
-function SalesTape({
-  sales,
-  onOpen,
-}: {
-  sales: {
-    id: string;
-    name: string;
-    itemType: string;
-    quantity: string;
-    unitKins: string;
-    totalKins?: string | null;
-    unitUsd?: string | null;
-    usdTotal: string | null;
-    timestamp: string;
-    sellerName?: string | null;
-    sellerId?: string | null;
-    listingId?: string;
-  }[];
-  onOpen: (id: string) => void;
-}) {
-  if (!sales.length) {
-    return <p className="text-sm text-muted">Waiting for live feed…</p>;
-  }
-  return (
-    <div className="max-h-96 space-y-1.5 overflow-y-auto">
-      {sales.map((s) => (
-        <button
-          key={s.id}
-          type="button"
-          onClick={() => onOpen(s.itemType)}
-          className="flex w-full items-center justify-between gap-2 rounded-xl bg-surface-2/80 px-2.5 py-2 text-left text-sm hover:bg-raised"
-        >
-          <span className="flex min-w-0 items-center gap-2">
-            <ItemIcon itemId={s.itemType} name={s.name} size={28} />
-            <span className="min-w-0">
-              <span className="block truncate font-medium">
-                {s.name}{" "}
-                <span className="font-mono text-xs text-muted">×{s.quantity}</span>
-              </span>
-              <span className="block truncate text-[10px] text-muted">
-                {s.sellerName ?? "—"}
-                {s.sellerId ? ` · #${s.sellerId}` : ""}
-                {" · "}
-                {new Date(s.timestamp).toLocaleTimeString()}
-              </span>
-            </span>
-          </span>
-          <span className="shrink-0 text-right font-mono text-[11px] tabular-nums">
-            <span className="block font-medium">
-              {formatKins(s.unitKins)} KINS/u
-            </span>
-            <span className="block text-sky-hi">
-              {s.unitUsd
-                ? formatUsd(s.unitUsd, { maxDecimals: 6 })
-                : s.usdTotal
-                  ? formatUsd(s.usdTotal, { maxDecimals: 4 })
-                  : "—"}
-              <span className="text-muted"> /u</span>
-            </span>
-            {(s.totalKins || s.usdTotal) && (
-              <span className="block text-[10px] text-muted">
-                lot {s.totalKins ? `${formatKins(s.totalKins)} KINS` : ""}
-                {s.totalKins && s.usdTotal ? " · " : ""}
-                {s.usdTotal
-                  ? formatUsd(s.usdTotal, { maxDecimals: 4 })
-                  : ""}
-              </span>
+        <div className="grid grid-cols-2 gap-2 border-b border-border/50 p-5">
+          <div className="rounded-2xl bg-surface-2/80 p-3">
+            <div className="text-[10px] uppercase tracking-wider text-muted">
+              Floor KINS
+            </div>
+            <div className="mt-1 font-mono text-lg font-semibold tabular-nums">
+              {floor?.lowestKinsPerUnit
+                ? formatKins(floor.lowestKinsPerUnit)
+                : "—"}
+            </div>
+          </div>
+          <div className="rounded-2xl bg-surface-2/80 p-3">
+            <div className="text-[10px] uppercase tracking-wider text-muted">
+              Floor $
+            </div>
+            <div className="mt-1 font-mono text-lg font-semibold tabular-nums text-sky-hi">
+              {floor?.lowestUsdPerUnit
+                ? formatUsd(floor.lowestUsdPerUnit, { maxDecimals: 6 })
+                : "—"}
+            </div>
+          </div>
+          {kinsUsd && (
+            <p className="col-span-2 text-[11px] text-muted">
+              1 KINS = {formatUsd(kinsUsd, { maxDecimals: 6 })}
+            </p>
+          )}
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5">
+          <p className="mb-3 text-[11px] font-medium uppercase tracking-wider text-muted">
+            Open listings · {rows.length}
+          </p>
+          <div className="space-y-2">
+            {rows.length === 0 && (
+              <p className="text-sm text-muted">None in current feed.</p>
             )}
-          </span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function ActivityTable({
-  rows,
-  onOpen,
-}: {
-  rows: {
-    id: string;
-    listingId?: string;
-    name: string;
-    itemType: string;
-    quantity: string;
-    unitKins: string;
-    totalKins?: string | null;
-    unitUsd?: string | null;
-    usdTotal: string | null;
-    priceGold?: string | null;
-    currency?: string;
-    timestamp: string;
-    sellerName?: string | null;
-    sellerId?: string | null;
-    seller?: string | null;
-    reserved?: boolean;
-    itemDurability?: string | null;
-  }[];
-  onOpen: (id: string) => void;
-}) {
-  if (!rows.length) {
-    return <p className="text-sm text-muted">No listings match this filter.</p>;
-  }
-
-  return (
-    <div className="max-h-[70vh] overflow-auto rounded-xl border border-border">
-      <table className="w-full min-w-[920px] border-collapse text-left text-xs">
-        <thead className="sticky top-0 z-10 bg-raised text-[10px] uppercase tracking-wide text-muted">
-          <tr>
-            <th className="px-2 py-2 font-medium">Item</th>
-            <th className="px-2 py-2 font-medium">Listing</th>
-            <th className="px-2 py-2 font-medium">Seller</th>
-            <th className="px-2 py-2 font-medium">Seller ID</th>
-            <th className="px-2 py-2 font-medium">Qty</th>
-            <th className="px-2 py-2 font-medium">Unit KINS</th>
-            <th className="px-2 py-2 font-medium">Unit $</th>
-            <th className="px-2 py-2 font-medium">Lot KINS</th>
-            <th className="px-2 py-2 font-medium">Lot $</th>
-            <th className="px-2 py-2 font-medium">Cur</th>
-            <th className="px-2 py-2 font-medium">Time</th>
-            <th className="px-2 py-2 font-medium">Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => {
-            const seller = r.sellerName ?? r.seller ?? "—";
-            return (
-              <tr
-                key={r.id}
-                className="cursor-pointer border-t border-border/60 hover:bg-sky/5"
-                onClick={() => onOpen(r.itemType)}
+            {rows.map((s) => (
+              <div
+                key={s.id}
+                className="rounded-2xl border border-border/40 bg-surface-2/50 px-3.5 py-3"
               >
-                <td className="px-2 py-2">
-                  <div className="flex items-center gap-2">
-                    <ItemIcon itemId={r.itemType} name={r.name} size={28} />
-                    <div>
-                      <div className="font-medium text-primary">{r.name}</div>
-                      <div className="font-mono text-[10px] text-muted">
-                        {r.itemType}
-                      </div>
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <div className="text-sm font-medium">
+                      {s.sellerName ?? s.seller ?? "—"}
+                    </div>
+                    <div className="font-mono text-[11px] text-muted">
+                      seller #{s.sellerId ?? "—"} · list #{s.listingId ?? s.id}
                     </div>
                   </div>
-                </td>
-                <td className="px-2 py-2 font-mono tabular-nums text-muted">
-                  {r.listingId ?? r.id}
-                </td>
-                <td className="max-w-[8rem] truncate px-2 py-2 font-medium">
-                  {seller}
-                </td>
-                <td className="px-2 py-2 font-mono text-muted">
-                  {r.sellerId ?? "—"}
-                </td>
-                <td className="px-2 py-2 font-mono tabular-nums">{r.quantity}</td>
-                <td className="px-2 py-2 font-mono tabular-nums font-medium">
-                  {formatKins(r.unitKins)}
-                </td>
-                <td className="px-2 py-2 font-mono tabular-nums text-sky-hi">
-                  {r.unitUsd
-                    ? formatUsd(r.unitUsd, { maxDecimals: 6 })
-                    : "—"}
-                </td>
-                <td className="px-2 py-2 font-mono tabular-nums">
-                  {r.totalKins ? formatKins(r.totalKins) : "—"}
-                </td>
-                <td className="px-2 py-2 font-mono tabular-nums text-sky-hi">
-                  {r.usdTotal
-                    ? formatUsd(r.usdTotal, { maxDecimals: 4 })
-                    : "—"}
-                  {r.priceGold && (
-                    <div className="text-[10px] text-muted">
-                      gold {r.priceGold}
+                  <div className="text-right">
+                    <div className="font-mono text-sm font-semibold tabular-nums">
+                      {formatKins(s.unitKins)}{" "}
+                      <span className="text-[10px] text-muted">KINS</span>
                     </div>
-                  )}
-                </td>
-                <td className="px-2 py-2 capitalize text-muted">
-                  {r.currency ?? "token"}
-                </td>
-                <td className="whitespace-nowrap px-2 py-2 text-muted">
-                  {new Date(r.timestamp).toLocaleString()}
-                </td>
-                <td className="px-2 py-2 text-muted">
-                  {r.reserved ? (
-                    <span className="text-loss">reserved</span>
-                  ) : (
-                    "open"
-                  )}
-                  {r.itemDurability && (
-                    <div className="text-[10px]">dur {r.itemDurability}</div>
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+                    <div className="font-mono text-[13px] tabular-nums text-sky-hi">
+                      {s.unitUsd
+                        ? formatUsd(s.unitUsd, { maxDecimals: 6 })
+                        : "—"}
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-2 flex justify-between text-[11px] text-muted">
+                  <span>
+                    ×{s.quantity}
+                    {s.totalKins ? ` · ${formatKins(s.totalKins)} KINS lot` : ""}
+                    {s.usdTotal
+                      ? ` · ${formatUsd(s.usdTotal, { maxDecimals: 3 })}`
+                      : ""}
+                  </span>
+                  <span>{new Date(s.timestamp).toLocaleTimeString()}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="border-t border-border/50 p-4">
+          <button
+            type="button"
+            onClick={onWatch}
+            className={cn(
+              "flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl text-sm font-semibold",
+              watching
+                ? "bg-sky/15 text-sky-hi"
+                : "bg-sky text-[#0a121c]",
+            )}
+          >
+            <Star className={cn("h-4 w-4", watching && "fill-sky")} />
+            {watching ? "Watching" : "Watch item"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -922,7 +614,9 @@ function ActivityTable({
 export default function MarketPage() {
   return (
     <Suspense
-      fallback={<div className="text-sm text-muted">Loading market…</div>}
+      fallback={
+        <div className="py-20 text-center text-sm text-muted">Loading…</div>
+      }
     >
       <MarketHubInner />
     </Suspense>

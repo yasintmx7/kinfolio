@@ -67,27 +67,21 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* Soft sky wash — calm, modern */
+/* Quiet wash — keep UI calm and readable */
 .page-glow {
   background:
     radial-gradient(
-      ellipse 90% 55% at 50% -15%,
-      color-mix(in srgb, var(--sky) 14%, transparent),
+      ellipse 70% 40% at 50% -10%,
+      color-mix(in srgb, var(--sky) 9%, transparent),
       transparent 55%
-    ),
-    radial-gradient(
-      ellipse 50% 40% at 100% 0%,
-      color-mix(in srgb, var(--forest) 8%, transparent),
-      transparent 50%
     ),
     var(--app);
 }
 
 /* Cards */
 .card-quiet {
-  background: color-mix(in srgb, var(--surface) 92%, transparent);
-  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
-  box-shadow: 0 1px 0 color-mix(in srgb, #fff 4%, transparent) inset;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
 }
 
 @media (pointer: fine) {

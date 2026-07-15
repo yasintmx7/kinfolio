@@ -118,7 +118,220 @@ export async function fetchOfficialListings(params?: {
   return rows;
 }
 
-/** Client-side filter (itemType query is not reliable on the public endpoint). */
+/** Shared cheap book — item detail + seller inventory filter from this once. */
+export type MarketBookSnapshot = {
+  listings: OfficialListing[];
+  size: number;
+  /** Both currencies hit end-of-book (short page) within page budget. */
+  complete: boolean;
+  tokenComplete: boolean;
+  goldComplete: boolean;
+  pagesScannedToken: number;
+  pagesScannedGold: number;
+  updatedAt: string;
+};
+
+/** Flattened listing DTO for item/seller APIs (USD-first). */
+export type OfficialListingDto = {
+  id: string;
+  itemType: string;
+  name: string;
+  quantity: string;
+  unitUsd: string | null;
+  usdTotal: string | null;
+  priceGold: string | null;
+  currency: string;
+  sellerName: string | null;
+  sellerId: string | null;
+  reserved: boolean;
+  reservedUntilMs: number | null;
+  buyerId: string | null;
+  timestamp: string | null;
+};
+
+const BOOK_CACHE_KEY = "official:market-book:cheap:v2";
+const BOOK_TTL_SECONDS = 28;
+
+function sortListingsOpenFirst(a: OfficialListing, b: OfficialListing): number {
+  const la = a.isReserved ? 1 : 0;
+  const lb = b.isReserved ? 1 : 0;
+  if (la !== lb) return la - lb;
+  const ua = a.unitUsd ?? Number.POSITIVE_INFINITY;
+  const ub = b.unitUsd ?? Number.POSITIVE_INFINITY;
+  if (ua !== ub) return ua - ub;
+  return (a.priceGold ?? 0) - (b.priceGold ?? 0);
+}
+
+/**
+ * Scan official cheap book once (token + gold), cache ~28s.
+ * Official API ignores itemType/seller filters — all detail views reuse this.
+ */
+export async function fetchOfficialMarketBook(options?: {
+  pages?: number;
+  force?: boolean;
+}): Promise<MarketBookSnapshot> {
+  const pages = Math.min(Math.max(options?.pages ?? 10, 1), 15);
+  if (!options?.force) {
+    const cached = getCached<MarketBookSnapshot>(BOOK_CACHE_KEY);
+    if (cached && !cached.stale) return cached.value;
+  }
+
+  const collected: OfficialListing[] = [];
+  const seen = new Set<string>();
+  const pageSize = 100;
+  const PARALLEL = 4;
+  let pagesScannedToken = 0;
+  let pagesScannedGold = 0;
+  let tokenComplete = false;
+  let goldComplete = false;
+
+  for (const currency of ["token", "gold"] as const) {
+    let endOffset: number | null = null;
+    let pagesOk = 0;
+    for (let start = 0; start < pages; start += PARALLEL) {
+      if (endOffset != null && start * pageSize >= endOffset) break;
+      const idxs = Array.from(
+        { length: Math.min(PARALLEL, pages - start) },
+        (_, i) => start + i,
+      );
+      const settled = await Promise.all(
+        idxs.map(async (p) => {
+          try {
+            const batch = await fetchOfficialListings({
+              sort: "cheap",
+              currency,
+              category: "all",
+              limit: pageSize,
+              offset: p * pageSize,
+              cacheTtlSeconds: 20,
+            });
+            return { p, batch, ok: true as const };
+          } catch {
+            return { p, batch: [] as OfficialListing[], ok: false as const };
+          }
+        }),
+      );
+      settled.sort((a, b) => a.p - b.p);
+      for (const { p, batch, ok } of settled) {
+        if (!ok) continue;
+        pagesOk = Math.max(pagesOk, p + 1);
+        for (const row of batch) {
+          const id = String(row.id);
+          if (seen.has(id)) continue;
+          seen.add(id);
+          collected.push(row);
+        }
+        if (batch.length < pageSize) {
+          endOffset = p * pageSize + batch.length;
+          if (currency === "token") tokenComplete = true;
+          else goldComplete = true;
+          break;
+        }
+      }
+      if (endOffset != null) break;
+    }
+    if (currency === "token") pagesScannedToken = pagesOk;
+    else pagesScannedGold = pagesOk;
+  }
+
+  const snap: MarketBookSnapshot = {
+    listings: collected,
+    size: collected.length,
+    complete: tokenComplete && goldComplete,
+    tokenComplete,
+    goldComplete,
+    pagesScannedToken,
+    pagesScannedGold,
+    updatedAt: new Date().toISOString(),
+  };
+  setCache(BOOK_CACHE_KEY, snap, BOOK_TTL_SECONDS);
+  return snap;
+}
+
+export function filterBookByItemType(
+  book: OfficialListing[],
+  marketType: string,
+): OfficialListing[] {
+  const want = marketType.toLowerCase();
+  return book
+    .filter((r) => r.itemType.toLowerCase() === want)
+    .sort(sortListingsOpenFirst);
+}
+
+export function filterBookBySeller(
+  book: OfficialListing[],
+  opts: { sellerId?: string | null; sellerName?: string | null },
+): OfficialListing[] {
+  const id = (opts.sellerId ?? "").trim();
+  const name = (opts.sellerName ?? "").trim().toLowerCase();
+  return book
+    .filter((r) => {
+      if (id && r.sellerId != null && String(r.sellerId) === id) return true;
+      if (name) {
+        const n = (r.sellerName ?? "").trim().toLowerCase();
+        if (n && n === name) return true;
+      }
+      // wallet-ish id matching name field is rare on official listings
+      if (id && !/^\d+$/.test(id) && (r.sellerName ?? "").trim() === id) {
+        return true;
+      }
+      return false;
+    })
+    .sort(sortListingsOpenFirst);
+}
+
+export function toOfficialListingDto(l: OfficialListing): OfficialListingDto {
+  const priced = normalizeListingPrice({
+    quantity: l.quantity,
+    priceUsd: l.priceUsd,
+    unitUsd: l.unitUsd,
+    priceGold: l.priceGold,
+    currency: l.currency,
+  });
+  return {
+    id: String(l.id),
+    itemType: l.itemType,
+    name: humanizeItemType(l.itemType),
+    quantity: String(priced.quantity),
+    unitUsd: priced.unitUsd != null ? String(priced.unitUsd) : null,
+    usdTotal: priced.lotUsd != null ? String(priced.lotUsd) : null,
+    priceGold: priced.priceGold != null ? String(priced.priceGold) : null,
+    currency: l.currency ?? "token",
+    sellerName: l.sellerName ?? null,
+    sellerId: l.sellerId != null ? String(l.sellerId) : null,
+    reserved: l.isReserved,
+    reservedUntilMs:
+      typeof l.reservedUntilMs === "number" ? l.reservedUntilMs : null,
+    buyerId: reservedById(l.reservedBy),
+    timestamp: l.createdAt ?? null,
+  };
+}
+
+/** Honest coverage note for empty / partial book results. */
+export function bookCoverageNote(
+  book: MarketBookSnapshot,
+  matchCount: number,
+  kind: "item" | "seller",
+): string {
+  if (matchCount > 0) {
+    if (book.complete) {
+      return `From live book (${book.size} listings scanned).`;
+    }
+    return `From scanned cheap book (~${book.size} listings). Higher-priced lots may be missing.`;
+  }
+  if (book.complete) {
+    return kind === "item"
+      ? "No open listings in the live book right now."
+      : "No open listings for this seller in the live book.";
+  }
+  return kind === "item"
+    ? "Not in the scanned cheap book — higher-priced lots may still list."
+    : "Not in the scanned cheap book — this seller may still list higher-priced lots.";
+}
+
+/**
+ * Item listings from shared cached book (official itemType filter is ignored).
+ */
 export async function fetchOfficialListingsForItem(
   itemType: string,
   options?: {
@@ -129,38 +342,19 @@ export async function fetchOfficialListingsForItem(
     includeGold?: boolean;
   },
 ): Promise<MarketplaceListing[]> {
-  const pages = Math.min(Math.max(options?.pages ?? 6, 1), 12);
-  const limit = Math.min(Math.max(options?.limit ?? 100, 1), 100);
-  const want = itemType.toLowerCase();
-  const collected: OfficialListing[] = [];
-  const seen = new Set<string>();
-  const currencies: Array<"token" | "gold"> = options?.includeGold
-    ? ["token", "gold"]
-    : ["token"];
-
-  for (const currency of currencies) {
-    for (let p = 0; p < pages; p++) {
-      const batch = await fetchOfficialListings({
-        sort: "cheap",
-        currency,
-        category: "all",
-        limit,
-        offset: p * limit,
-      });
-      for (const row of batch) {
-        if (row.itemType.toLowerCase() !== want) continue;
-        if (!options?.includeReserved && row.isReserved) continue;
-        const id = String(row.id);
-        if (seen.has(id)) continue;
-        seen.add(id);
-        collected.push(row);
-      }
-      if (batch.length < limit) break;
-    }
+  const book = await fetchOfficialMarketBook({
+    pages: options?.pages ?? 10,
+  });
+  let rows = filterBookByItemType(book.listings, itemType);
+  if (!options?.includeReserved) {
+    rows = rows.filter((r) => !r.isReserved);
+  }
+  if (options?.includeGold === false) {
+    rows = rows.filter((r) => (r.currency ?? "token") === "token");
   }
 
   const kinsUsd = options?.kinsUsd;
-  return collected
+  return rows
     .map((r) => {
       const qty = Math.max(r.quantity || 1, 1);
       const unitKins =

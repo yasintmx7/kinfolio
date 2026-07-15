@@ -1174,8 +1174,10 @@ function FloorList({
   );
 }
 
-type ItemStatsListing = {
+type BookListingDto = {
   id: string;
+  itemType?: string;
+  name?: string;
   quantity: string;
   unitUsd: string | null;
   usdTotal: string | null;
@@ -1207,7 +1209,21 @@ type ItemStatsPayload = {
   openCount: number;
   lockedCount: number;
   samples: ItemStatsSample[];
-  listings: ItemStatsListing[];
+  listings: BookListingDto[];
+  bookSize?: number;
+  bookComplete?: boolean;
+  coverageNote?: string | null;
+};
+
+type SellerScanPayload = {
+  sellerId: string | null;
+  sellerName: string | null;
+  openCount: number;
+  lockedCount: number;
+  listings: BookListingDto[];
+  bookSize?: number;
+  bookComplete?: boolean;
+  coverageNote?: string | null;
 };
 
 /** Stats payload must match the focused item (prevents flash of previous item). */
@@ -1231,17 +1247,21 @@ function statsMatchesItem(
   );
 }
 
-function statsListingToSale(
-  l: ItemStatsListing,
-  itemId: string,
-  name: string,
-  lockerName?: string | null,
+function bookListingToSale(
+  l: BookListingDto,
+  fallbacks: {
+    itemType: string;
+    name: string;
+    sellerName?: string | null;
+    sellerId?: string | null;
+    lockerName?: string | null;
+  },
 ): RecentSale {
   return {
     id: l.id,
     listingId: l.id,
-    name,
-    itemType: itemId,
+    name: l.name ?? fallbacks.name,
+    itemType: l.itemType ?? fallbacks.itemType,
     quantity: l.quantity,
     unitKins: "0",
     unitUsd: l.unitUsd,
@@ -1250,15 +1270,23 @@ function statsListingToSale(
     currency: l.currency ?? "token",
     timestamp: l.timestamp ?? new Date().toISOString(),
     solscanUrl: null,
-    sellerName: l.sellerName,
-    seller: l.sellerName,
-    sellerId: l.sellerId,
+    sellerName: l.sellerName ?? fallbacks.sellerName ?? null,
+    seller: l.sellerName ?? fallbacks.sellerName ?? null,
+    sellerId: l.sellerId ?? fallbacks.sellerId ?? null,
     buyerId: l.buyerId,
-    buyerName: lockerName ?? null,
+    buyerName: fallbacks.lockerName ?? null,
     reserved: l.reserved,
     reservedUntilMs: l.reservedUntilMs,
     isSold: false,
   };
+}
+
+function CoverageNote({ text }: { text: string }) {
+  return (
+    <p className="rounded-xl border border-border/40 bg-surface-2/50 px-3 py-2 text-[12px] leading-snug text-muted">
+      {text}
+    </p>
+  );
 }
 
 function SheetListingRow({
@@ -1401,6 +1429,9 @@ function DetailSheet({
   const [stats, setStats] = useState<ItemStatsPayload | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsError, setStatsError] = useState<string | null>(null);
+  const [sellerScan, setSellerScan] = useState<SellerScanPayload | null>(null);
+  const [sellerScanLoading, setSellerScanLoading] = useState(false);
+  const [sellerScanError, setSellerScanError] = useState<string | null>(null);
 
   useEffect(() => {
     if (mode !== "item" || !itemId) {
@@ -1443,6 +1474,56 @@ function DetailSheet({
     };
   }, [mode, itemId]);
 
+  // Deeper seller inventory from shared book (reuses item-detail cache)
+  useEffect(() => {
+    if (mode !== "seller") {
+      setSellerScan(null);
+      setSellerScanError(null);
+      setSellerScanLoading(false);
+      return;
+    }
+    const id = (sellerId ?? "").trim();
+    const name = (sellerName ?? "").trim();
+    if (!id && !name) return;
+
+    let cancelled = false;
+    setSellerScan(null);
+    setSellerScanLoading(true);
+    setSellerScanError(null);
+    const qs = new URLSearchParams();
+    if (id) qs.set("sellerId", id);
+    if (name) qs.set("sellerName", name);
+    fetch(`/api/market/sellers/listings?${qs.toString()}`)
+      .then(async (res) => {
+        const body = (await res.json()) as {
+          ok?: boolean;
+          data?: SellerScanPayload;
+          error?: { message?: string };
+        };
+        if (!res.ok || !body.ok || !body.data) {
+          throw new Error(body.error?.message ?? "Failed to load seller");
+        }
+        return body.data;
+      })
+      .then((data) => {
+        if (!cancelled) setSellerScan(data);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setSellerScan(null);
+          setSellerScanError(
+            e instanceof Error ? e.message : "Failed to load",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setSellerScanLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, sellerId, sellerName]);
+
   const liveStats = statsMatchesItem(stats, itemId) ? stats : null;
   const displayName = liveStats?.name ?? title;
 
@@ -1473,15 +1554,13 @@ function DetailSheet({
       const fromStats = liveStats.listings.map((l) => {
         const locker =
           l.buyerId != null ? lockerNameById.get(String(l.buyerId)) : null;
-        return statsListingToSale(
-          l,
-          itemId ?? liveStats.itemId,
-          displayName,
-          locker,
-        );
+        return bookListingToSale(l, {
+          itemType: itemId ?? liveStats.itemId,
+          name: displayName,
+          lockerName: locker,
+        });
       });
       const seen = new Set(fromStats.map((r) => String(r.id)));
-      // Fill gaps: hub may still have listings the cheap-scan missed
       for (const r of hubOpen) {
         if (!seen.has(String(r.id))) {
           seen.add(String(r.id));
@@ -1493,6 +1572,34 @@ function DetailSheet({
     return hubOpen;
   }, [mode, liveStats, rows, itemId, displayName, lockerNameById]);
 
+  /** Seller: book scan + hub open/sold merged */
+  const sellerInventory = useMemo(() => {
+    if (mode !== "seller") return rows;
+    const hubOpen = rows.filter((r) => !r.isSold);
+    const hubSold = rows.filter((r) => r.isSold);
+    if (!sellerScan?.listings?.length) {
+      return rows;
+    }
+    const fromScan = sellerScan.listings.map((l) =>
+      bookListingToSale(l, {
+        itemType: l.itemType ?? "unknown",
+        name: l.name ?? l.itemType ?? "Item",
+        sellerName: sellerName ?? title,
+        sellerId: sellerId ?? null,
+      }),
+    );
+    const seen = new Set(fromScan.map((r) => String(r.id)));
+    for (const r of hubOpen) {
+      if (!seen.has(String(r.id))) {
+        seen.add(String(r.id));
+        fromScan.push(r);
+      }
+    }
+    // Append sold (not in open book) after open
+    const soldExtra = hubSold.filter((r) => !seen.has(String(r.id)));
+    return [...fromScan, ...soldExtra];
+  }, [mode, rows, sellerScan, sellerName, sellerId, title]);
+
   const recentSold = useMemo(() => {
     if (mode !== "item") return rows.filter((r) => r.isSold);
     const fromHub = soldRows ?? [];
@@ -1501,29 +1608,85 @@ function DetailSheet({
     );
   }, [mode, rows, soldRows]);
 
+  const sellerOpenRows = sellerInventory.filter((r) => !r.isSold);
+  const sellerSoldRows = sellerInventory.filter((r) => r.isSold);
+
   const openCount =
     mode === "item" && liveStats
       ? Math.max(
           liveStats.openCount,
           openListings.filter((r) => !isLocked(r)).length,
         )
-      : openListings.filter((r) => !isLocked(r)).length;
+      : mode === "seller" && sellerScan
+        ? Math.max(
+            sellerScan.openCount,
+            sellerOpenRows.filter((r) => !isLocked(r)).length,
+          )
+        : mode === "seller"
+          ? sellerOpenRows.filter((r) => !isLocked(r)).length
+          : openListings.filter((r) => !isLocked(r)).length;
   const lockedCount =
     mode === "item" && liveStats
       ? Math.max(
           liveStats.lockedCount,
           openListings.filter(isLocked).length,
         )
-      : openListings.filter(isLocked).length;
+      : mode === "seller" && sellerScan
+        ? Math.max(
+            sellerScan.lockedCount,
+            sellerOpenRows.filter(isLocked).length,
+          )
+        : mode === "seller"
+          ? sellerOpenRows.filter(isLocked).length
+          : openListings.filter(isLocked).length;
   const soldCount =
-    mode === "seller"
-      ? rows.filter((r) => r.isSold).length
-      : recentSold.length;
+    mode === "seller" ? sellerSoldRows.length : recentSold.length;
 
   const liveSubtitle =
     mode === "item" && liveStats?.floorUsd
       ? `Floor ${formatUsdShort(liveStats.floorUsd)}/u · ${formatUsdPer1k(liveStats.floorUsd)}/1k`
-      : subtitle;
+      : mode === "seller" && sellerScan
+        ? `${sellerOpenRows.length} open in book` +
+          (sellerSoldRows.length
+            ? ` · ${sellerSoldRows.length} recent sold`
+            : "")
+        : subtitle;
+
+  const itemEmptyNote = useMemo(() => {
+    if (mode !== "item" || statsLoading) return null;
+    if (openListings.length > 0) {
+      if (liveStats?.coverageNote && liveStats.bookComplete === false) {
+        return liveStats.coverageNote;
+      }
+      return null;
+    }
+    if (liveStats?.coverageNote) return liveStats.coverageNote;
+    if (statsError) return null;
+    return "No open listings for this item.";
+  }, [mode, statsLoading, openListings.length, liveStats, statsError]);
+
+  const sellerEmptyNote = useMemo(() => {
+    if (mode !== "seller" || sellerScanLoading) return null;
+    if (sellerOpenRows.length > 0) {
+      if (sellerScan?.coverageNote && sellerScan.bookComplete === false) {
+        return sellerScan.coverageNote;
+      }
+      return null;
+    }
+    if (sellerScan?.coverageNote) return sellerScan.coverageNote;
+    if (sellerScanError) return null;
+    if (rows.length === 0) {
+      return "None in current feed. Open may appear after a deeper book scan.";
+    }
+    return null;
+  }, [
+    mode,
+    sellerScanLoading,
+    sellerOpenRows.length,
+    sellerScan,
+    sellerScanError,
+    rows.length,
+  ]);
 
   return (
     <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center sm:justify-end">
@@ -1679,13 +1842,27 @@ function DetailSheet({
           {mode === "seller" ? (
             <>
               <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted">
-                Seller inventory · {rows.length}
+                Seller inventory · {sellerOpenRows.length} open
+                {sellerSoldRows.length > 0
+                  ? ` · ${sellerSoldRows.length} sold`
+                  : ""}
+                {sellerScanLoading ? " · scanning book…" : ""}
               </p>
+              {sellerScanError && !sellerScan && (
+                <p className="mb-2 text-sm text-loss">{sellerScanError}</p>
+              )}
+              {sellerEmptyNote && (
+                <div className="mb-2">
+                  <CoverageNote text={sellerEmptyNote} />
+                </div>
+              )}
               <div className="space-y-2">
-                {rows.length === 0 && (
-                  <p className="text-sm text-muted">None in current feed.</p>
+                {sellerInventory.length === 0 && !sellerScanLoading && (
+                  <p className="text-sm text-muted">
+                    No listings found for this seller.
+                  </p>
                 )}
-                {rows.map((s) => (
+                {sellerInventory.map((s) => (
                   <SheetListingRow
                     key={`${s.id}-${s.isSold ? "sold" : "open"}`}
                     s={s}
@@ -1704,13 +1881,14 @@ function DetailSheet({
                 Open listings · {openListings.length}
                 {statsLoading && liveStats ? " · refreshing…" : ""}
               </p>
+              {itemEmptyNote && (
+                <div className="mb-2">
+                  <CoverageNote text={itemEmptyNote} />
+                </div>
+              )}
               <div className="space-y-2">
-                {openListings.length === 0 && (
-                  <p className="text-sm text-muted">
-                    {statsLoading
-                      ? "Loading listings…"
-                      : "No open listings for this item."}
-                  </p>
+                {openListings.length === 0 && statsLoading && (
+                  <p className="text-sm text-muted">Loading listings…</p>
                 )}
                 {openListings.map((s) => (
                   <SheetListingRow

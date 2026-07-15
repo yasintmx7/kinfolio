@@ -5,13 +5,13 @@ import {
 } from "@/lib/kintara/item-type-map";
 import { STATIC_CATALOG } from "@/data/static-catalog";
 import {
+  bookCoverageNote,
   fetchOfficialItemStats,
-  fetchOfficialListings,
-  reservedById,
-  type OfficialListing,
+  fetchOfficialMarketBook,
+  filterBookByItemType,
+  toOfficialListingDto,
 } from "@/lib/kintara/official-marketplace";
 import { resolveKinsUsd } from "@/lib/prices/resolve-kins-usd";
-import { normalizeListingPrice } from "@/lib/market/listing-price";
 
 export const runtime = "nodejs";
 
@@ -23,78 +23,6 @@ function toMarketType(itemId: string): string {
   );
   if (inCatalog) return portfolioIdToMarketType(itemId, STATIC_CATALOG);
   return itemId.replace(/-/g, "_");
-}
-
-/**
- * Official listings endpoint ignores itemType filter — must scan the book.
- * Parallel pages (same pattern as floor board) to keep detail sheet snappy.
- */
-async function collectItemListings(
-  marketType: string,
-): Promise<OfficialListing[]> {
-  const want = marketType.toLowerCase();
-  const collected: OfficialListing[] = [];
-  const seen = new Set<string>();
-  const pageSize = 100;
-  const pages = 10;
-  const PARALLEL = 4;
-
-  for (const currency of ["token", "gold"] as const) {
-    let endOffset: number | null = null;
-    for (let start = 0; start < pages; start += PARALLEL) {
-      if (endOffset != null && start * pageSize >= endOffset) break;
-      const idxs = Array.from(
-        { length: Math.min(PARALLEL, pages - start) },
-        (_, i) => start + i,
-      );
-      const settled = await Promise.all(
-        idxs.map(async (p) => {
-          try {
-            const batch = await fetchOfficialListings({
-              sort: "cheap",
-              currency,
-              category: "all",
-              limit: pageSize,
-              offset: p * pageSize,
-              cacheTtlSeconds: 20,
-            });
-            return { p, batch, ok: true as const };
-          } catch {
-            return { p, batch: [] as OfficialListing[], ok: false as const };
-          }
-        }),
-      );
-      settled.sort((a, b) => a.p - b.p);
-      for (const { p, batch, ok } of settled) {
-        if (!ok) continue;
-        for (const row of batch) {
-          if (row.itemType.toLowerCase() !== want) continue;
-          const id = String(row.id);
-          if (seen.has(id)) continue;
-          seen.add(id);
-          collected.push(row);
-        }
-        if (batch.length < pageSize) {
-          endOffset = p * pageSize + batch.length;
-          break;
-        }
-      }
-      if (endOffset != null) break;
-    }
-  }
-
-  // Open first, then cheapest unit USD (gold-only last)
-  collected.sort((a, b) => {
-    const la = a.isReserved ? 1 : 0;
-    const lb = b.isReserved ? 1 : 0;
-    if (la !== lb) return la - lb;
-    const ua = a.unitUsd ?? Number.POSITIVE_INFINITY;
-    const ub = b.unitUsd ?? Number.POSITIVE_INFINITY;
-    if (ua !== ub) return ua - ub;
-    return (a.priceGold ?? 0) - (b.priceGold ?? 0);
-  });
-
-  return collected;
 }
 
 export async function GET(
@@ -112,12 +40,13 @@ export async function GET(
     const rate = await resolveKinsUsd();
     const kinsUsd = rate?.kinsUsd;
 
-    // Stats without kins conversion so avg30d stays in USD
-    const [official, listings] = await Promise.all([
+    // Shared book cache (~28s) — opening many items reuses one scan
+    const [official, book] = await Promise.all([
       fetchOfficialItemStats(marketType).catch(() => null),
-      collectItemListings(marketType).catch(() => [] as OfficialListing[]),
+      fetchOfficialMarketBook({ pages: 10 }),
     ]);
 
+    const listings = filterBookByItemType(book.listings, marketType);
     const open = listings.filter((l) => !l.isReserved);
     const unitUsds = open
       .map((l) => l.unitUsd)
@@ -146,7 +75,6 @@ export async function GET(
         : null;
 
     const samples = (official?.samples ?? []).map((s) => {
-      // samples unitPriceKins is USD/unit without conversion
       const unitUsd = Number(s.unitPriceKins);
       return {
         date: (s.timestamp ?? "").slice(0, 10),
@@ -154,6 +82,8 @@ export async function GET(
         sales: s.saleCount ?? null,
       };
     });
+
+    const coverageNote = bookCoverageNote(book, listings.length, "item");
 
     return ok(
       {
@@ -174,44 +104,18 @@ export async function GET(
         openCount: open.length,
         lockedCount: listings.length - open.length,
         samples,
-        listings: listings.map((l) => {
-          const priced = normalizeListingPrice({
-            quantity: l.quantity,
-            priceUsd: l.priceUsd,
-            unitUsd: l.unitUsd,
-            priceGold: l.priceGold,
-            currency: l.currency,
-          });
-          return {
-            id: String(l.id),
-            quantity: String(priced.quantity),
-            unitUsd:
-              priced.unitUsd != null ? String(priced.unitUsd) : null,
-            usdTotal:
-              priced.lotUsd != null ? String(priced.lotUsd) : null,
-            priceGold:
-              priced.priceGold != null ? String(priced.priceGold) : null,
-            currency: l.currency ?? "token",
-            sellerName: l.sellerName ?? null,
-            sellerId: l.sellerId != null ? String(l.sellerId) : null,
-            reserved: l.isReserved,
-            reservedUntilMs:
-              typeof l.reservedUntilMs === "number"
-                ? l.reservedUntilMs
-                : null,
-            buyerId: reservedById(l.reservedBy),
-            timestamp: l.createdAt ?? null,
-          };
-        }),
+        listings: listings.map(toOfficialListingDto),
+        bookSize: book.size,
+        bookComplete: book.complete,
+        coverageNote,
         updatedAt: new Date().toISOString(),
         configured: true,
-        note:
-          "Floor from active cheap listings. 30d avg/sales from official stats.",
+        note: coverageNote,
       },
       {
         source: "kintara.com",
         updatedAt: new Date().toISOString(),
-        cacheControl: "public, s-maxage=25, stale-while-revalidate=50",
+        cacheControl: "public, s-maxage=20, stale-while-revalidate=40",
       },
     );
   } catch (e) {

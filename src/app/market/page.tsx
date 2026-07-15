@@ -1,408 +1,727 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Card, CardTitle } from "@/components/ui/card";
+import { useRouter, useSearchParams } from "next/navigation";
+import {
+  ArrowUpDown,
+  Calculator,
+  ExternalLink,
+  RefreshCw,
+  Star,
+  X,
+} from "lucide-react";
+import { Card, CardTitle, StatValue } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { usePortfolioContext } from "@/components/providers/portfolio-provider";
+import { ItemIcon } from "@/components/items/item-icon";
+import { useMarketHub, type MarketFloorItem } from "@/hooks/use-market-hub";
 import { useKinsPrice } from "@/hooks/use-kins-price";
 import { useToast } from "@/components/feedback/toast";
 import { d } from "@/lib/accounting/decimal";
-import { formatKins, formatUsd } from "@/lib/formatting/money";
-import { ItemIcon } from "@/components/items/item-icon";
+import { formatKins, formatUsd, signedClass } from "@/lib/formatting/money";
+import { getWatchlist, toggleWatch } from "@/lib/market/watchlist";
+import { cn } from "@/lib/utils";
 
-type MarketItem = {
-  id: string;
-  name: string;
-  portfolioItemId?: string;
-  listings?: number;
-  totalQty?: number;
-  lowestUsdPerUnit?: string | null;
-  lowestKinsPerUnit?: string | null;
-  lowestGoldPerUnit?: string | null;
-  kinsListings?: number;
-  goldListings?: number;
-};
+type Tab = "overview" | "floors" | "sales" | "watch";
+type SortKey = "listings" | "floorUsd" | "name" | "qty";
 
-type MarketState = {
-  configured: boolean;
-  message?: string;
-  note?: string;
-  provider?: string;
-  kinsUsd?: string | null;
-  goldFloorUsd?: string | null;
-  rateSource?: string | null;
-  items: MarketItem[];
-  source?: string;
-  updatedAt?: string;
-};
+function MarketHubInner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const tab = (searchParams.get("tab") as Tab) || "overview";
+  const selectedId = searchParams.get("item") || "";
 
-export default function MarketPage() {
-  const { priceMap, itemMap, settings, summary, setManualPrice } =
-    usePortfolioContext();
-  const { price } = useKinsPrice();
+  const hub = useMarketHub(40000);
+  const { price, reload: reloadPrice } = useKinsPrice();
   const { push } = useToast();
-  const [market, setMarket] = useState<MarketState | null>(null);
-  const [sales, setSales] = useState<
-    {
-      id: string;
-      name: string;
-      itemType: string;
-      quantity: string;
-      unitKins: string;
-      usdTotal: string | null;
-      timestamp: string;
-      solscanUrl: string | null;
-    }[]
-  >([]);
-  const [salesNote, setSalesNote] = useState<string | null>(null);
-  const [goneCount, setGoneCount] = useState<number | null>(null);
+
   const [q, setQ] = useState("");
-  const [applying, setApplying] = useState(false);
-  const fee = d(settings?.defaultSellFeePercent ?? "5").div(100);
-  const kinsUsd = price?.priceUsd ?? market?.kinsUsd ?? undefined;
+  const [sort, setSort] = useState<SortKey>("listings");
+  const [watch, setWatch] = useState<string[]>([]);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailStats, setDetailStats] = useState<{
+    avg30dKins?: string;
+    medianRecentSalesKins?: string;
+    lowestActiveKins?: string;
+    sales30d?: number;
+    sources?: Record<string, string | null>;
+  } | null>(null);
 
   useEffect(() => {
-    fetch("/api/market/items")
-      .then((r) => r.json())
-      .then((j) => {
-        if (j.ok) {
-          setMarket({
-            configured: Boolean(j.data.configured),
-            message: j.data.message,
-            note: j.data.note,
-            provider: j.data.provider,
-            kinsUsd: j.data.kinsUsd,
-            goldFloorUsd: j.data.goldFloorUsd,
-            rateSource: j.data.rateSource,
-            items: j.data.items ?? [],
-            source: j.source,
-            updatedAt: j.updatedAt,
-          });
-        } else {
-          setMarket({
-            configured: false,
-            items: [],
-            message: j.error?.message,
-          });
-        }
-      })
-      .catch(() =>
-        setMarket({
-          configured: false,
-          items: [],
-          message: "Could not reach market API",
-        }),
-      );
-
-    fetch("/api/market/recent-sales?limit=30")
-      .then((r) => r.json())
-      .then((j) => {
-        if (j.ok) {
-          setSales(j.data.sales ?? []);
-          setSalesNote(j.data.note ?? null);
-        }
-      })
-      .catch(() => {
-        /* optional feed */
-      });
-
-    fetch("/api/market/gone")
-      .then((r) => r.json())
-      .then((j) => {
-        if (j.ok && typeof j.data.count === "number") {
-          setGoneCount(j.data.count);
-        }
-      })
-      .catch(() => {
-        /* optional */
-      });
+    setWatch(getWatchlist());
   }, []);
 
-  const filtered = useMemo(() => {
-    const items = market?.items ?? [];
-    const query = q.trim().toLowerCase();
-    if (!query) return items;
-    return items.filter(
-      (i) =>
-        i.name.toLowerCase().includes(query) ||
-        i.id.toLowerCase().includes(query),
-    );
-  }, [market?.items, q]);
-
-  const holdingRows = summary.positions.map((pos) => {
-    const unit = priceMap.get(pos.itemId);
-    const name = itemMap.get(pos.itemId)?.name ?? pos.itemId;
-    const marketHit = market?.items.find(
-      (m) => m.portfolioItemId === pos.itemId || m.id === pos.itemId.replace(/-/g, "_"),
-    );
-    const netUnit = unit ? d(unit).mul(d(1).minus(fee)) : null;
-    const netUsd =
-      netUnit && kinsUsd ? netUnit.mul(d(kinsUsd)).toFixed() : null;
-    return {
-      id: pos.itemId,
-      name,
-      unit,
-      netUnit: netUnit?.toFixed(),
-      netUsd,
-      marketUsd: marketHit?.lowestUsdPerUnit,
-      marketKins: marketHit?.lowestKinsPerUnit,
-    };
-  });
-
-  async function applyFloorsToHoldings() {
-    if (!market?.items?.length) return;
-    setApplying(true);
-    let n = 0;
-    try {
-      for (const pos of summary.positions) {
-        const hit = market.items.find(
-          (m) =>
-            m.portfolioItemId === pos.itemId ||
-            m.id === pos.itemId.replace(/-/g, "_"),
-        );
-        if (hit?.lowestKinsPerUnit) {
-          await setManualPrice(pos.itemId, hit.lowestKinsPerUnit);
-          n++;
-        }
-      }
-      push(
-        n
-          ? `Applied lowest listing floors to ${n} holding(s).`
-          : "No matching market floors for your holdings.",
-        n ? "ok" : "info",
-      );
-    } finally {
-      setApplying(false);
+  useEffect(() => {
+    if (!selectedId) {
+      setDetailStats(null);
+      return;
     }
+    setDetailLoading(true);
+    fetch(`/api/market/items/${encodeURIComponent(selectedId)}/stats`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (j.ok) setDetailStats(j.data);
+        else setDetailStats(null);
+      })
+      .catch(() => setDetailStats(null))
+      .finally(() => setDetailLoading(false));
+  }, [selectedId]);
+
+  const kinsUsd = price?.priceUsd ?? hub.kinsUsd ?? undefined;
+  const fee = 0.05;
+
+  const saleMedianByType = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const row of hub.byItem) {
+      if (row.medianUnitKins) m.set(row.itemType, row.medianUnitKins);
+    }
+    return m;
+  }, [hub.byItem]);
+
+  const enriched = useMemo(() => {
+    return hub.floors.map((f) => {
+      const saleMed = saleMedianByType.get(f.id);
+      const floorK = f.lowestKinsPerUnit ? d(f.lowestKinsPerUnit) : null;
+      const saleK = saleMed ? d(saleMed) : null;
+      let edge: string | null = null;
+      if (floorK && saleK && saleK.gt(0)) {
+        // positive = floor cheaper than recent median sale (potential under floor vs sales)
+        edge = saleK.minus(floorK).div(saleK).mul(100).toFixed(1);
+      }
+      return { ...f, saleMedianKins: saleMed ?? null, edgePct: edge };
+    });
+  }, [hub.floors, saleMedianByType]);
+
+  const filtered = useMemo(() => {
+    const query = q.trim().toLowerCase();
+    let list = enriched;
+    if (tab === "watch") {
+      list = list.filter((i) => watch.includes(i.id));
+    }
+    if (query) {
+      list = list.filter(
+        (i) =>
+          i.name.toLowerCase().includes(query) ||
+          i.id.toLowerCase().includes(query),
+      );
+    }
+    return [...list].sort((a, b) => {
+      if (sort === "name") return a.name.localeCompare(b.name);
+      if (sort === "qty") return (b.totalQty ?? 0) - (a.totalQty ?? 0);
+      if (sort === "floorUsd") {
+        return d(b.lowestUsdPerUnit ?? "0").cmp(d(a.lowestUsdPerUnit ?? "0"));
+      }
+      return (b.listings ?? 0) - (a.listings ?? 0);
+    });
+  }, [enriched, q, sort, tab, watch]);
+
+  const hotSales = hub.sales.slice(0, 12);
+  const selectedFloor = enriched.find((i) => i.id === selectedId);
+  const selectedSales = hub.sales.filter((s) => s.itemType === selectedId);
+
+  function setTab(next: Tab) {
+    const p = new URLSearchParams(searchParams.toString());
+    if (next === "overview") p.delete("tab");
+    else p.set("tab", next);
+    router.push(`/market?${p.toString()}`);
   }
 
+  function openItem(id: string) {
+    const p = new URLSearchParams(searchParams.toString());
+    p.set("item", id);
+    if (!p.get("tab") || p.get("tab") === "overview") {
+      // keep overview or current
+    }
+    router.push(`/market?${p.toString()}`);
+  }
+
+  function closeItem() {
+    const p = new URLSearchParams(searchParams.toString());
+    p.delete("item");
+    router.push(`/market?${p.toString()}`);
+  }
+
+  function onToggleWatch(id: string) {
+    const next = toggleWatch(id);
+    setWatch(next);
+    push(next.includes(id) ? "Added to watchlist" : "Removed from watchlist", "ok");
+  }
+
+  async function refreshAll() {
+    await Promise.all([hub.reload(), reloadPrice()]);
+    push("Market refreshed", "ok");
+  }
+
+  const tabs: { id: Tab; label: string }[] = [
+    { id: "overview", label: "Overview" },
+    { id: "floors", label: "Floors" },
+    { id: "sales", label: "Live sales" },
+    { id: "watch", label: "Watchlist" },
+  ];
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+    <div className="space-y-5">
+      {/* Header */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-xs font-medium uppercase tracking-[0.14em] text-sky">
-            Market tracker
+            Market hub
           </p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">
-            Live floors &amp; sales
+            Floors + live sales
           </h1>
           <p className="mt-1.5 max-w-xl text-sm text-muted">
-            Floors from kintaramarket · 30d stats from kintara.com · completed sales
-            from kintrade. Read-only — no buy or reserve.
-          </p>
-        </div>
-        <Link href="/calculator">
-          <Button variant="secondary">Open calculator</Button>
-        </Link>
-      </div>
-
-      <Card>
-        <CardTitle>Data source</CardTitle>
-        <p className="mt-2 text-sm text-muted">
-          {market == null
-            ? "Loading…"
-            : market.configured
-              ? `${market.provider ?? "marketplace"} · ${market.items.length} items · ${
-                  market.source ?? "api"
-                }${market.updatedAt ? ` · ${new Date(market.updatedAt).toLocaleTimeString()}` : ""}`
-              : market.message ?? "Not configured"}
-        </p>
-        {market?.note && (
-          <p className="mt-2 text-xs text-muted">{market.note}</p>
-        )}
-        {kinsUsd && (
-          <p className="mt-1 text-xs text-muted">
-            KINS/USD for conversion: {formatUsd(kinsUsd, { maxDecimals: 8 })}
-            {market?.rateSource ? ` · ${market.rateSource}` : ""}
-          </p>
-        )}
-        {market?.goldFloorUsd && (
-          <p className="mt-1 text-xs text-muted">
-            Gold floor: {formatUsd(market.goldFloorUsd, { maxDecimals: 6 })} / gold
-          </p>
-        )}
-        {goneCount != null && (
-          <p className="mt-1 text-xs text-muted">
-            Stale listing filter: {goneCount.toLocaleString()} gone IDs from{" "}
+            Combines{" "}
+            <a
+              href="https://kintaramarket.xyz"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sky underline underline-offset-2"
+            >
+              kintaramarket.xyz
+            </a>{" "}
+            floors with{" "}
             <a
               href="https://www.kintrade.xyz"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-info underline"
+              className="text-sky underline underline-offset-2"
             >
-              kintrade.xyz/api/gone
-            </a>
+              kintrade.xyz
+            </a>{" "}
+            completed trades — edge, watchlist, item drill-down.
           </p>
-        )}
-      </Card>
-
-      {summary.positions.length > 0 && market?.configured && (
-        <Card className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <CardTitle>Your holdings</CardTitle>
-            <p className="mt-1 text-xs text-muted">
-              Apply live lowest floors as inventory reference prices (KINS/unit).
-            </p>
-          </div>
-          <Button onClick={applyFloorsToHoldings} disabled={applying}>
-            {applying ? "Applying…" : "Apply floors to holdings"}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" onClick={refreshAll} disabled={hub.loading}>
+            <RefreshCw className={cn("h-4 w-4", hub.loading && "animate-spin")} />
+            Refresh
           </Button>
+          <Link href="/calculator">
+            <Button variant="ghost" className="text-muted">
+              <Calculator className="h-4 w-4" />
+              Calc
+            </Button>
+          </Link>
+        </div>
+      </div>
+
+      {/* Ticker strip */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Card>
+          <CardTitle>KINS / USD</CardTitle>
+          <StatValue>
+            {kinsUsd
+              ? formatUsd(kinsUsd, { maxDecimals: 8 })
+              : hub.loading
+                ? "…"
+                : "Not available"}
+          </StatValue>
+          <p className="mt-1 text-[11px] text-muted">
+            {hub.rateSource ?? price?.source ?? "—"}
+          </p>
+        </Card>
+        <Card>
+          <CardTitle>Gold floor</CardTitle>
+          <StatValue className="text-lg">
+            {hub.goldFloorUsd
+              ? formatUsd(hub.goldFloorUsd, { maxDecimals: 4 })
+              : "—"}
+          </StatValue>
+          <p className="mt-1 text-[11px] text-muted">From market ticker</p>
+        </Card>
+        <Card>
+          <CardTitle>Items with floors</CardTitle>
+          <StatValue>{hub.floors.length || "—"}</StatValue>
+          <p className="mt-1 text-[11px] text-muted">
+            {hub.goneCount != null
+              ? `${hub.goneCount.toLocaleString()} gone listings filtered`
+              : "Live book"}
+          </p>
+        </Card>
+        <Card>
+          <CardTitle>Recent sales feed</CardTitle>
+          <StatValue>{hub.sales.length || "—"}</StatValue>
+          <p className="mt-1 text-[11px] text-muted">Completed trades (kintrade)</p>
+        </Card>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex flex-wrap gap-1.5">
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setTab(t.id)}
+            className={cn(
+              "min-h-10 rounded-xl px-3.5 text-sm font-medium transition-colors",
+              tab === t.id
+                ? "bg-sky text-[#0a121c]"
+                : "bg-raised text-muted hover:text-primary",
+            )}
+          >
+            {t.label}
+            {t.id === "watch" && watch.length > 0 ? ` (${watch.length})` : ""}
+          </button>
+        ))}
+      </div>
+
+      {/* Overview */}
+      {(tab === "overview" || tab === "floors" || tab === "watch") && (
+        <>
+          {tab === "overview" && (
+            <div className="grid gap-4 lg:grid-cols-5">
+              <Card className="lg:col-span-3">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <CardTitle>Hottest floors</CardTitle>
+                  <button
+                    type="button"
+                    className="text-xs text-sky"
+                    onClick={() => setTab("floors")}
+                  >
+                    View all
+                  </button>
+                </div>
+                <FloorTable
+                  rows={filtered.slice(0, 12)}
+                  watch={watch}
+                  onOpen={openItem}
+                  onWatch={onToggleWatch}
+                  compact
+                />
+              </Card>
+              <Card className="lg:col-span-2">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <CardTitle>Live sales tape</CardTitle>
+                  <button
+                    type="button"
+                    className="text-xs text-sky"
+                    onClick={() => setTab("sales")}
+                  >
+                    View all
+                  </button>
+                </div>
+                <SalesTape sales={hotSales} onOpen={openItem} />
+              </Card>
+            </div>
+          )}
+
+          {(tab === "floors" || tab === "watch") && (
+            <Card>
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <Input
+                  className="max-w-xs"
+                  placeholder="Search items…"
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                />
+                <div className="flex flex-wrap gap-1">
+                  {(
+                    [
+                      ["listings", "Listings"],
+                      ["floorUsd", "Floor $"],
+                      ["qty", "Qty"],
+                      ["name", "Name"],
+                    ] as const
+                  ).map(([k, label]) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => setSort(k)}
+                      className={cn(
+                        "inline-flex min-h-9 items-center gap-1 rounded-lg px-2.5 text-xs",
+                        sort === k
+                          ? "bg-sky/15 text-sky-hi"
+                          : "bg-surface-2 text-muted",
+                      )}
+                    >
+                      <ArrowUpDown className="h-3 w-3" />
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {tab === "watch" && !watch.length && (
+                <p className="mb-3 text-sm text-muted">
+                  Star items on the floors list to build your watchlist.
+                </p>
+              )}
+              <FloorTable
+                rows={filtered}
+                watch={watch}
+                onOpen={openItem}
+                onWatch={onToggleWatch}
+              />
+              <p className="mt-3 text-[11px] text-muted">
+                Floor = lowest active listing (USD). Sale med = median recent completed
+                unit KINS. Edge ≈ how much cheaper the floor is vs recent sales.
+              </p>
+            </Card>
+          )}
+        </>
+      )}
+
+      {tab === "sales" && (
+        <Card>
+          <CardTitle>Completed sales</CardTitle>
+          {hub.salesNote && (
+            <p className="mt-1 text-xs text-muted">{hub.salesNote}</p>
+          )}
+          <div className="mt-3">
+            <SalesTape sales={hub.sales} onOpen={openItem} full />
+          </div>
         </Card>
       )}
 
-      <Card>
-        <CardTitle>Holdings vs market</CardTitle>
-        <div className="mt-3 space-y-2">
-          {!holdingRows.length && (
-            <p className="text-sm text-muted">
-              No holdings yet.{" "}
-              <Link href="/add" className="text-info underline">
-                Add a trade
-              </Link>
-            </p>
-          )}
-          {holdingRows.map((row) => (
-            <div
-              key={row.id}
-              className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-surface-2 px-3 py-2 text-sm"
-            >
-              <span className="flex items-center gap-2">
-                <ItemIcon itemId={row.id} name={row.name} size={32} />
-                {row.name}
-              </span>
-              <span className="font-mono text-xs tabular-nums text-muted">
-                floor{" "}
-                {row.marketUsd
-                  ? formatUsd(row.marketUsd, { maxDecimals: 8 })
-                  : "—"}
-                {row.marketKins ? ` · ${formatKins(row.marketKins)} KINS` : ""}
-                {row.unit
-                  ? ` · ref ${formatKins(row.unit)} KINS`
-                  : " · no ref price"}
-              </span>
-            </div>
-          ))}
-        </div>
-      </Card>
-
-      <Card>
-        <CardTitle>Recent completed sales</CardTitle>
-        {salesNote && (
-          <p className="mt-1 text-xs text-muted">{salesNote}</p>
-        )}
-        <div className="mt-3 max-h-80 space-y-1.5 overflow-y-auto">
-          {!sales.length && (
-            <p className="text-sm text-muted">Loading sales feed…</p>
-          )}
-          {sales.map((s) => (
-            <div
-              key={s.id}
-              className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-surface-2 px-3 py-2 text-sm"
-            >
-              <div className="flex items-center gap-2">
-                <ItemIcon itemId={s.itemType} name={s.name} size={32} />
+      {/* Item detail drawer */}
+      {selectedId && (
+        <div className="fixed inset-0 z-50 flex justify-end">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/50"
+            aria-label="Close"
+            onClick={closeItem}
+          />
+          <div className="relative z-10 flex h-full w-full max-w-md flex-col border-l border-border bg-surface shadow-2xl">
+            <div className="flex items-start justify-between gap-2 border-b border-border p-4">
+              <div className="flex items-center gap-3">
+                <ItemIcon
+                  itemId={selectedId}
+                  name={selectedFloor?.name ?? selectedId}
+                  size={48}
+                />
                 <div>
-                  <div className="font-medium">
-                    {s.name}{" "}
-                    <span className="font-mono text-xs text-muted">
-                      ×{s.quantity}
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-muted">
-                    {new Date(s.timestamp).toLocaleString()}
-                    {s.solscanUrl && (
-                      <>
-                        {" · "}
-                        <a
-                          href={s.solscanUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-info underline"
-                        >
-                          Solscan
-                        </a>
-                      </>
-                    )}
-                  </div>
+                  <h2 className="text-lg font-semibold">
+                    {selectedFloor?.name ?? selectedId}
+                  </h2>
+                  <p className="font-mono text-xs text-muted">{selectedId}</p>
                 </div>
               </div>
-              <div className="text-right font-mono text-xs tabular-nums">
-                <div>{formatKins(s.unitKins)} KINS/u</div>
-                {s.usdTotal && (
-                  <div className="text-muted">
-                    {formatUsd(s.usdTotal, { maxDecimals: 6 })} total
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      </Card>
-
-      {market?.configured && (
-        <Card>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <CardTitle>All market items</CardTitle>
-            <Input
-              className="max-w-xs"
-              placeholder="Search items…"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-            />
-          </div>
-          <div className="mt-3 max-h-[28rem] space-y-1 overflow-y-auto">
-            {filtered.slice(0, 100).map((i) => (
-              <div
-                key={i.id}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 px-3 py-2 text-sm"
+              <button
+                type="button"
+                onClick={closeItem}
+                className="rounded-lg p-2 text-muted hover:bg-raised hover:text-primary"
               >
-                <div className="flex items-center gap-2.5">
-                  <ItemIcon itemId={i.id} name={i.name} size={36} />
-                  <div>
-                    <div className="font-medium">{i.name}</div>
-                    <div className="text-[11px] text-muted">
-                      {i.id}
-                      {i.listings != null ? ` · ${i.listings} listings` : ""}
-                      {i.totalQty != null ? ` · qty ${i.totalQty}` : ""}
-                    </div>
-                  </div>
-                </div>
-                <div className="text-right font-mono text-xs tabular-nums">
-                  <div>
-                    {i.lowestUsdPerUnit
-                      ? formatUsd(i.lowestUsdPerUnit, { maxDecimals: 8 })
-                      : "Not available"}
-                    <span className="text-muted"> /u</span>
-                  </div>
-                  {i.lowestKinsPerUnit && (
-                    <div className="text-muted">
-                      ~{formatKins(i.lowestKinsPerUnit)} KINS/u
-                    </div>
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 space-y-4 overflow-y-auto p-4">
+              <div className="grid grid-cols-2 gap-2">
+                <Metric
+                  label="Floor USD/u"
+                  value={
+                    selectedFloor?.lowestUsdPerUnit
+                      ? formatUsd(selectedFloor.lowestUsdPerUnit, {
+                          maxDecimals: 8,
+                        })
+                      : "—"
+                  }
+                />
+                <Metric
+                  label="Floor KINS/u"
+                  value={
+                    selectedFloor?.lowestKinsPerUnit
+                      ? formatKins(selectedFloor.lowestKinsPerUnit)
+                      : "—"
+                  }
+                />
+                <Metric
+                  label="Recent sale med"
+                  value={
+                    selectedFloor?.saleMedianKins
+                      ? `${formatKins(selectedFloor.saleMedianKins)} KINS`
+                      : "—"
+                  }
+                />
+                <Metric
+                  label="Edge vs sales"
+                  value={
+                    selectedFloor?.edgePct != null
+                      ? `${selectedFloor.edgePct}%`
+                      : "—"
+                  }
+                  className={
+                    selectedFloor?.edgePct
+                      ? signedClass(selectedFloor.edgePct)
+                      : ""
+                  }
+                />
+              </div>
+
+              {detailLoading && (
+                <p className="text-sm text-muted">Loading stats…</p>
+              )}
+              {detailStats && (
+                <div className="rounded-xl border border-border bg-surface-2 p-3 text-sm">
+                  <p className="text-xs uppercase tracking-wide text-muted">
+                    Official + sales stats
+                  </p>
+                  <ul className="mt-2 space-y-1 font-mono text-xs text-muted">
+                    {detailStats.avg30dKins && (
+                      <li>30d avg: {formatKins(detailStats.avg30dKins)} KINS/u</li>
+                    )}
+                    {detailStats.medianRecentSalesKins && (
+                      <li>
+                        Median sale:{" "}
+                        {formatKins(detailStats.medianRecentSalesKins)} KINS/u
+                      </li>
+                    )}
+                    {detailStats.sales30d != null && (
+                      <li>Sales samples: {detailStats.sales30d}</li>
+                    )}
+                  </ul>
+                  {selectedFloor?.lowestKinsPerUnit && kinsUsd && (
+                    <p className="mt-2 text-xs text-muted">
+                      Est. net after 5% fee:{" "}
+                      {formatUsd(
+                        d(selectedFloor.lowestKinsPerUnit)
+                          .mul(d(kinsUsd))
+                          .mul(1 - fee)
+                          .toFixed(),
+                        { maxDecimals: 6 },
+                      )}{" "}
+                      / unit
+                    </p>
                   )}
                 </div>
+              )}
+
+              <div>
+                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted">
+                  Recent sales of this item
+                </p>
+                {selectedSales.length === 0 && (
+                  <p className="text-sm text-muted">No recent sales in feed.</p>
+                )}
+                <div className="space-y-1.5">
+                  {selectedSales.slice(0, 15).map((s) => (
+                    <div
+                      key={s.id}
+                      className="flex justify-between rounded-lg bg-surface-2 px-2.5 py-2 text-xs"
+                    >
+                      <span className="text-muted">
+                        ×{s.quantity} ·{" "}
+                        {new Date(s.timestamp).toLocaleString()}
+                      </span>
+                      <span className="font-mono tabular-nums">
+                        {formatKins(s.unitKins)} KINS/u
+                        {s.solscanUrl && (
+                          <>
+                            {" "}
+                            <a
+                              href={s.solscanUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-sky"
+                            >
+                              <ExternalLink className="inline h-3 w-3" />
+                            </a>
+                          </>
+                        )}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
-            ))}
-            {!filtered.length && (
-              <p className="text-sm text-muted">No items match.</p>
-            )}
+            </div>
+
+            <div className="flex flex-wrap gap-2 border-t border-border p-4">
+              <Button
+                variant="secondary"
+                className="flex-1"
+                onClick={() => onToggleWatch(selectedId)}
+              >
+                <Star
+                  className={cn(
+                    "h-4 w-4",
+                    watch.includes(selectedId) && "fill-sky text-sky",
+                  )}
+                />
+                {watch.includes(selectedId) ? "Watching" : "Watch"}
+              </Button>
+              <Link
+                href={`/calculator`}
+                className="flex-1"
+              >
+                <Button className="w-full" variant="ghost">
+                  Calculator
+                </Button>
+              </Link>
+            </div>
           </div>
-          <p className="mt-2 text-[11px] text-muted">
-            Showing up to 100 results. Active listings are not guaranteed sales.
-            Icons from{" "}
-            <a
-              href="https://kintara.wiki/wiki/Main_Page"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sky underline"
-            >
-              kintara.wiki
-            </a>
-            .
-          </p>
-        </Card>
+        </div>
+      )}
+
+      {hub.error && (
+        <p className="text-sm text-loss">{hub.error}</p>
       )}
     </div>
+  );
+}
+
+function Metric({
+  label,
+  value,
+  className,
+}: {
+  label: string;
+  value: string;
+  className?: string;
+}) {
+  return (
+    <div className="rounded-xl bg-surface-2 px-3 py-2">
+      <div className="text-[10px] uppercase tracking-wide text-muted">{label}</div>
+      <div className={cn("mt-0.5 font-mono text-sm tabular-nums", className)}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function FloorTable({
+  rows,
+  watch,
+  onOpen,
+  onWatch,
+  compact,
+}: {
+  rows: (MarketFloorItem & {
+    saleMedianKins?: string | null;
+    edgePct?: string | null;
+  })[];
+  watch: string[];
+  onOpen: (id: string) => void;
+  onWatch: (id: string) => void;
+  compact?: boolean;
+}) {
+  if (!rows.length) {
+    return <p className="text-sm text-muted">No items to show.</p>;
+  }
+  return (
+    <div className={cn("space-y-1", !compact && "max-h-[32rem] overflow-y-auto")}>
+      {rows.map((row) => (
+        <div
+          key={row.id}
+          className="flex items-center gap-2 rounded-xl border border-border/50 bg-surface-2/60 px-2 py-2 hover:border-sky/30"
+        >
+          <button
+            type="button"
+            className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+            onClick={() => onOpen(row.id)}
+          >
+            <ItemIcon itemId={row.id} name={row.name} size={36} />
+            <div className="min-w-0">
+              <div className="truncate text-sm font-medium">{row.name}</div>
+              <div className="text-[11px] text-muted">
+                {row.listings ?? 0} listings
+                {row.totalQty != null ? ` · qty ${row.totalQty}` : ""}
+              </div>
+            </div>
+          </button>
+          <div className="shrink-0 text-right font-mono text-[11px] tabular-nums">
+            <div>
+              {row.lowestUsdPerUnit
+                ? formatUsd(row.lowestUsdPerUnit, { maxDecimals: 6 })
+                : "—"}
+              <span className="text-muted"> /u</span>
+            </div>
+            {row.saleMedianKins && (
+              <div className="text-muted">
+                sale {formatKins(row.saleMedianKins)}
+              </div>
+            )}
+            {row.edgePct != null && (
+              <div className={signedClass(row.edgePct)}>edge {row.edgePct}%</div>
+            )}
+          </div>
+          <button
+            type="button"
+            className="rounded-lg p-2 text-muted hover:bg-raised hover:text-sky"
+            onClick={() => onWatch(row.id)}
+            aria-label="Toggle watch"
+          >
+            <Star
+              className={cn(
+                "h-4 w-4",
+                watch.includes(row.id) && "fill-sky text-sky",
+              )}
+            />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SalesTape({
+  sales,
+  onOpen,
+  full,
+}: {
+  sales: {
+    id: string;
+    name: string;
+    itemType: string;
+    quantity: string;
+    unitKins: string;
+    usdTotal: string | null;
+    timestamp: string;
+    solscanUrl: string | null;
+  }[];
+  onOpen: (id: string) => void;
+  full?: boolean;
+}) {
+  if (!sales.length) {
+    return <p className="text-sm text-muted">Waiting for sales feed…</p>;
+  }
+  return (
+    <div
+      className={cn(
+        "space-y-1.5",
+        full ? "max-h-[36rem] overflow-y-auto" : "max-h-96 overflow-y-auto",
+      )}
+    >
+      {sales.map((s) => (
+        <button
+          key={s.id}
+          type="button"
+          onClick={() => onOpen(s.itemType)}
+          className="flex w-full items-center justify-between gap-2 rounded-xl bg-surface-2/80 px-2.5 py-2 text-left text-sm hover:bg-raised"
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            <ItemIcon itemId={s.itemType} name={s.name} size={28} />
+            <span className="min-w-0">
+              <span className="block truncate font-medium">
+                {s.name}{" "}
+                <span className="font-mono text-xs text-muted">×{s.quantity}</span>
+              </span>
+              <span className="text-[10px] text-muted">
+                {new Date(s.timestamp).toLocaleTimeString()}
+              </span>
+            </span>
+          </span>
+          <span className="shrink-0 text-right font-mono text-[11px] tabular-nums">
+            <span className="block">{formatKins(s.unitKins)} KINS/u</span>
+            {s.usdTotal && (
+              <span className="text-muted">
+                {formatUsd(s.usdTotal, { maxDecimals: 4 })}
+              </span>
+            )}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export default function MarketPage() {
+  return (
+    <Suspense
+      fallback={<div className="text-sm text-muted">Loading market…</div>}
+    >
+      <MarketHubInner />
+    </Suspense>
   );
 }

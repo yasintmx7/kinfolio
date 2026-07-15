@@ -43,7 +43,7 @@ export function Logo({
           Kinfolio
         </div>
         <div className="truncate text-[10px] font-medium uppercase tracking-[0.12em] text-sky">
-          Market · Calculator
+          Market tracker
         </div>
       </div>
     </div>

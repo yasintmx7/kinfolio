@@ -110,16 +110,14 @@ export function normalizeItemStats(
 
 async function resolveKinsUsd(): Promise<number | undefined> {
   try {
-    const { fetchDexScreenerKinsPrice } = await import("@/lib/prices/dexscreener");
-    const { fetchCoinGeckoKinsPrice } = await import("@/lib/prices/coingecko");
-    const dex = await fetchDexScreenerKinsPrice();
-    if (dex?.priceUsd) return Number(dex.priceUsd);
-    const cg = await fetchCoinGeckoKinsPrice();
-    if (cg?.priceUsd) return Number(cg.priceUsd);
+    const { resolveKinsUsdForMarket } = await import(
+      "@/lib/prices/kintaramarket-ticker"
+    );
+    const resolved = await resolveKinsUsdForMarket();
+    return resolved?.kinsUsd;
   } catch {
-    // ignore
+    return undefined;
   }
-  return undefined;
 }
 
 export class ConfigurableMarketplaceAdapter implements KintaraMarketplaceAdapter {

@@ -28,20 +28,12 @@ export async function GET() {
       const { fetchMarketSummary, normalizeSummary } = await import(
         "@/lib/kintara/kintaramarket-xyz"
       );
-      const { fetchDexScreenerKinsPrice } = await import("@/lib/prices/dexscreener");
-      const { fetchCoinGeckoKinsPrice } = await import("@/lib/prices/coingecko");
+      const { resolveKinsUsdForMarket } = await import(
+        "@/lib/prices/kintaramarket-ticker"
+      );
 
-      let kinsUsd: number | undefined;
-      try {
-        const dex = await fetchDexScreenerKinsPrice();
-        if (dex?.priceUsd) kinsUsd = Number(dex.priceUsd);
-        if (kinsUsd == null) {
-          const cg = await fetchCoinGeckoKinsPrice();
-          if (cg?.priceUsd) kinsUsd = Number(cg.priceUsd);
-        }
-      } catch {
-        // continue without conversion
-      }
+      const rate = await resolveKinsUsdForMarket();
+      const kinsUsd = rate?.kinsUsd;
 
       const raw = await fetchMarketSummary();
       const rows = normalizeSummary(raw, kinsUsd).map((row) => ({
@@ -66,8 +58,11 @@ export async function GET() {
           configured: true,
           provider: cfg.provider,
           kinsUsd: kinsUsd != null ? String(kinsUsd) : null,
+          goldFloorUsd:
+            rate?.goldFloorUsd != null ? String(rate.goldFloorUsd) : null,
+          rateSource: rate?.source ?? null,
           note:
-            "Prices from kintaramarket.xyz are USD floors. KINS/unit = USD/unit ÷ KINS/USD. Estimates only — not guaranteed sales.",
+            "Item floors are USD from kintaramarket.xyz. KINS/unit uses /api/ticker kinsUsd when available. Estimates only — not guaranteed sales.",
         },
         {
           source: "kintaramarket.xyz",

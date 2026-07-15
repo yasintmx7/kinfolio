@@ -30,6 +30,8 @@ type MarketState = {
   note?: string;
   provider?: string;
   kinsUsd?: string | null;
+  goldFloorUsd?: string | null;
+  rateSource?: string | null;
   items: MarketItem[];
   source?: string;
   updatedAt?: string;
@@ -57,6 +59,8 @@ export default function MarketPage() {
             note: j.data.note,
             provider: j.data.provider,
             kinsUsd: j.data.kinsUsd,
+            goldFloorUsd: j.data.goldFloorUsd,
+            rateSource: j.data.rateSource,
             items: j.data.items ?? [],
             source: j.source,
             updatedAt: j.updatedAt,
@@ -170,7 +174,13 @@ export default function MarketPage() {
         )}
         {kinsUsd && (
           <p className="mt-1 text-xs text-muted">
-            KINS/USD used for conversion: {formatUsd(kinsUsd, { maxDecimals: 8 })}
+            KINS/USD for conversion: {formatUsd(kinsUsd, { maxDecimals: 8 })}
+            {market?.rateSource ? ` · ${market.rateSource}` : ""}
+          </p>
+        )}
+        {market?.goldFloorUsd && (
+          <p className="mt-1 text-xs text-muted">
+            Gold floor: {formatUsd(market.goldFloorUsd, { maxDecimals: 6 })} / gold
           </p>
         )}
       </Card>

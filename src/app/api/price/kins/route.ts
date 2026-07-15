@@ -5,12 +5,23 @@ import {
   fetchDexScreenerKinsPrice,
   type KinsPrice,
 } from "@/lib/prices/dexscreener";
+import {
+  fetchKintaraMarketTicker,
+  tickerToKinsPrice,
+} from "@/lib/prices/kintaramarket-ticker";
 
 export const runtime = "nodejs";
 
 const CACHE_KEY = "kins-price";
 const TTL = 45;
 
+/**
+ * Price sources (first success wins):
+ * 1. DexScreener (highest-liquidity pair)
+ * 2. kintaramarket.xyz /api/ticker (game market rate)
+ * 3. CoinGecko
+ * 4. Stale cache
+ */
 export async function GET() {
   const cached = getCached<KinsPrice>(CACHE_KEY);
   if (cached && !cached.stale) {
@@ -30,6 +41,19 @@ export async function GET() {
       return ok(dex, {
         source: dex.source,
         updatedAt: dex.updatedAt,
+        cached: false,
+        stale: false,
+        cacheControl: "public, s-maxage=30, stale-while-revalidate=60",
+      });
+    }
+
+    const ticker = await fetchKintaraMarketTicker();
+    if (ticker) {
+      const price = tickerToKinsPrice(ticker);
+      setCache(CACHE_KEY, price, TTL);
+      return ok(price, {
+        source: price.source,
+        updatedAt: price.updatedAt,
         cached: false,
         stale: false,
         cacheControl: "public, s-maxage=30, stale-while-revalidate=60",

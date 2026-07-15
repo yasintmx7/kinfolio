@@ -47,8 +47,10 @@ export type KinsPrice = {
   dexId?: string;
   pairAddress?: string;
   pairUrl?: string;
+  /** Gold floor in USD when source is kintaramarket ticker */
+  goldFloorUsd?: string;
   updatedAt: string;
-  source: "dexscreener" | "coingecko" | "cache" | "manual";
+  source: "dexscreener" | "coingecko" | "kintaramarket" | "cache" | "manual";
 };
 
 function mintMatches(address?: string): boolean {

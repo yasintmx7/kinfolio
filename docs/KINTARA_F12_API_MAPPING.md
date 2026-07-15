@@ -6,9 +6,16 @@ Primary **read-only** public source (community site):
 
 | Feature | HTTP method | Full URL | Public | Request | Headers | Response sample | Refresh | Normalizer |
 |--------|-------------|---------|--------|---------|---------|-----------------|---------|------------|
+| Ticker | GET | `https://kintaramarket.xyz/api/ticker` | Yes | — | Accept: json | `{ kinsUsd, goldFloorUsd }` | ~30s cache | **live** |
 | Market summary | GET | `https://kintaramarket.xyz/api/market` | Yes | — | Accept: json | `{ itemType, listings, totalQty, lowestUsdPerUnit, lowestGoldPerUnit, kinsListings, goldListings }[]` | ~60s cache | **live** |
 | Item listings | GET | `https://kintaramarket.xyz/api/market/{itemType}` | Yes | path `itemType` e.g. `stone` | Accept: json | `{ id, sellerName, quantity, currency, priceUsd, unitPrice, … }[]` | ~45s cache | **live** |
 | Quote / buy | — | — | Auth write | — | — | — | — | **not integrated** |
+
+### Ticker usage
+
+- `kinsUsd` — preferred rate when converting market USD floors → KINS/unit.
+- `goldFloorUsd` — gold market floor (display / future gold tools).
+- App routes: `/api/price/ticker` (direct), also used by `/api/price/kins` (fallback after DexScreener) and `/api/market/items` conversion.
 
 ### Notes
 

@@ -1,8 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
-import { resolveWikiItemImage } from "@/lib/kintara/wiki-images";
+import {
+  resolveProcessedItemIcon,
+  resolveRemoteWikiItemImage,
+} from "@/lib/kintara/wiki-images";
 
 type Props = {
   itemId?: string;
@@ -16,7 +19,8 @@ type Props = {
 };
 
 /**
- * Item artwork from kintara.wiki with letter fallback.
+ * Item artwork — transparent WebP with consistent padding when available.
+ * Falls back to wiki remote, then letter initials.
  */
 export function ItemIcon({
   itemId,
@@ -27,13 +31,33 @@ export function ItemIcon({
   className,
   clear = false,
 }: Props) {
-  const resolved =
-    imageUrl ||
-    resolveWikiItemImage(itemId, [...(name ? [name] : []), ...aliases]) ||
-    resolveWikiItemImage(name ?? null);
+  const aliasList = useMemo(
+    () => [...(name ? [name] : []), ...aliases],
+    [name, aliases],
+  );
 
+  const local = resolveProcessedItemIcon(itemId, aliasList);
+  const remote =
+    resolveRemoteWikiItemImage(itemId, aliasList) ||
+    resolveRemoteWikiItemImage(name ?? null);
+
+  const explicitLocal =
+    imageUrl && imageUrl.startsWith("/item-icons/") ? imageUrl : undefined;
+  const explicitRemote =
+    imageUrl && !imageUrl.startsWith("/item-icons/") ? imageUrl : undefined;
+
+  // Prefer local transparent processed icons over white-plate wiki remotes
+  const preferred = explicitLocal || local || explicitRemote || remote;
+
+  const [src, setSrc] = useState<string | undefined>(preferred);
   const [failed, setFailed] = useState(false);
-  const showImg = Boolean(resolved) && !failed;
+
+  useEffect(() => {
+    setSrc(preferred);
+    setFailed(false);
+  }, [preferred]);
+
+  const showImg = Boolean(src) && !failed;
   const initials = (name || itemId || "?")
     .replace(/[^a-zA-Z0-9 ]/g, "")
     .split(/\s+/)
@@ -44,14 +68,16 @@ export function ItemIcon({
     .slice(0, 2);
 
   const box = clear ? Math.max(size, 56) : size;
+  const imgPad = clear ? 2 : 1;
 
   return (
     <div
       className={cn(
-        "relative flex shrink-0 items-center justify-center overflow-hidden bg-surface-2",
+        "relative flex shrink-0 items-center justify-center overflow-hidden",
+        "bg-transparent",
         clear
-          ? "rounded-2xl border border-border/50 shadow-inner"
-          : "rounded-xl border border-border/70",
+          ? "rounded-2xl ring-1 ring-border/40"
+          : "rounded-xl ring-1 ring-border/50",
         className,
       )}
       style={{ width: box, height: box }}
@@ -60,19 +86,35 @@ export function ItemIcon({
       {showImg ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={resolved}
+          src={src}
           alt={name || itemId || "item"}
           width={box}
           height={box}
           loading="lazy"
           decoding="async"
           referrerPolicy="no-referrer"
-          className={cn(
-            "h-full w-full object-contain",
-            clear ? "p-1.5" : "p-1",
-          )}
-          style={{ imageRendering: "auto" }}
-          onError={() => setFailed(true)}
+          className="h-full w-full object-contain"
+          style={{
+            imageRendering: "auto",
+            padding: imgPad,
+          }}
+          onError={() => {
+            if (src && local && src === local && remote && remote !== src) {
+              setSrc(remote);
+              return;
+            }
+            if (
+              src &&
+              explicitLocal &&
+              src === explicitLocal &&
+              remote &&
+              remote !== src
+            ) {
+              setSrc(remote);
+              return;
+            }
+            setFailed(true);
+          }}
         />
       ) : (
         <span

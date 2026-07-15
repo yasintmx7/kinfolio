@@ -1,7 +1,10 @@
 import type { KintaraItem } from "@/lib/accounting/types";
 import { FAVORITE_ITEM_NAMES } from "@/config/kintara";
 import fullCatalog from "@/data/full-catalog.json";
-import { resolveWikiItemImage } from "@/lib/kintara/wiki-images";
+import {
+  resolveProcessedItemIcon,
+  resolveWikiItemImage,
+} from "@/lib/kintara/wiki-images";
 
 type FullItem = {
   id: string;
@@ -41,9 +44,11 @@ export const STATIC_CATALOG: KintaraItem[] = (
   fullCatalog as { items: FullItem[] }
 ).items
   .map((it) => {
+    const aliases = [it.name, ...(it.aliases || [])];
     const imageUrl =
+      resolveProcessedItemIcon(it.id, aliases) ||
       it.imageUrl ||
-      resolveWikiItemImage(it.id, [it.name, ...(it.aliases || [])]);
+      resolveWikiItemImage(it.id, aliases);
     return {
       id: it.id,
       name: it.name,

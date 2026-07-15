@@ -334,10 +334,11 @@ export async function fetchOfficialRecentActivity(options?: {
   sort?: "new" | "cheap";
 }): Promise<OfficialActivityRow[]> {
   const pageSize = 100;
-  const pages = Math.min(Math.max(options?.pages ?? 8, 1), 20);
+  const pages = Math.min(Math.max(options?.pages ?? 10, 1), 20);
+  // Room for ~500 token + ~500 gold (+ headroom)
   const maxRows = Math.min(
-    Math.max(options?.limit ?? pages * pageSize, 1),
-    2000,
+    Math.max(options?.limit ?? pages * pageSize * 2, 1),
+    2500,
   );
   const kinsUsd = options?.kinsUsd;
   const sort = options?.sort ?? "new";

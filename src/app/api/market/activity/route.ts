@@ -14,15 +14,15 @@ export const runtime = "nodejs";
 export async function GET(request: Request) {
   const sp = new URL(request.url).searchParams;
   const limit = Number(sp.get("limit") ?? "1200");
-  const pages = Number(sp.get("pages") ?? "12");
+  const pages = Number(sp.get("pages") ?? "10");
   const includeGold = sp.get("gold") === "1" || sp.get("gold") === "true";
   const sort = sp.get("sort") === "cheap" ? "cheap" : "new";
 
   try {
     const rate = await resolveKinsUsd();
     const rows = await fetchOfficialRecentActivity({
-      limit: Number.isFinite(limit) ? Math.min(Math.max(limit, 1), 2000) : 1200,
-      pages: Number.isFinite(pages) ? Math.min(Math.max(pages, 1), 20) : 12,
+      limit: Number.isFinite(limit) ? Math.min(Math.max(limit, 1), 2500) : 1200,
+      pages: Number.isFinite(pages) ? Math.min(Math.max(pages, 1), 20) : 10,
       kinsUsd: rate?.kinsUsd,
       includeGold,
       sort,

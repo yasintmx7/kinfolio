@@ -88,16 +88,55 @@ const empty: MarketHubData = {
   refreshing: false,
 };
 
-/** ~500 live listings → 6×100 is enough; fewer pages = snappier polls */
-const LISTINGS_URL = "/api/market/activity?limit=700&pages=7&gold=1";
-const SOLD_URL = "/api/market/sold?limit=30";
+/**
+ * Live book is ~500 token + ~500 gold. Must not slice under ~1000 or we drop
+ * listings and miss locker-name reverse-map (seller ids never seen).
+ */
+const LISTINGS_URL = "/api/market/activity?limit=1200&pages=10&gold=1";
+const SOLD_URL = "/api/market/sold?limit=40";
 
-function listFingerprint(rows: { id: string; timestamp?: string }[]): string {
+/**
+ * Fingerprint must change when locks/prices change, not only first/last ids.
+ * (Previously silent polls skipped UI when only reservedBy updated.)
+ */
+function listFingerprint(
+  rows: {
+    id: string;
+    timestamp?: string;
+    reserved?: boolean;
+    buyerId?: string | null;
+    usdTotal?: string | null;
+    unitUsd?: string | null;
+  }[],
+): string {
   if (!rows.length) return "0";
   const a = rows[0];
   const b = rows[rows.length - 1];
   const m = rows[Math.floor(rows.length / 2)];
-  return `${rows.length}:${a?.id}:${m?.id}:${b?.id}:${a?.timestamp ?? ""}:${b?.timestamp ?? ""}`;
+  let reservedN = 0;
+  let reservedSig = "";
+  // Sample up to 12 reserved rows for lock-state changes
+  for (const r of rows) {
+    if (r.reserved || r.buyerId) {
+      reservedN++;
+      if (reservedSig.length < 120) {
+        reservedSig += `${r.id}:${r.buyerId ?? ""}:`;
+      }
+    }
+  }
+  return [
+    rows.length,
+    a?.id,
+    m?.id,
+    b?.id,
+    a?.timestamp ?? "",
+    b?.timestamp ?? "",
+    a?.usdTotal ?? "",
+    m?.usdTotal ?? "",
+    b?.usdTotal ?? "",
+    `r${reservedN}`,
+    reservedSig,
+  ].join(":");
 }
 
 async function fetchJson(url: string, timeoutMs = 20000): Promise<unknown> {
@@ -153,23 +192,37 @@ function buildByItem(
   });
 }
 
-/**
- * Official API only gives reservedBy as a numeric user id (no username).
- * If that user also has open listings as a seller, we can reverse-map id → name.
- */
-function resolveLockerNames(rows: RecentSale[]): RecentSale[] {
-  const idToName = new Map<string, string>();
+/** sellerId → sellerName from open-book rows */
+function buildSellerIdNameMap(
+  rows: RecentSale[],
+  into?: Map<string, string>,
+): Map<string, string> {
+  const idToName = into ?? new Map<string, string>();
   for (const r of rows) {
     if (r.sellerId != null && r.sellerName?.trim()) {
       idToName.set(String(r.sellerId), r.sellerName.trim());
     }
   }
+  return idToName;
+}
+
+/**
+ * Official API only gives reservedBy as a numeric user id (no username).
+ * Reverse-map against known sellers (open book) → buyerName when possible.
+ */
+function resolveLockerNames(
+  rows: RecentSale[],
+  sellerIdToName?: Map<string, string>,
+): RecentSale[] {
+  const idToName =
+    sellerIdToName && sellerIdToName.size > 0
+      ? sellerIdToName
+      : buildSellerIdNameMap(rows);
   if (idToName.size === 0) return rows;
 
   let changed = false;
   const out = rows.map((r) => {
     if (!r.buyerId) return r;
-    // already have a real name (not just #id style)
     if (r.buyerName && !r.buyerName.startsWith("#")) return r;
     const name = idToName.get(String(r.buyerId));
     if (!name) return r;
@@ -228,6 +281,8 @@ export function useMarketHub(pollMs = 18_000) {
   const floorsInFlight = useRef(false);
   /** listingId → listing for seller name enrichment on sold */
   const knownListingsRef = useRef<Map<string, RecentSale>>(new Map());
+  /** sellerId → sellerName for locker reverse-lookup */
+  const sellerIdNameRef = useRef<Map<string, string>>(new Map());
   const lastListingsFp = useRef("");
   const lastSoldFp = useRef("");
 
@@ -253,8 +308,17 @@ export function useMarketHub(pollMs = 18_000) {
           activityRes?.ok && Array.isArray(activityRes.data?.activity)
             ? activityRes.data!.activity!
             : prev.sales;
+
+        // Keep durable sellerId→name map (grows across polls)
+        if (activityRes?.ok && Array.isArray(activityRes.data?.activity)) {
+          buildSellerIdNameMap(nextSalesRaw, sellerIdNameRef.current);
+        }
+
         // Fill locker username when reservedBy id matches a known seller
-        const nextSales = resolveLockerNames(nextSalesRaw);
+        const nextSales = resolveLockerNames(
+          nextSalesRaw,
+          sellerIdNameRef.current,
+        );
 
         const fp = listFingerprint(nextSales);
         const sameList =
@@ -264,15 +328,14 @@ export function useMarketHub(pollMs = 18_000) {
 
         if (activityRes?.ok && Array.isArray(activityRes.data?.activity)) {
           lastListingsFp.current = fp;
-          // Only rebuild known map when book changed
           if (!sameList) {
             const map = new Map(knownListingsRef.current);
             for (const row of nextSales) {
               map.set(String(row.id), row);
               if (row.listingId) map.set(String(row.listingId), row);
             }
-            if (map.size > 3000) {
-              const entries = [...map.entries()].slice(-2000);
+            if (map.size > 4000) {
+              const entries = [...map.entries()].slice(-3000);
               knownListingsRef.current = new Map(entries);
             } else {
               knownListingsRef.current = map;
@@ -280,10 +343,11 @@ export function useMarketHub(pollMs = 18_000) {
           }
         }
 
-        // Skip heavy re-render when poll returned same open book
         if (sameList && opts?.silent) {
           return {
             ...prev,
+            // still push resolved locker names if they improved
+            sales: nextSales,
             kinsUsd: activityRes.data?.kinsUsd ?? prev.kinsUsd,
             rateSource: activityRes.data?.rateSource ?? prev.rateSource,
             loading: false,
@@ -292,17 +356,16 @@ export function useMarketHub(pollMs = 18_000) {
           };
         }
 
-        const sold = sameList
-          ? prev.sold
-          : enrichSold(prev.sold, knownListingsRef.current);
+        const sold = resolveLockerNames(
+          enrichSold(prev.sold, knownListingsRef.current),
+          sellerIdNameRef.current,
+        );
 
         return {
           ...prev,
           sales: nextSales,
           sold,
-          byItem: sameList
-            ? prev.byItem
-            : buildByItem(nextSales, prev.floors),
+          byItem: buildByItem(nextSales, prev.floors),
           kinsUsd: activityRes?.ok
             ? (activityRes.data?.kinsUsd ?? prev.kinsUsd)
             : prev.kinsUsd,
@@ -352,7 +415,10 @@ export function useMarketHub(pollMs = 18_000) {
       lastSoldFp.current = fp;
 
       setData((prev) => {
-        const sold = enrichSold(raw, knownListingsRef.current);
+        const sold = resolveLockerNames(
+          enrichSold(raw, knownListingsRef.current),
+          sellerIdNameRef.current,
+        );
         return {
           ...prev,
           sold,

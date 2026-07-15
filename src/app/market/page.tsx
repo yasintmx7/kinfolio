@@ -461,7 +461,7 @@ function MarketHubInner() {
           </h1>
           <p className="mt-1 text-sm text-muted">
             {tab === "market" &&
-              `${hub.sales.length} listings · ${openCount} open · ${(hub.sold ?? []).length} sold · 12s`}
+              `${hub.sales.length} listings · ${openCount} open · ${lockedCount} locked · ${(hub.sold ?? []).length} sold · 18s`}
             {tab === "floors" && `${hub.floors.length} items · lowest $ each`}
             {tab === "watch" &&
               (watch.length

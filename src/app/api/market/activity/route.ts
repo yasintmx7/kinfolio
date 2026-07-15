@@ -34,6 +34,7 @@ export async function GET(request: Request) {
           itemType: r.itemType,
           quantity: r.quantity,
           unitKins: r.unitKins,
+          totalKins: r.totalKins,
           unitUsd: r.unitUsd,
           usdTotal: r.usdTotal,
           priceGold: r.priceGold,

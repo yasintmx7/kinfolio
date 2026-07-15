@@ -22,6 +22,7 @@ export type RecentSale = {
   itemType: string;
   quantity: string;
   unitKins: string;
+  totalKins?: string | null;
   unitUsd?: string | null;
   usdTotal: string | null;
   priceGold?: string | null;

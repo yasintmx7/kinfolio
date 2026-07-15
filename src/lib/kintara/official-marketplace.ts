@@ -258,6 +258,8 @@ export type OfficialActivityRow = {
   name: string;
   quantity: string;
   unitKins: string;
+  /** Total KINS for the lot (token listings) */
+  totalKins: string | null;
   unitUsd: string | null;
   usdTotal: string | null;
   priceGold: string | null;
@@ -325,17 +327,25 @@ export async function fetchOfficialRecentActivity(options?: {
 
   return collected.slice(0, maxRows).map((r) => {
     const unitUsd = r.unitUsd;
+    const isToken = (r.currency ?? "token") === "token";
     const unitKins =
-      kinsUsd != null && unitUsd != null && (r.currency ?? "token") === "token"
+      kinsUsd != null && unitUsd != null && isToken
         ? usdToKins(unitUsd, kinsUsd)
         : null;
+    const totalKins =
+      kinsUsd != null && r.priceUsd != null && isToken
+        ? usdToKins(r.priceUsd, kinsUsd)
+        : unitKins != null
+          ? d(unitKins).mul(r.quantity || 1).toFixed()
+          : null;
     return {
       id: String(r.id),
       listingId: String(r.id),
       itemType: r.itemType,
       name: humanizeItemType(r.itemType),
       quantity: String(r.quantity),
-      unitKins: unitKins ?? (unitUsd != null ? String(unitUsd) : "0"),
+      unitKins: unitKins ?? "0",
+      totalKins,
       unitUsd: unitUsd != null ? String(unitUsd) : null,
       usdTotal: r.priceUsd != null ? String(r.priceUsd) : null,
       priceGold: r.priceGold != null ? String(r.priceGold) : null,

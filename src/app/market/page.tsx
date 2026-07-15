@@ -231,7 +231,7 @@ function MarketHubInner() {
       {/* Ticker strip */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
-          <CardTitle>KINS / USD</CardTitle>
+          <CardTitle>1 KINS =</CardTitle>
           <StatValue>
             {kinsUsd
               ? formatUsd(kinsUsd, { maxDecimals: 8 })
@@ -240,16 +240,16 @@ function MarketHubInner() {
                 : "Not available"}
           </StatValue>
           <p className="mt-1 text-[11px] text-muted">
-            {hub.rateSource ?? price?.source ?? "—"}
+            Live rate · {hub.rateSource ?? price?.source ?? "—"}
           </p>
         </Card>
         <Card>
           <CardTitle>Tracked items</CardTitle>
           <StatValue>{hub.floors.length || "—"}</StatValue>
-          <p className="mt-1 text-[11px] text-muted">From live listings</p>
+          <p className="mt-1 text-[11px] text-muted">Floor board</p>
         </Card>
         <Card>
-          <CardTitle>Open listings scanned</CardTitle>
+          <CardTitle>Listings in floors</CardTitle>
           <StatValue>
             {hub.floors.reduce((a, f) => a + (f.listings ?? 0), 0) || "—"}
           </StatValue>
@@ -261,7 +261,7 @@ function MarketHubInner() {
             {(hub.activityCount ?? hub.sales.length) || "—"}
           </StatValue>
           <p className="mt-1 text-[11px] text-muted">
-            Listings · updates every 10s
+            All prices in KINS + $ · 10s
           </p>
         </Card>
       </div>
@@ -441,17 +441,7 @@ function MarketHubInner() {
             <div className="flex-1 space-y-4 overflow-y-auto p-4">
               <div className="grid grid-cols-2 gap-2">
                 <Metric
-                  label="Floor USD/u"
-                  value={
-                    selectedFloor?.lowestUsdPerUnit
-                      ? formatUsd(selectedFloor.lowestUsdPerUnit, {
-                          maxDecimals: 8,
-                        })
-                      : "—"
-                  }
-                />
-                <Metric
-                  label="Floor KINS/u"
+                  label="Floor KINS / unit"
                   value={
                     selectedFloor?.lowestKinsPerUnit
                       ? formatKins(selectedFloor.lowestKinsPerUnit)
@@ -459,10 +449,21 @@ function MarketHubInner() {
                   }
                 />
                 <Metric
-                  label="Activity med"
+                  label="Floor $ / unit"
+                  value={
+                    selectedFloor?.lowestUsdPerUnit
+                      ? formatUsd(selectedFloor.lowestUsdPerUnit, {
+                          maxDecimals: 8,
+                        })
+                      : "—"
+                  }
+                  className="text-sky-hi"
+                />
+                <Metric
+                  label="Activity med (KINS)"
                   value={
                     selectedFloor?.saleMedianKins
-                      ? `${formatKins(selectedFloor.saleMedianKins)} KINS`
+                      ? formatKins(selectedFloor.saleMedianKins)
                       : "—"
                   }
                 />
@@ -480,6 +481,12 @@ function MarketHubInner() {
                   }
                 />
               </div>
+              {kinsUsd && (
+                <p className="text-[11px] text-muted">
+                  Rate: 1 KINS = {formatUsd(kinsUsd, { maxDecimals: 8 })} · all
+                  $ values use this live rate
+                </p>
+              )}
 
               {detailLoading && (
                 <p className="text-sm text-muted">Loading stats…</p>
@@ -544,8 +551,16 @@ function MarketHubInner() {
                             </span>
                           ) : null}
                         </span>
-                        <span className="font-mono tabular-nums">
-                          {formatKins(s.unitKins)} /u
+                        <span className="text-right font-mono tabular-nums">
+                          <span className="block">
+                            {formatKins(s.unitKins)} KINS/u
+                          </span>
+                          <span className="block text-sky-hi">
+                            {s.unitUsd
+                              ? formatUsd(s.unitUsd, { maxDecimals: 6 })
+                              : "—"}
+                            /u
+                          </span>
                         </span>
                       </div>
                       <div className="mt-0.5 flex justify-between text-[10px] text-muted">
@@ -555,12 +570,17 @@ function MarketHubInner() {
                         </span>
                         <span>{new Date(s.timestamp).toLocaleString()}</span>
                       </div>
-                      {s.usdTotal && (
-                        <div className="mt-0.5 font-mono text-[10px] text-muted">
-                          total {formatUsd(s.usdTotal, { maxDecimals: 4 })}
-                          {s.currency ? ` · ${s.currency}` : ""}
-                        </div>
-                      )}
+                      <div className="mt-0.5 font-mono text-[10px] text-muted">
+                        lot{" "}
+                        {s.totalKins
+                          ? `${formatKins(s.totalKins)} KINS`
+                          : "—"}
+                        {" · "}
+                        {s.usdTotal
+                          ? formatUsd(s.usdTotal, { maxDecimals: 4 })
+                          : "—"}
+                        {s.currency ? ` · ${s.currency}` : ""}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -661,7 +681,12 @@ function FloorTable({
             </div>
           </button>
           <div className="shrink-0 text-right font-mono text-[11px] tabular-nums">
-            <div>
+            <div className="font-medium text-primary">
+              {row.lowestKinsPerUnit
+                ? `${formatKins(row.lowestKinsPerUnit)} KINS`
+                : "—"}
+            </div>
+            <div className="text-sky-hi">
               {row.lowestUsdPerUnit
                 ? formatUsd(row.lowestUsdPerUnit, { maxDecimals: 6 })
                 : "—"}
@@ -669,7 +694,7 @@ function FloorTable({
             </div>
             {row.saleMedianKins && (
               <div className="text-muted">
-                act {formatKins(row.saleMedianKins)}
+                act {formatKins(row.saleMedianKins)} KINS
               </div>
             )}
             {row.edgePct != null && (
@@ -705,6 +730,8 @@ function SalesTape({
     itemType: string;
     quantity: string;
     unitKins: string;
+    totalKins?: string | null;
+    unitUsd?: string | null;
     usdTotal: string | null;
     timestamp: string;
     sellerName?: string | null;
@@ -741,10 +768,24 @@ function SalesTape({
             </span>
           </span>
           <span className="shrink-0 text-right font-mono text-[11px] tabular-nums">
-            <span className="block">{formatKins(s.unitKins)} /u</span>
-            {s.usdTotal && (
-              <span className="text-muted">
-                {formatUsd(s.usdTotal, { maxDecimals: 4 })}
+            <span className="block font-medium">
+              {formatKins(s.unitKins)} KINS/u
+            </span>
+            <span className="block text-sky-hi">
+              {s.unitUsd
+                ? formatUsd(s.unitUsd, { maxDecimals: 6 })
+                : s.usdTotal
+                  ? formatUsd(s.usdTotal, { maxDecimals: 4 })
+                  : "—"}
+              <span className="text-muted"> /u</span>
+            </span>
+            {(s.totalKins || s.usdTotal) && (
+              <span className="block text-[10px] text-muted">
+                lot {s.totalKins ? `${formatKins(s.totalKins)} KINS` : ""}
+                {s.totalKins && s.usdTotal ? " · " : ""}
+                {s.usdTotal
+                  ? formatUsd(s.usdTotal, { maxDecimals: 4 })
+                  : ""}
               </span>
             )}
           </span>
@@ -765,6 +806,7 @@ function ActivityTable({
     itemType: string;
     quantity: string;
     unitKins: string;
+    totalKins?: string | null;
     unitUsd?: string | null;
     usdTotal: string | null;
     priceGold?: string | null;
@@ -784,7 +826,7 @@ function ActivityTable({
 
   return (
     <div className="max-h-[70vh] overflow-auto rounded-xl border border-border">
-      <table className="w-full min-w-[720px] border-collapse text-left text-xs">
+      <table className="w-full min-w-[920px] border-collapse text-left text-xs">
         <thead className="sticky top-0 z-10 bg-raised text-[10px] uppercase tracking-wide text-muted">
           <tr>
             <th className="px-2 py-2 font-medium">Item</th>
@@ -792,11 +834,13 @@ function ActivityTable({
             <th className="px-2 py-2 font-medium">Seller</th>
             <th className="px-2 py-2 font-medium">Seller ID</th>
             <th className="px-2 py-2 font-medium">Qty</th>
-            <th className="px-2 py-2 font-medium">Unit</th>
-            <th className="px-2 py-2 font-medium">Total</th>
+            <th className="px-2 py-2 font-medium">Unit KINS</th>
+            <th className="px-2 py-2 font-medium">Unit $</th>
+            <th className="px-2 py-2 font-medium">Lot KINS</th>
+            <th className="px-2 py-2 font-medium">Lot $</th>
             <th className="px-2 py-2 font-medium">Cur</th>
             <th className="px-2 py-2 font-medium">Time</th>
-            <th className="px-2 py-2 font-medium">Flags</th>
+            <th className="px-2 py-2 font-medium">Status</th>
           </tr>
         </thead>
         <tbody>
@@ -829,15 +873,18 @@ function ActivityTable({
                   {r.sellerId ?? "—"}
                 </td>
                 <td className="px-2 py-2 font-mono tabular-nums">{r.quantity}</td>
-                <td className="px-2 py-2 font-mono tabular-nums">
+                <td className="px-2 py-2 font-mono tabular-nums font-medium">
+                  {formatKins(r.unitKins)}
+                </td>
+                <td className="px-2 py-2 font-mono tabular-nums text-sky-hi">
                   {r.unitUsd
                     ? formatUsd(r.unitUsd, { maxDecimals: 6 })
-                    : formatKins(r.unitKins)}
-                  <div className="text-[10px] text-muted">
-                    {formatKins(r.unitKins)} KINS
-                  </div>
+                    : "—"}
                 </td>
                 <td className="px-2 py-2 font-mono tabular-nums">
+                  {r.totalKins ? formatKins(r.totalKins) : "—"}
+                </td>
+                <td className="px-2 py-2 font-mono tabular-nums text-sky-hi">
                   {r.usdTotal
                     ? formatUsd(r.usdTotal, { maxDecimals: 4 })
                     : "—"}

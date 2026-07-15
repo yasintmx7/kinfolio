@@ -23,11 +23,88 @@ import { cn } from "@/lib/utils";
 
 /** market = both lists at once (default) */
 type Tab = "market" | "floors" | "watch";
+type CurrencyFilter = "all" | "token" | "gold";
+type SortFilter = "cheap" | "new" | "qty";
+type CategoryFilter =
+  | "all"
+  | "resource"
+  | "tool"
+  | "food"
+  | "potion"
+  | "cosmetic"
+  | "mount"
+  | "pet"
+  | "key"
+  | "other";
 
 type SellerFocus = {
   sellerId: string | null;
   sellerName: string | null;
 };
+
+const CATEGORY_CHIPS: { id: CategoryFilter; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "resource", label: "Resources" },
+  { id: "tool", label: "Tools" },
+  { id: "food", label: "Food" },
+  { id: "potion", label: "Potions" },
+  { id: "cosmetic", label: "Cosmetics" },
+  { id: "mount", label: "Mounts" },
+  { id: "pet", label: "Pets" },
+  { id: "key", label: "Keys" },
+  { id: "other", label: "Other" },
+];
+
+const RESOURCES = new Set([
+  "wood",
+  "stone",
+  "coal",
+  "metal",
+  "gold",
+  "brute_horn",
+  "molten_rock",
+]);
+
+const FOOD = new Set([
+  "fish",
+  "raw_chicken",
+  "cooked_chicken",
+  "cooked_fish_meat",
+]);
+
+function itemCategory(itemType: string): CategoryFilter {
+  const t = itemType.toLowerCase();
+  if (t.startsWith("cosmetic_")) return "cosmetic";
+  if (t.startsWith("mount_") || t.endsWith("_mount")) return "mount";
+  if (t.startsWith("pet_") || t.endsWith("_pet")) return "pet";
+  if (
+    t.startsWith("tool_") ||
+    t.includes("pickaxe") ||
+    t.includes("axe") ||
+    t.includes("sword") ||
+    t.includes("hammer") ||
+    t.includes("fishing_rod")
+  )
+    return "tool";
+  if (t.startsWith("potion_") || t.includes("potion")) return "potion";
+  if (t.includes("key")) return "key";
+  if (FOOD.has(t) || t.includes("cooked") || t.includes("food")) return "food";
+  if (
+    RESOURCES.has(t) ||
+    t.includes("wood") ||
+    t.includes("stone") ||
+    t.includes("coal") ||
+    t.includes("metal") ||
+    t.includes("ore")
+  )
+    return "resource";
+  return "other";
+}
+
+function qtySortKey(r: RecentSale): number {
+  const n = Number(r.quantity);
+  return Number.isFinite(n) ? n : 0;
+}
 
 function parseTab(raw: string | null): Tab {
   if (raw === "floors") return "floors";
@@ -119,6 +196,10 @@ function MarketHubInner() {
   const [watch, setWatch] = useState<string[]>([]);
   const [itemFocus, setItemFocus] = useState<string | null>(null);
   const [sellerFocus, setSellerFocus] = useState<SellerFocus | null>(null);
+  const [currencyFilter, setCurrencyFilter] = useState<CurrencyFilter>("all");
+  const [sortFilter, setSortFilter] = useState<SortFilter>("cheap");
+  const [hideLocked, setHideLocked] = useState(true);
+  const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
 
   useEffect(() => {
     setWatch(getWatchlist());
@@ -171,19 +252,68 @@ function MarketHubInner() {
 
   const listingRows = useMemo(() => {
     let list = [...hub.sales];
+
+    if (currencyFilter === "token") {
+      list = list.filter((s) => (s.currency ?? "token") === "token");
+    } else if (currencyFilter === "gold") {
+      list = list.filter((s) => (s.currency ?? "token") === "gold");
+    }
+
+    if (hideLocked) {
+      list = list.filter((s) => !isLocked(s));
+    }
+
+    if (categoryFilter !== "all") {
+      list = list.filter((s) => itemCategory(s.itemType) === categoryFilter);
+    }
+
     const query = q.trim().toLowerCase();
     if (query) list = list.filter((s) => searchMatch(s, query));
+
     list.sort((a, b) => {
-      const la = isLocked(a) ? 1 : 0;
-      const lb = isLocked(b) ? 1 : 0;
-      if (la !== lb) return la - lb;
+      // Open listings first unless user is looking at locks
+      if (!hideLocked) {
+        const la = isLocked(a) ? 1 : 0;
+        const lb = isLocked(b) ? 1 : 0;
+        if (la !== lb) return la - lb;
+      }
+      if (sortFilter === "new") {
+        return Date.parse(b.timestamp) - Date.parse(a.timestamp);
+      }
+      if (sortFilter === "qty") {
+        const dQty = qtySortKey(b) - qtySortKey(a);
+        if (dQty !== 0) return dQty;
+        return unitSortKey(a) - unitSortKey(b);
+      }
+      // cheap — unit price (gold listings use gold amount as proxy if no USD)
       const ua = unitSortKey(a);
       const ub = unitSortKey(b);
-      if (ua !== ub) return ua - ub;
+      if (Number.isFinite(ua) && Number.isFinite(ub) && ua !== ub) {
+        return ua - ub;
+      }
+      // gold-only: sort by priceGold / qty
+      if ((a.currency ?? "token") === "gold" || (b.currency ?? "token") === "gold") {
+        const ga =
+          Number(a.priceGold) / Math.max(Number(a.quantity) || 1, 1);
+        const gb =
+          Number(b.priceGold) / Math.max(Number(b.quantity) || 1, 1);
+        if (Number.isFinite(ga) && Number.isFinite(gb) && ga !== gb) {
+          return ga - gb;
+        }
+      }
       return Date.parse(b.timestamp) - Date.parse(a.timestamp);
     });
     return list;
-  }, [hub.sales, q]);
+  }, [hub.sales, q, currencyFilter, sortFilter, hideLocked, categoryFilter]);
+
+  const filterCounts = useMemo(() => {
+    const base = hub.sales;
+    return {
+      token: base.filter((s) => (s.currency ?? "token") === "token").length,
+      gold: base.filter((s) => (s.currency ?? "token") === "gold").length,
+      locked: base.filter(isLocked).length,
+    };
+  }, [hub.sales]);
 
   /** Sold-only activity (small card) */
   const soldRows = useMemo(() => {
@@ -402,6 +532,97 @@ function MarketHubInner() {
       />
 
       {tab === "market" && (
+        <div className="space-y-3">
+          {/* Filters — currency · sort · locked · category */}
+          <div className="flex flex-col gap-2.5 rounded-2xl border border-border/40 bg-surface/40 p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted">
+                Currency
+              </span>
+              {(
+                [
+                  ["all", `All ${hub.sales.length}`],
+                  ["token", `Token ${filterCounts.token}`],
+                  ["gold", `Gold ${filterCounts.gold}`],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setCurrencyFilter(id)}
+                  className={cn(
+                    "min-h-8 rounded-xl px-3 text-[12px] font-medium",
+                    currencyFilter === id
+                      ? "bg-sky text-[#0a121c]"
+                      : "bg-surface-2 text-muted hover:text-primary",
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+              <span className="mx-1 hidden h-4 w-px bg-border/60 sm:inline" />
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted">
+                Sort
+              </span>
+              {(
+                [
+                  ["cheap", "Cheapest"],
+                  ["new", "Newest"],
+                  ["qty", "Qty"],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setSortFilter(id)}
+                  className={cn(
+                    "min-h-8 rounded-xl px-3 text-[12px] font-medium",
+                    sortFilter === id
+                      ? "bg-sky text-[#0a121c]"
+                      : "bg-surface-2 text-muted hover:text-primary",
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => setHideLocked((v) => !v)}
+                className={cn(
+                  "ml-auto inline-flex min-h-8 items-center gap-1.5 rounded-xl px-3 text-[12px] font-medium",
+                  hideLocked
+                    ? "bg-sky/15 text-sky-hi ring-1 ring-sky/30"
+                    : "bg-surface-2 text-muted hover:text-primary",
+                )}
+              >
+                <Lock className="h-3 w-3" />
+                {hideLocked
+                  ? `Hide locked (${filterCounts.locked})`
+                  : `Show locked (${filterCounts.locked})`}
+              </button>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="mr-1 text-[10px] font-semibold uppercase tracking-wider text-muted">
+                Type
+              </span>
+              {CATEGORY_CHIPS.map(({ id, label }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setCategoryFilter(id)}
+                  className={cn(
+                    "min-h-7 rounded-lg px-2.5 text-[11px] font-medium",
+                    categoryFilter === id
+                      ? "bg-forest/25 text-forest-hi ring-1 ring-forest/40"
+                      : "text-muted hover:bg-surface-2 hover:text-primary",
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:gap-5">
           {/* BIG listings — full open book */}
           <section className="min-w-0 flex-1 overflow-hidden rounded-3xl border border-border/40 bg-surface/35">
@@ -410,7 +631,11 @@ function MarketHubInner() {
                 Listings
               </h2>
               <p className="truncate text-[11px] text-muted">
-                {listingRows.length} · all · lock · cheapest first
+                {listingRows.length} shown
+                {currencyFilter !== "all" ? ` · ${currencyFilter}` : ""}
+                {` · ${sortFilter === "cheap" ? "cheapest" : sortFilter === "new" ? "newest" : "qty"}`}
+                {hideLocked ? " · open only" : ""}
+                {categoryFilter !== "all" ? ` · ${categoryFilter}` : ""}
               </p>
             </header>
             <ListingList
@@ -450,6 +675,7 @@ function MarketHubInner() {
               />
             </section>
           </aside>
+        </div>
         </div>
       )}
 

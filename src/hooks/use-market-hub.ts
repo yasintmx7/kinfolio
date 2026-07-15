@@ -92,10 +92,54 @@ const empty: MarketHubData = {
  * Live book is ~500 token + ~500 gold. Must not slice under ~1000 or we drop
  * listings and miss locker-name reverse-map (seller ids never seen).
  */
-/** sort=cheap keeps the full price book (locks on older cheap lots stay visible). */
-const LISTINGS_URL =
+/**
+ * Dual feed:
+ *  - cheap book = full price ladder + locks on older lots
+ *  - new pages = brand-new listings that may sit above cheap scan
+ * Client merges by listing id so "New" sort and search always see latest.
+ */
+const CHEAP_URL =
   "/api/market/activity?limit=1200&pages=10&gold=1&sort=cheap";
+const NEW_URL = "/api/market/activity?limit=400&pages=4&gold=1&sort=new";
 const SOLD_URL = "/api/market/sold?limit=40";
+
+function mergeListingFeeds(
+  cheap: RecentSale[],
+  newest: RecentSale[],
+): RecentSale[] {
+  const map = new Map<string, RecentSale>();
+  for (const row of cheap) {
+    map.set(String(row.id), row);
+  }
+  for (const row of newest) {
+    const id = String(row.id);
+    const prev = map.get(id);
+    if (!prev) {
+      map.set(id, row);
+      continue;
+    }
+    // Prefer row with fresher lock/price info (reserved or newer ts)
+    const prevTs = Date.parse(prev.timestamp) || 0;
+    const nextTs = Date.parse(row.timestamp) || 0;
+    const preferNew =
+      Boolean(row.reserved) !== Boolean(prev.reserved) ||
+      (row.buyerId ?? "") !== (prev.buyerId ?? "") ||
+      nextTs >= prevTs;
+    if (preferNew) {
+      map.set(id, {
+        ...prev,
+        ...row,
+        // Keep best seller name from either side
+        sellerName: row.sellerName || prev.sellerName,
+        seller: row.sellerName || prev.sellerName || row.seller || prev.seller,
+        sellerId: row.sellerId ?? prev.sellerId,
+      });
+    } else if (!prev.sellerName && row.sellerName) {
+      map.set(id, { ...prev, sellerName: row.sellerName, seller: row.sellerName });
+    }
+  }
+  return [...map.values()];
+}
 
 /**
  * Fingerprint must change when locks/prices change, not only first/last ids.
@@ -314,7 +358,7 @@ export function useMarketHub(pollMs = 5_000) {
       setData((s) => ({ ...s, refreshing: true }));
     }
     try {
-      const activityRes = (await fetchJson(LISTINGS_URL, 18000)) as {
+      type ActRes = {
         ok?: boolean;
         data?: {
           activity?: RecentSale[];
@@ -324,18 +368,31 @@ export function useMarketHub(pollMs = 5_000) {
         };
       };
 
-      setData((prev) => {
-        const nextSalesRaw =
-          activityRes?.ok && Array.isArray(activityRes.data?.activity)
-            ? activityRes.data!.activity!
-            : prev.sales;
+      // Parallel: full cheap book + newest listings (so "New" is never empty of latest)
+      const [cheapRes, newRes] = (await Promise.all([
+        fetchJson(CHEAP_URL, 18000),
+        fetchJson(NEW_URL, 12000),
+      ])) as [ActRes, ActRes];
 
-        // Keep durable sellerId→name map (grows across polls)
-        if (activityRes?.ok && Array.isArray(activityRes.data?.activity)) {
+      const cheapOk =
+        cheapRes?.ok && Array.isArray(cheapRes.data?.activity);
+      const newOk = newRes?.ok && Array.isArray(newRes.data?.activity);
+      const feedOk = cheapOk || newOk;
+
+      setData((prev) => {
+        const cheapRows = cheapOk ? cheapRes.data!.activity! : [];
+        const newRows = newOk ? newRes.data!.activity! : [];
+        const nextSalesRaw = feedOk
+          ? mergeListingFeeds(
+              cheapRows.length ? cheapRows : prev.sales,
+              newRows,
+            )
+          : prev.sales;
+
+        if (feedOk) {
           buildSellerIdNameMap(nextSalesRaw, sellerIdNameRef.current);
         }
 
-        // Fill locker username when reservedBy id matches a known seller
         const nextSales = resolveLockerNames(
           nextSalesRaw,
           sellerIdNameRef.current,
@@ -343,11 +400,9 @@ export function useMarketHub(pollMs = 5_000) {
 
         const fp = listFingerprint(nextSales);
         const sameList =
-          activityRes?.ok &&
-          fp === lastListingsFp.current &&
-          prev.sales.length > 0;
+          feedOk && fp === lastListingsFp.current && prev.sales.length > 0;
 
-        if (activityRes?.ok && Array.isArray(activityRes.data?.activity)) {
+        if (feedOk) {
           lastListingsFp.current = fp;
           if (!sameList) {
             const map = new Map(knownListingsRef.current);
@@ -364,13 +419,19 @@ export function useMarketHub(pollMs = 5_000) {
           }
         }
 
+        const kinsUsd =
+          cheapRes.data?.kinsUsd ?? newRes.data?.kinsUsd ?? prev.kinsUsd;
+        const rateSource =
+          cheapRes.data?.rateSource ??
+          newRes.data?.rateSource ??
+          prev.rateSource;
+
         if (sameList && opts?.silent) {
           return {
             ...prev,
-            // still push resolved locker names if they improved
             sales: nextSales,
-            kinsUsd: activityRes.data?.kinsUsd ?? prev.kinsUsd,
-            rateSource: activityRes.data?.rateSource ?? prev.rateSource,
+            kinsUsd,
+            rateSource,
             loading: false,
             refreshing: false,
             error: null,
@@ -382,25 +443,29 @@ export function useMarketHub(pollMs = 5_000) {
           sellerIdNameRef.current,
         );
 
+        // Newest timestamp in merged set for header freshness
+        let lastAt = prev.lastActivityAt;
+        for (const r of nextSales) {
+          if (!lastAt || Date.parse(r.timestamp) > Date.parse(lastAt)) {
+            lastAt = r.timestamp;
+          }
+        }
+
         return {
           ...prev,
           sales: nextSales,
           sold,
           byItem: buildByItem(nextSales, prev.floors),
-          kinsUsd: activityRes?.ok
-            ? (activityRes.data?.kinsUsd ?? prev.kinsUsd)
-            : prev.kinsUsd,
-          rateSource: activityRes?.ok
-            ? (activityRes.data?.rateSource ?? prev.rateSource)
-            : prev.rateSource,
-          salesNote: activityRes?.ok
-            ? (activityRes.data?.note ?? prev.salesNote)
+          kinsUsd,
+          rateSource,
+          salesNote: feedOk
+            ? "Live book = cheap ladder + newest listings (merged)."
             : prev.salesNote,
           activityCount: nextSales.length,
-          lastActivityAt: nextSales[0]?.timestamp ?? prev.lastActivityAt,
-          configured: Boolean(activityRes?.ok || prev.configured),
+          lastActivityAt: lastAt,
+          configured: Boolean(feedOk || prev.configured),
           error:
-            !activityRes?.ok && prev.sales.length === 0
+            !feedOk && prev.sales.length === 0
               ? "Market data unavailable"
               : null,
           loading: false,

@@ -246,7 +246,8 @@ function MarketHubInner() {
   const [itemFocus, setItemFocus] = useState<string | null>(null);
   const [sellerFocus, setSellerFocus] = useState<SellerFocus | null>(null);
   const [currencyFilter, setCurrencyFilter] = useState<CurrencyFilter>("all");
-  const [sortFilter, setSortFilter] = useState<SortFilter>("cheap");
+  /** Default New so brand-new listings appear first (cheap still one click). */
+  const [sortFilter, setSortFilter] = useState<SortFilter>("new");
   /** false = show locked/reserved rows on the listings page (default) */
   const [hideLocked, setHideLocked] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
@@ -288,16 +289,32 @@ function MarketHubInner() {
   const kinsUsd = price?.priceUsd ?? hub.kinsUsd ?? undefined;
 
   const searchMatch = (s: RecentSale, query: string) => {
-    const seller = (s.sellerName ?? s.seller ?? "").toLowerCase();
+    const qn = query.trim().toLowerCase();
+    if (!qn) return true;
+    const sellerName = (s.sellerName ?? "").toLowerCase();
+    const sellerField = (s.seller ?? "").toLowerCase();
+    const sellerLabel = sellerDisplay(s).toLowerCase();
+    const wallet = (s.sellerWallet ?? "").toLowerCase();
+    const short =
+      wallet.length > 8
+        ? `${wallet.slice(0, 4)}…${wallet.slice(-4)}`.toLowerCase()
+        : "";
     return (
-      s.name.toLowerCase().includes(query) ||
-      s.itemType.toLowerCase().includes(query) ||
-      seller.includes(query) ||
-      String(s.sellerId ?? "").includes(query) ||
-      String(s.listingId ?? s.id).includes(query) ||
-      (query === "lock" && isLocked(s)) ||
-      (query === "locked" && isLocked(s)) ||
-      (query === "reserved" && isLocked(s))
+      s.name.toLowerCase().includes(qn) ||
+      s.itemType.toLowerCase().includes(qn) ||
+      s.itemType.replace(/_/g, " ").includes(qn) ||
+      s.itemType.replace(/_/g, "-").includes(qn) ||
+      sellerName.includes(qn) ||
+      sellerField.includes(qn) ||
+      sellerLabel.includes(qn) ||
+      // Username search: strip # from #12345
+      String(s.sellerId ?? "").includes(qn.replace(/^#/, "")) ||
+      wallet.includes(qn) ||
+      short.includes(qn) ||
+      String(s.listingId ?? s.id).includes(qn) ||
+      (qn === "lock" && isLocked(s)) ||
+      (qn === "locked" && isLocked(s)) ||
+      (qn === "reserved" && isLocked(s))
     );
   };
 
@@ -322,12 +339,8 @@ function MarketHubInner() {
     if (query) list = list.filter((s) => searchMatch(s, query));
 
     list.sort((a, b) => {
-      // When showing locks, pin reserved rows to the top so they are obvious live
-      if (!hideLocked) {
-        const la = isLocked(a) ? 0 : 1;
-        const lb = isLocked(b) ? 0 : 1;
-        if (la !== lb) return la - lb;
-      }
+      // Do NOT pin locks above newest — that hid "latest" under reserved rows.
+      // Locks stay visible with amber styling when hideLocked is off.
       if (sortFilter === "new") {
         return Date.parse(b.timestamp) - Date.parse(a.timestamp);
       }
@@ -336,13 +349,17 @@ function MarketHubInner() {
         if (dQty !== 0) return dQty;
         return unitSortKey(a) - unitSortKey(b);
       }
-      // cheap — unit price (gold listings use gold amount as proxy if no USD)
+      // cheap — open first (locks last), then unit price
+      if (!hideLocked) {
+        const la = isLocked(a) ? 1 : 0;
+        const lb = isLocked(b) ? 1 : 0;
+        if (la !== lb) return la - lb;
+      }
       const ua = unitSortKey(a);
       const ub = unitSortKey(b);
       if (Number.isFinite(ua) && Number.isFinite(ub) && ua !== ub) {
         return ua - ub;
       }
-      // gold-only: sort by priceGold / qty
       if ((a.currency ?? "token") === "gold" || (b.currency ?? "token") === "gold") {
         const ga =
           Number(a.priceGold) / Math.max(Number(a.quantity) || 1, 1);

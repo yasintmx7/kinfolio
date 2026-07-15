@@ -580,7 +580,8 @@ export async function fetchOfficialRecentActivity(options?: {
               category: "all",
               limit: pageSize,
               offset: p * pageSize,
-              cacheTtlSeconds: 6,
+              // Short TTL so 5s client poll sees new listings / locks
+              cacheTtlSeconds: sort === "new" ? 2 : 4,
             });
             return { p, batch, ok: true as const };
           } catch {

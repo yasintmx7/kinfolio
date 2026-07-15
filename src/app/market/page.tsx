@@ -17,6 +17,11 @@ import { cn } from "@/lib/utils";
 
 type Tab = "sales" | "floors" | "watch";
 
+type SellerFocus = {
+  sellerId: string | null;
+  sellerName: string | null;
+};
+
 function MarketHubInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -25,9 +30,6 @@ function MarketHubInner() {
     rawTab === "floors" || rawTab === "watch" || rawTab === "sales"
       ? rawTab
       : "sales";
-  const selectedId = searchParams.get("item") || "";
-  const sellerKey = searchParams.get("seller") || "";
-  const sellerNameParam = searchParams.get("sellerName") || "";
 
   const hub = useMarketHub(10_000);
   const { price, reload: reloadPrice } = useKinsPrice(10_000);
@@ -35,6 +37,10 @@ function MarketHubInner() {
 
   const [q, setQ] = useState("");
   const [watch, setWatch] = useState<string[]>([]);
+  /** Item sheet — local state so clicks always work */
+  const [itemFocus, setItemFocus] = useState<string | null>(null);
+  /** Seller sheet — local state (not URL) so click never races navigation */
+  const [sellerFocus, setSellerFocus] = useState<SellerFocus | null>(null);
 
   useEffect(() => {
     setWatch(getWatchlist());
@@ -47,6 +53,25 @@ function MarketHubInner() {
       router.replace(`/market?${p.toString()}`);
     }
   }, [rawTab, router, searchParams]);
+
+  // Deep-link support: ?item= / ?seller= still open sheets once
+  useEffect(() => {
+    const item = searchParams.get("item");
+    const seller = searchParams.get("seller");
+    const sellerName = searchParams.get("sellerName");
+    if (item) {
+      setItemFocus(item);
+      setSellerFocus(null);
+    } else if (seller || sellerName) {
+      setSellerFocus({
+        sellerId: seller,
+        sellerName: sellerName,
+      });
+      setItemFocus(null);
+    }
+    // only on first meaningful query — avoid fighting local open/close
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const kinsUsd = price?.priceUsd ?? hub.kinsUsd ?? undefined;
 
@@ -79,70 +104,71 @@ function MarketHubInner() {
     return [...list].sort((a, b) => (b.listings ?? 0) - (a.listings ?? 0));
   }, [hub.floors, q, tab, watch]);
 
-  const selected = hub.sales.filter((s) => s.itemType === selectedId);
-  const selectedFloor = hub.floors.find((f) => f.id === selectedId);
+  const selected = useMemo(
+    () =>
+      itemFocus ? hub.sales.filter((s) => s.itemType === itemFocus) : [],
+    [hub.sales, itemFocus],
+  );
+  const selectedFloor = itemFocus
+    ? hub.floors.find((f) => f.id === itemFocus)
+    : undefined;
 
   const sellerListings = useMemo(() => {
-    if (!sellerKey && !sellerNameParam) return [];
+    if (!sellerFocus) return [];
+    const id = sellerFocus.sellerId?.trim() || "";
+    const name = (sellerFocus.sellerName ?? "").trim().toLowerCase();
     return hub.sales.filter((s) => {
-      if (sellerKey && s.sellerId && String(s.sellerId) === sellerKey) {
-        return true;
+      if (id && s.sellerId != null && String(s.sellerId) === id) return true;
+      if (name) {
+        const n = (s.sellerName ?? s.seller ?? "").trim().toLowerCase();
+        if (n && n === name) return true;
       }
-      if (sellerNameParam) {
-        const n = (s.sellerName ?? s.seller ?? "").toLowerCase();
-        return n === sellerNameParam.toLowerCase();
-      }
-      // fallback: sellerKey might be a name if no id
-      if (sellerKey && !s.sellerId) {
-        const n = (s.sellerName ?? s.seller ?? "").toLowerCase();
-        return n === sellerKey.toLowerCase();
+      // seller id used as name fallback
+      if (id && !/^\d+$/.test(id)) {
+        const n = (s.sellerName ?? s.seller ?? "").trim().toLowerCase();
+        if (n === id.toLowerCase()) return true;
       }
       return false;
     });
-  }, [hub.sales, sellerKey, sellerNameParam]);
+  }, [hub.sales, sellerFocus]);
 
   const sellerDisplayName = useMemo(() => {
-    if (sellerNameParam) return sellerNameParam;
+    if (!sellerFocus) return "Seller";
+    if (sellerFocus.sellerName) return sellerFocus.sellerName;
     const hit = sellerListings[0];
-    return hit?.sellerName ?? hit?.seller ?? (sellerKey ? `#${sellerKey}` : "Seller");
-  }, [sellerListings, sellerNameParam, sellerKey]);
+    if (hit?.sellerName ?? hit?.seller) return hit.sellerName ?? hit.seller ?? "Seller";
+    if (sellerFocus.sellerId) return `#${sellerFocus.sellerId}`;
+    return "Seller";
+  }, [sellerFocus, sellerListings]);
 
   function setTab(next: Tab) {
-    const p = new URLSearchParams();
-    p.set("tab", next);
-    router.push(`/market?${p.toString()}`);
+    setItemFocus(null);
+    setSellerFocus(null);
+    router.push(`/market?tab=${next}`);
   }
 
   function openItem(id: string) {
-    const p = new URLSearchParams(searchParams.toString());
-    p.set("item", id);
-    p.delete("seller");
-    p.delete("sellerName");
-    if (!p.get("tab")) p.set("tab", tab);
-    router.push(`/market?${p.toString()}`);
+    setSellerFocus(null);
+    setItemFocus(id);
   }
 
   function openSeller(row: RecentSale) {
-    const p = new URLSearchParams(searchParams.toString());
-    p.delete("item");
-    if (row.sellerId) {
-      p.set("seller", String(row.sellerId));
-    } else {
-      p.set("seller", row.sellerName ?? row.seller ?? "");
-    }
-    if (row.sellerName ?? row.seller) {
-      p.set("sellerName", row.sellerName ?? row.seller ?? "");
-    }
-    if (!p.get("tab")) p.set("tab", tab);
-    router.push(`/market?${p.toString()}`);
+    const name = (row.sellerName ?? row.seller ?? "").trim();
+    const id =
+      row.sellerId != null && String(row.sellerId).trim() !== ""
+        ? String(row.sellerId)
+        : null;
+    if (!name && !id) return;
+    setItemFocus(null);
+    setSellerFocus({
+      sellerId: id,
+      sellerName: name || null,
+    });
   }
 
   function closeSheet() {
-    const p = new URLSearchParams(searchParams.toString());
-    p.delete("item");
-    p.delete("seller");
-    p.delete("sellerName");
-    router.push(`/market?${p.toString()}`);
+    setItemFocus(null);
+    setSellerFocus(null);
   }
 
   function onWatch(id: string) {
@@ -261,30 +287,30 @@ function MarketHubInner() {
         />
       )}
 
-      {selectedId && (
+      {itemFocus && (
         <DetailSheet
-          title={selectedFloor?.name ?? selected[0]?.name ?? selectedId}
+          title={selectedFloor?.name ?? selected[0]?.name ?? itemFocus}
           subtitle={
             selectedFloor?.lowestUsdPerUnit
               ? `Floor ${formatUsdShort(selectedFloor.lowestUsdPerUnit)}/u`
               : "Item listings in feed"
           }
-          itemId={selectedId}
+          itemId={itemFocus}
           rows={selected}
-          watching={watch.includes(selectedId)}
+          watching={watch.includes(itemFocus)}
           onClose={closeSheet}
-          onWatch={() => onWatch(selectedId)}
+          onWatch={() => onWatch(itemFocus)}
           onOpenSeller={openSeller}
           mode="item"
         />
       )}
 
-      {sellerKey && !selectedId && (
+      {sellerFocus && !itemFocus && (
         <DetailSheet
           title={sellerDisplayName}
           subtitle={
-            sellerKey && /^\d+$/.test(sellerKey)
-              ? `Seller #${sellerKey} · ${sellerListings.length} listings`
+            sellerFocus.sellerId && /^\d+$/.test(sellerFocus.sellerId)
+              ? `Seller #${sellerFocus.sellerId} · ${sellerListings.length} listings`
               : `${sellerListings.length} listings in feed`
           }
           rows={sellerListings}
@@ -302,7 +328,6 @@ function MarketHubInner() {
   );
 }
 
-/** e.g. "5k Wood" + "$0.10" */
 function LiveList({
   rows,
   onOpenItem,
@@ -328,58 +353,68 @@ function LiveList({
     <div className="overflow-hidden rounded-3xl border border-border/40 bg-surface/35">
       <div className="max-h-[calc(100dvh-15rem)] divide-y divide-border/25 overflow-y-auto">
         {rows.map((r) => {
-          const seller = r.sellerName ?? r.seller ?? "—";
+          const seller = (r.sellerName ?? r.seller ?? "").trim() || "Unknown";
           const unit$ = r.unitUsd ?? null;
           const lot$ = r.usdTotal ?? null;
           const qtyLabel = formatQtyCompact(r.quantity);
+          const canOpenSeller = Boolean(
+            (r.sellerName ?? r.seller ?? "").trim() || r.sellerId != null,
+          );
 
           return (
             <div
               key={r.id}
-              className="flex items-center gap-3 px-4 py-3.5 hover:bg-sky/[0.04]"
+              className="flex items-center gap-2 px-3 py-3 sm:gap-3 sm:px-4 sm:py-3.5"
             >
-              <div className="flex min-w-0 flex-1 items-center gap-3">
+              <button
+                type="button"
+                onClick={() => onOpenItem(r.itemType)}
+                className="shrink-0 rounded-2xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky"
+                aria-label={`Open ${r.name}`}
+              >
+                <ItemIcon itemId={r.itemType} name={r.name} size={52} clear />
+              </button>
+
+              <div className="min-w-0 flex-1">
                 <button
                   type="button"
                   onClick={() => onOpenItem(r.itemType)}
-                  className="shrink-0"
-                  aria-label={`Open ${r.name}`}
+                  className="block w-full truncate text-left text-[16px] font-semibold tracking-tight hover:text-sky-hi"
                 >
-                  <ItemIcon
-                    itemId={r.itemType}
-                    name={r.name}
-                    size={52}
-                    clear
-                  />
+                  <span className="font-mono tabular-nums text-sky-hi">
+                    {qtyLabel}
+                  </span>{" "}
+                  {r.name}
                 </button>
-                <div className="min-w-0">
-                  <button
-                    type="button"
-                    onClick={() => onOpenItem(r.itemType)}
-                    className="block w-full truncate text-left text-[16px] font-semibold tracking-tight hover:text-sky-hi"
-                  >
-                    <span className="font-mono tabular-nums text-sky-hi">
-                      {qtyLabel}
-                    </span>{" "}
-                    {r.name}
-                  </button>
-                  <div className="mt-0.5 truncate text-[12px] text-muted">
-                    <button
-                      type="button"
-                      onClick={() => onOpenSeller(r)}
-                      className="font-medium text-sky-hi/90 underline-offset-2 hover:underline"
-                    >
-                      {seller}
-                    </button>
-                    {r.sellerId ? (
-                      <span className="font-mono"> · #{r.sellerId}</span>
-                    ) : null}
-                    <span className="text-muted/70">
-                      {" · "}
-                      {new Date(r.timestamp).toLocaleTimeString()}
+
+                {/* Large touch target for seller — separate from item */}
+                <button
+                  type="button"
+                  disabled={!canOpenSeller}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onOpenSeller(r);
+                  }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  className={cn(
+                    "mt-0.5 flex min-h-8 max-w-full items-center gap-1 rounded-lg px-0 py-0.5 text-left text-[12px]",
+                    canOpenSeller
+                      ? "text-sky-hi underline decoration-sky/40 underline-offset-2 hover:bg-sky/10 hover:decoration-sky active:bg-sky/15"
+                      : "cursor-default text-muted",
+                  )}
+                  aria-label={`View all listings by ${seller}`}
+                >
+                  <span className="truncate font-medium">{seller}</span>
+                  {r.sellerId != null && (
+                    <span className="shrink-0 font-mono text-muted">
+                      #{r.sellerId}
                     </span>
-                  </div>
-                </div>
+                  )}
+                  <span className="shrink-0 text-muted/70">
+                    · {new Date(r.timestamp).toLocaleTimeString()}
+                  </span>
+                </button>
               </div>
 
               <button
@@ -533,7 +568,7 @@ function DetailSheet({
   mode: "item" | "seller";
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:justify-end">
+    <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center sm:justify-end">
       <button
         type="button"
         className="absolute inset-0 bg-black/55"
@@ -602,20 +637,22 @@ function DetailSheet({
                       {title}
                     </div>
                   )}
-                  <div className="truncate text-[12px] text-muted">
+                  <div className="mt-0.5 truncate text-[12px] text-muted">
                     {mode === "item" ? (
                       <button
                         type="button"
-                        onClick={() => onOpenSeller?.(s)}
-                        className="font-medium text-sky-hi/90 underline-offset-2 hover:underline"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          onOpenSeller?.(s);
+                        }}
+                        className="min-h-8 rounded-lg font-medium text-sky-hi underline decoration-sky/40 underline-offset-2 hover:bg-sky/10"
                       >
                         {s.sellerName ?? s.seller ?? "—"}
-                        {s.sellerId ? ` · #${s.sellerId}` : ""}
+                        {s.sellerId != null ? ` · #${s.sellerId}` : ""}
                       </button>
                     ) : (
-                      <span>
-                        {new Date(s.timestamp).toLocaleString()}
-                      </span>
+                      <span>{new Date(s.timestamp).toLocaleString()}</span>
                     )}
                   </div>
                 </div>

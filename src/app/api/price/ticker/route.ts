@@ -1,27 +1,26 @@
 import { fail, ok } from "@/lib/api/response";
-import { fetchKintaraMarketTicker } from "@/lib/prices/kintaramarket-ticker";
+import { resolveKinsUsd } from "@/lib/prices/resolve-kins-usd";
 
 export const runtime = "nodejs";
 
-/** Direct proxy for https://kintaramarket.xyz/api/ticker */
+/** KINS rate via DexScreener / CoinGecko (same as /api/price/kins). */
 export async function GET() {
   try {
-    const ticker = await fetchKintaraMarketTicker();
-    if (!ticker) {
-      return fail("TICKER_UNAVAILABLE", "kintaramarket.xyz ticker unavailable.", {
+    const rate = await resolveKinsUsd();
+    if (!rate) {
+      return fail("TICKER_UNAVAILABLE", "KINS price unavailable.", {
         status: 503,
         retryable: true,
       });
     }
     return ok(
       {
-        kinsUsd: String(ticker.kinsUsd),
-        goldFloorUsd:
-          ticker.goldFloorUsd != null ? String(ticker.goldFloorUsd) : null,
+        kinsUsd: String(rate.kinsUsd),
+        goldFloorUsd: null,
       },
       {
-        source: ticker.source,
-        updatedAt: ticker.updatedAt,
+        source: rate.source,
+        updatedAt: new Date().toISOString(),
         cacheControl: "public, s-maxage=20, stale-while-revalidate=60",
       },
     );

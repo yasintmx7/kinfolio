@@ -1,5 +1,15 @@
-import { getKintaraApiConfig } from "@/config/kintara-api";
-import { fetchWithTimeout } from "@/lib/api/cache";
+/**
+ * Marketplace adapter — official kintara.com read-only paths.
+ * Write endpoints (reserve/quote/buy) are never implemented.
+ */
+
+import {
+  fetchOfficialItemStats,
+  fetchOfficialListingsForItem,
+  buildOfficialFloorBoard,
+} from "@/lib/kintara/official-marketplace";
+import { resolveKinsUsd } from "@/lib/prices/resolve-kins-usd";
+import { humanizeItemType } from "@/lib/kintara/item-type-map";
 import { z } from "zod";
 
 export type SoldSample = {
@@ -72,16 +82,6 @@ const statsResponseSchema = z.object({
   sales30d: z.number().optional(),
 });
 
-function fillTemplate(template: string, vars: Record<string, string>): string {
-  return template.replace(/\{(\w+)\}/g, (_, key: string) => vars[key] ?? "");
-}
-
-function joinUrl(base: string, path: string): string {
-  if (!base) return path;
-  if (!path) return base;
-  return `${base.replace(/\/$/, "")}/${path.replace(/^\//, "")}`;
-}
-
 export function normalizeItemStats(
   itemId: string,
   payload: unknown,
@@ -108,192 +108,57 @@ export function normalizeItemStats(
   };
 }
 
-async function resolveKinsUsd(): Promise<number | undefined> {
-  try {
-    const { resolveKinsUsdForMarket } = await import(
-      "@/lib/prices/kintaramarket-ticker"
-    );
-    const resolved = await resolveKinsUsdForMarket();
-    return resolved?.kinsUsd;
-  } catch {
-    return undefined;
-  }
-}
-
 export class ConfigurableMarketplaceAdapter implements KintaraMarketplaceAdapter {
   async getCatalog(): Promise<MarketplaceItem[]> {
-    const cfg = getKintaraApiConfig();
-    if (!cfg.catalog.enabled) return [];
-
-    if (cfg.provider === "kintaramarket.xyz") {
-      const { getCatalogFromKintaraMarket } = await import(
-        "@/lib/kintara/kintaramarket-xyz"
-      );
-      return getCatalogFromKintaraMarket();
-    }
-
-    const url = joinUrl(cfg.baseUrl, cfg.catalog.pathTemplate);
-    const res = await fetchWithTimeout(url, { timeoutMs: cfg.catalog.timeoutMs });
-    if (!res.ok) throw new Error(`Catalog fetch failed: ${res.status}`);
-    const json: unknown = await res.json();
-    if (!Array.isArray(json)) return [];
-    return json.map((row, i) => {
-      const r = row as Record<string, unknown>;
-      return {
-        id: String(r.id ?? r.itemId ?? r.itemType ?? i),
-        name: String(r.name ?? r.title ?? r.itemType ?? "Unknown"),
-        imageUrl: r.imageUrl ? String(r.imageUrl) : r.image ? String(r.image) : undefined,
-      };
+    const rate = await resolveKinsUsd();
+    const floors = await buildOfficialFloorBoard({
+      pages: 4,
+      kinsUsd: rate?.kinsUsd,
     });
+    return floors.map((f) => ({
+      id: f.itemType,
+      name: f.name || humanizeItemType(f.itemType),
+    }));
   }
 
   async getActiveListings(itemId: string): Promise<MarketplaceListing[]> {
-    const cfg = getKintaraApiConfig();
-    if (!cfg.listings.enabled) return [];
-
-    if (cfg.provider === "kintaramarket.xyz") {
-      const kinsUsd = await resolveKinsUsd();
-      const { getListingsFromKintaraMarket } = await import(
-        "@/lib/kintara/kintaramarket-xyz"
-      );
-      return getListingsFromKintaraMarket(itemId, kinsUsd);
-    }
-
-    const path = fillTemplate(cfg.listings.pathTemplate, { itemId });
-    const url = joinUrl(cfg.baseUrl, path);
-    const res = await fetchWithTimeout(url, { timeoutMs: cfg.listings.timeoutMs });
-    if (!res.ok) throw new Error(`Listings fetch failed: ${res.status}`);
-    const json: unknown = await res.json();
-    const rows = Array.isArray(json)
-      ? json
-      : Array.isArray((json as { listings?: unknown }).listings)
-        ? (json as { listings: unknown[] }).listings
-        : [];
-    return rows.map((row, i) => {
-      const r = row as Record<string, unknown>;
-      const qty = String(r.quantity ?? r.qty ?? "1");
-      const total = String(r.totalPriceKins ?? r.totalPrice ?? r.price ?? "0");
-      const unit =
-        r.unitPriceKins != null
-          ? String(r.unitPriceKins)
-          : String(Number(total) / Math.max(Number(qty) || 1, 1));
-      return {
-        id: String(r.id ?? `${itemId}-${i}`),
-        itemId,
-        quantity: qty,
-        totalPriceKins: total,
-        unitPriceKins: unit,
-        seller: r.seller ? String(r.seller) : r.sellerName ? String(r.sellerName) : undefined,
-        createdAt: r.createdAt ? String(r.createdAt) : undefined,
-      };
+    const rate = await resolveKinsUsd();
+    return fetchOfficialListingsForItem(itemId, {
+      pages: 4,
+      kinsUsd: rate?.kinsUsd,
     });
   }
 
   async getItemStats(itemId: string): Promise<ItemMarketStats> {
-    const cfg = getKintaraApiConfig();
-    if (!cfg.itemStats.enabled) {
-      return {
-        itemId,
-        currency: "unknown",
-        samples: [],
-        updatedAt: new Date().toISOString(),
-      };
-    }
-
-    if (cfg.provider === "kintaramarket.xyz") {
-      const kinsUsd = await resolveKinsUsd();
-      const { getStatsFromKintaraMarket } = await import(
-        "@/lib/kintara/kintaramarket-xyz"
-      );
-      return getStatsFromKintaraMarket(itemId, kinsUsd);
-    }
-
-    const path = fillTemplate(cfg.itemStats.pathTemplate, { itemId });
-    const url = joinUrl(cfg.baseUrl, path);
-    const res = await fetchWithTimeout(url, { timeoutMs: cfg.itemStats.timeoutMs });
-    if (!res.ok) throw new Error(`Stats fetch failed: ${res.status}`);
-    const json: unknown = await res.json();
-    // If response is a listings array (kintaramarket-style), normalize via stats helper shape
-    if (Array.isArray(json)) {
-      return normalizeItemStats(itemId, {
-        currency: "token",
-        samples: json.slice(0, 30).map((row) => {
-          const r = row as Record<string, unknown>;
-          return {
-            unitPrice: r.unitPrice ?? r.avgUnitPrice,
-            sales: r.sales,
-            quantity: r.quantity,
-            date: r.date,
-          };
-        }),
-      });
-    }
-    return normalizeItemStats(itemId, json);
+    const rate = await resolveKinsUsd();
+    return fetchOfficialItemStats(itemId, rate?.kinsUsd);
   }
 
   async getSoldHistory(itemId: string, _range?: TimeRange): Promise<SoldSample[]> {
     void _range;
-    // Prefer completed sales from kintrade.xyz
-    try {
-      const { fetchRecentSales, salesToSoldSamples } = await import(
-        "@/lib/kintara/kintrade-sales"
-      );
-      const sales = await fetchRecentSales({
-        itemType: itemId,
-        limit: 50,
-      });
-      if (sales.length) return salesToSoldSamples(sales);
-    } catch {
-      // fall through
-    }
-
-    const cfg = getKintaraApiConfig();
-    if (cfg.provider === "kintaramarket.xyz") {
-      const stats = await this.getItemStats(itemId);
-      return stats.samples;
-    }
-    if (!cfg.soldHistory.enabled) return [];
-    const path = fillTemplate(cfg.soldHistory.pathTemplate, { itemId });
-    const url = joinUrl(cfg.baseUrl, path);
-    const res = await fetchWithTimeout(url, { timeoutMs: cfg.soldHistory.timeoutMs });
-    if (!res.ok) throw new Error(`Sold history fetch failed: ${res.status}`);
-    const json: unknown = await res.json();
-    return normalizeItemStats(itemId, json).samples;
+    const stats = await this.getItemStats(itemId);
+    return stats.samples;
   }
 
   async getReferencePrices(
     itemIds: string[],
   ): Promise<Record<string, ReferencePrice>> {
-    const cfg = getKintaraApiConfig();
-    if (cfg.provider === "kintaramarket.xyz") {
-      const kinsUsd = await resolveKinsUsd();
-      if (kinsUsd == null) return {};
-      const { getReferencePricesFromKintaraMarket } = await import(
-        "@/lib/kintara/kintaramarket-xyz"
-      );
-      return getReferencePricesFromKintaraMarket(itemIds, kinsUsd);
-    }
-
+    const rate = await resolveKinsUsd();
+    const floors = await buildOfficialFloorBoard({
+      pages: 5,
+      kinsUsd: rate?.kinsUsd,
+    });
     const out: Record<string, ReferencePrice> = {};
-    for (const itemId of itemIds) {
-      try {
-        const stats = await this.getItemStats(itemId);
-        const price =
-          stats.lowestActiveKins ?? stats.medianCheapest3Kins ?? stats.avg30dKins;
-        if (price) {
-          out[itemId] = {
-            itemId,
-            unitPriceKins: price,
-            method: stats.lowestActiveKins
-              ? "lowest_active_listing"
-              : stats.medianCheapest3Kins
-                ? "median_cheapest_3"
-                : "avg_30d",
-            updatedAt: stats.updatedAt,
-          };
-        }
-      } catch {
-        // skip item
+    const now = new Date().toISOString();
+    for (const id of itemIds) {
+      const row = floors.find((f) => f.itemType === id);
+      if (row?.lowestKinsPerUnit) {
+        out[id] = {
+          itemId: id,
+          unitPriceKins: row.lowestKinsPerUnit,
+          method: "lowest_active_listing",
+          updatedAt: now,
+        };
       }
     }
     return out;

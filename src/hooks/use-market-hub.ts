@@ -23,10 +23,10 @@ export type RecentSale = {
   unitKins: string;
   unitUsd?: string | null;
   usdTotal: string | null;
-  kinsTotal?: string;
   timestamp: string;
   solscanUrl: string | null;
   portfolioItemId?: string | null;
+  seller?: string;
 };
 
 export type MarketHubData = {
@@ -71,52 +71,63 @@ export function useMarketHub(pollMs = 45000) {
 
   const reload = useCallback(async () => {
     try {
-      const [floorsRes, salesRes, goneRes] = await Promise.all([
+      const [floorsRes, activityRes] = await Promise.all([
         fetch("/api/market/items", { cache: "no-store" }).then((r) => r.json()),
-        fetch("/api/market/recent-sales?limit=80", { cache: "no-store" }).then(
-          (r) => r.json(),
+        fetch("/api/market/activity?limit=60", { cache: "no-store" }).then((r) =>
+          r.json(),
         ),
-        fetch("/api/market/gone", { cache: "no-store" })
-          .then((r) => r.json())
-          .catch(() => null),
       ]);
 
       const floors: MarketFloorItem[] = floorsRes.ok
         ? (floorsRes.data.items ?? [])
         : [];
-      const sales: RecentSale[] = salesRes.ok
-        ? (salesRes.data.sales ?? []).map(
-            (s: RecentSale & { unitUsd?: string | null }) => ({
-              ...s,
-              unitUsd: s.unitUsd ?? null,
-            }),
-          )
+      const sales: RecentSale[] = activityRes.ok
+        ? (activityRes.data.activity ?? [])
         : [];
-      const byItem = salesRes.ok ? (salesRes.data.byItem ?? []) : [];
+
+      // Derive simple per-item medians from activity tape (unit prices)
+      const byType = new Map<string, number[]>();
+      for (const s of sales) {
+        const n = Number(s.unitKins);
+        if (!Number.isFinite(n) || n <= 0) continue;
+        const list = byType.get(s.itemType) ?? [];
+        list.push(n);
+        byType.set(s.itemType, list);
+      }
+      const byItem = [...byType.entries()].map(([itemType, vals]) => {
+        const sorted = [...vals].sort((a, b) => a - b);
+        const mid = Math.floor(sorted.length / 2);
+        const median =
+          sorted.length % 2
+            ? sorted[mid]
+            : (sorted[mid - 1] + sorted[mid]) / 2;
+        const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+        const floor = floors.find((f) => f.id === itemType);
+        return {
+          itemType,
+          name: floor?.name ?? itemType,
+          saleCount: vals.length,
+          medianUnitKins: String(median),
+          avgUnitKins: String(avg),
+          lastSaleAt: null as string | null,
+          lastUnitKins: String(sorted[sorted.length - 1] ?? median),
+        };
+      });
 
       setData({
         floors,
         sales,
         byItem,
-        kinsUsd: floorsRes.ok
-          ? (floorsRes.data.kinsUsd ?? null)
-          : null,
-        goldFloorUsd: floorsRes.ok
-          ? (floorsRes.data.goldFloorUsd ?? null)
-          : null,
-        rateSource: floorsRes.ok
-          ? (floorsRes.data.rateSource ?? null)
-          : null,
-        goneCount:
-          goneRes?.ok && typeof goneRes.data?.count === "number"
-            ? goneRes.data.count
-            : null,
+        kinsUsd: floorsRes.ok ? (floorsRes.data.kinsUsd ?? null) : null,
+        goldFloorUsd: null,
+        rateSource: floorsRes.ok ? (floorsRes.data.rateSource ?? null) : null,
+        goneCount: null,
         floorsUpdatedAt: floorsRes.updatedAt,
-        salesNote: salesRes.ok ? salesRes.data.note : null,
+        salesNote: activityRes.ok ? activityRes.data.note : null,
         floorsNote: floorsRes.ok ? floorsRes.data.note : null,
-        configured: Boolean(floorsRes.ok && floorsRes.data.configured),
+        configured: Boolean(floorsRes.ok && floorsRes.data.configured !== false),
         error:
-          !floorsRes.ok && !salesRes.ok
+          !floorsRes.ok && !activityRes.ok
             ? "Market data unavailable"
             : null,
         loading: false,

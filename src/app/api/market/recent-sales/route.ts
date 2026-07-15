@@ -1,53 +1,33 @@
-import { fail, ok } from "@/lib/api/response";
-import { STATIC_CATALOG } from "@/data/static-catalog";
-import { marketTypeToPortfolioId } from "@/lib/kintara/item-type-map";
-import {
-  fetchRecentSales,
-  summarizeSalesByItem,
-} from "@/lib/kintara/kintrade-sales";
+import { ok } from "@/lib/api/response";
+import { fetchOfficialRecentActivity } from "@/lib/kintara/official-marketplace";
+import { resolveKinsUsd } from "@/lib/prices/resolve-kins-usd";
 
 export const runtime = "nodejs";
 
-/**
- * Read-only proxy for https://www.kintrade.xyz/api/recent-sales
- * Query: itemType (optional), limit (optional, default 40)
- */
+/** Alias: recent marketplace activity from official listings. */
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const itemType = searchParams.get("itemType")?.trim() || undefined;
-  const limitRaw = searchParams.get("limit");
-  const limit = limitRaw ? Number(limitRaw) : 40;
-  const safeLimit = Number.isFinite(limit) ? Math.min(Math.max(limit, 1), 100) : 40;
-
+  const limit = Number(new URL(request.url).searchParams.get("limit") ?? "50");
   try {
-    const sales = await fetchRecentSales({ itemType, limit: safeLimit });
-    const enriched = sales.map((s) => ({
-      ...s,
-      portfolioItemId: marketTypeToPortfolioId(s.itemType, STATIC_CATALOG),
-      solscanUrl: s.signature
-        ? `https://solscan.io/tx/${s.signature}`
-        : null,
-    }));
-
+    const rate = await resolveKinsUsd();
+    const rows = await fetchOfficialRecentActivity({
+      limit: Number.isFinite(limit) ? Math.min(Math.max(limit, 1), 100) : 50,
+      kinsUsd: rate?.kinsUsd,
+    });
     return ok(
       {
-        sales: enriched,
-        byItem: summarizeSalesByItem(sales),
-        source: "kintrade.xyz",
-        note:
-          "Completed marketplace sales (read-only). unitKins is buyer-paid KINS per unit. Not a guaranteed future sale price.",
+        sales: rows.map((r) => ({
+          ...r,
+          solscanUrl: null,
+        })),
+        byItem: [],
+        note: "Newest official marketplace listings (read-only).",
       },
-      {
-        source: "kintrade.xyz",
-        updatedAt: new Date().toISOString(),
-        cacheControl: "public, s-maxage=30, stale-while-revalidate=90",
-      },
+      { source: "kintara.com", updatedAt: new Date().toISOString() },
     );
-  } catch (e) {
-    return fail(
-      "RECENT_SALES_ERROR",
-      e instanceof Error ? e.message : "Failed to load recent sales",
-      { status: 502, retryable: true },
+  } catch {
+    return ok(
+      { sales: [], byItem: [], note: "Activity unavailable." },
+      { source: "kintara.com" },
     );
   }
 }

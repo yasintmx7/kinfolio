@@ -3,17 +3,12 @@ import {
   fetchOfficialListings,
   fetchOfficialListingsForItem,
 } from "@/lib/kintara/official-marketplace";
-import { resolveKinsUsdForMarket } from "@/lib/prices/kintaramarket-ticker";
-import { marketTypeToPortfolioId } from "@/lib/kintara/item-type-map";
+import { resolveKinsUsd } from "@/lib/prices/resolve-kins-usd";
+import { marketTypeToPortfolioId, humanizeItemType } from "@/lib/kintara/item-type-map";
 import { STATIC_CATALOG } from "@/data/static-catalog";
-import { humanizeItemType } from "@/lib/kintara/item-type-map";
 
 export const runtime = "nodejs";
 
-/**
- * Official kintara.com marketplace listings (read-only).
- * Query: itemType?, sort?, currency?, limit?, offset?
- */
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const itemType = searchParams.get("itemType")?.trim() || undefined;
@@ -23,7 +18,7 @@ export async function GET(request: Request) {
   const offset = Number(searchParams.get("offset") ?? "0");
 
   try {
-    const rate = await resolveKinsUsdForMarket();
+    const rate = await resolveKinsUsd();
     const kinsUsd = rate?.kinsUsd;
 
     if (itemType) {
@@ -39,8 +34,6 @@ export async function GET(request: Request) {
           count: listings.length,
           provider: "kintara.com",
           kinsUsd: kinsUsd != null ? String(kinsUsd) : null,
-          note:
-            "Official listings filtered client-side by itemType; gone IDs excluded. Read-only.",
         },
         {
           source: "kintara.com",
@@ -82,7 +75,6 @@ export async function GET(request: Request) {
         count: rows.length,
         provider: "kintara.com",
         kinsUsd: kinsUsd != null ? String(kinsUsd) : null,
-        note: "Official marketplace listings. priceUsd is lot total. Read-only.",
       },
       {
         source: "kintara.com",
@@ -93,7 +85,7 @@ export async function GET(request: Request) {
   } catch (e) {
     return fail(
       "OFFICIAL_LISTINGS_ERROR",
-      e instanceof Error ? e.message : "Failed to load official listings",
+      e instanceof Error ? e.message : "Failed to load listings",
       { status: 502, retryable: true },
     );
   }

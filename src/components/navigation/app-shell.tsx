@@ -23,7 +23,7 @@ import { Logo } from "@/components/brand/logo";
 const MARKET_SIDEBAR = [
   { href: "/market", tab: "overview", label: "Market hub", icon: Store },
   { href: "/market?tab=floors", tab: "floors", label: "Floors", icon: Store },
-  { href: "/market?tab=sales", tab: "sales", label: "Live sales", icon: BarChart3 },
+  { href: "/market?tab=sales", tab: "sales", label: "Activity", icon: BarChart3 },
   { href: "/market?tab=watch", tab: "watch", label: "Watchlist", icon: Star },
 ] as const;
 
@@ -139,9 +139,9 @@ function ShellInner({ children }: { children: React.ReactNode }) {
         </div>
 
         <div className="border-t border-border/80 p-3 text-[11px] leading-relaxed text-muted">
-          kintaramarket.xyz · kintrade.xyz · kintara.com
+          Official marketplace data · community tool
           <br />
-          Community · not affiliated with Kintara
+          Not affiliated with Kintara
         </div>
       </aside>
 

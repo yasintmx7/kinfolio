@@ -114,7 +114,7 @@ export async function fetchOfficialListingsForItem(
   itemType: string,
   options?: { pages?: number; limit?: number; kinsUsd?: number },
 ): Promise<MarketplaceListing[]> {
-  const pages = options?.pages ?? 3;
+  const pages = options?.pages ?? 4;
   const limit = options?.limit ?? 60;
   const want = itemType.toLowerCase();
   const collected: OfficialListing[] = [];
@@ -135,18 +135,8 @@ export async function fetchOfficialListingsForItem(
     if (batch.length < limit) break;
   }
 
-  // Filter gone ids
-  let gone: Set<string> | null = null;
-  try {
-    const { fetchGoneListingIds } = await import("@/lib/kintara/kintrade-gone");
-    gone = (await fetchGoneListingIds()).idSet;
-  } catch {
-    // ignore
-  }
-
   const kinsUsd = options?.kinsUsd;
   return collected
-    .filter((r) => !gone?.has(String(r.id)))
     .map((r) => {
       const qty = Math.max(r.quantity || 1, 1);
       const unitKins =
@@ -168,6 +158,139 @@ export async function fetchOfficialListingsForItem(
       };
     })
     .sort((a, b) => d(a.unitPriceKins).cmp(d(b.unitPriceKins)));
+}
+
+export type OfficialFloorRow = {
+  itemType: string;
+  name: string;
+  listings: number;
+  totalQty: number;
+  lowestUsdPerUnit: string | null;
+  lowestKinsPerUnit: string | null;
+  kinsListings: number;
+  goldListings: number;
+};
+
+/** Aggregate many pages of official cheap listings into a floor board. */
+export async function buildOfficialFloorBoard(options?: {
+  pages?: number;
+  limit?: number;
+  kinsUsd?: number;
+}): Promise<OfficialFloorRow[]> {
+  const pages = options?.pages ?? 5;
+  const limit = options?.limit ?? 60;
+  const cacheKey = `official:floor-board:${pages}:${limit}:${options?.kinsUsd ?? "x"}`;
+  const cached = getCached<OfficialFloorRow[]>(cacheKey);
+  if (cached && !cached.stale) return cached.value;
+
+  const byType = new Map<
+    string,
+    {
+      listings: number;
+      totalQty: number;
+      lowestUsd: number | null;
+      kinsListings: number;
+      goldListings: number;
+    }
+  >();
+
+  for (let p = 0; p < pages; p++) {
+    const batch = await fetchOfficialListings({
+      sort: "cheap",
+      currency: "token",
+      category: "all",
+      limit,
+      offset: p * limit,
+    });
+    for (const row of batch) {
+      if (row.isReserved) continue;
+      const cur = byType.get(row.itemType) ?? {
+        listings: 0,
+        totalQty: 0,
+        lowestUsd: null as number | null,
+        kinsListings: 0,
+        goldListings: 0,
+      };
+      cur.listings += 1;
+      cur.totalQty += row.quantity || 0;
+      if ((row.currency ?? "token") === "token") cur.kinsListings += 1;
+      else cur.goldListings += 1;
+      if (row.unitUsd != null && Number.isFinite(row.unitUsd)) {
+        if (cur.lowestUsd == null || row.unitUsd < cur.lowestUsd) {
+          cur.lowestUsd = row.unitUsd;
+        }
+      }
+      byType.set(row.itemType, cur);
+    }
+    if (batch.length < limit) break;
+  }
+
+  const kinsUsd = options?.kinsUsd;
+  const rows: OfficialFloorRow[] = [...byType.entries()]
+    .map(([itemType, v]) => ({
+      itemType,
+      name: humanizeItemType(itemType),
+      listings: v.listings,
+      totalQty: v.totalQty,
+      lowestUsdPerUnit: v.lowestUsd != null ? String(v.lowestUsd) : null,
+      lowestKinsPerUnit:
+        kinsUsd != null && v.lowestUsd != null
+          ? usdToKins(v.lowestUsd, kinsUsd)
+          : null,
+      kinsListings: v.kinsListings,
+      goldListings: v.goldListings,
+    }))
+    .sort((a, b) => b.listings - a.listings);
+
+  setCache(cacheKey, rows, 45);
+  return rows;
+}
+
+/** Newest token listings as market activity tape (official API). */
+export async function fetchOfficialRecentActivity(options?: {
+  limit?: number;
+  kinsUsd?: number;
+}): Promise<
+  {
+    id: string;
+    itemType: string;
+    name: string;
+    quantity: string;
+    unitKins: string;
+    unitUsd: string | null;
+    usdTotal: string | null;
+    timestamp: string;
+    seller?: string;
+  }[]
+> {
+  const limit = options?.limit ?? 60;
+  const rows = await fetchOfficialListings({
+    sort: "new",
+    currency: "token",
+    category: "all",
+    limit,
+    offset: 0,
+  });
+  const kinsUsd = options?.kinsUsd;
+  return rows
+    .filter((r) => !r.isReserved)
+    .map((r) => {
+      const unitUsd = r.unitUsd;
+      return {
+        id: String(r.id),
+        itemType: r.itemType,
+        name: humanizeItemType(r.itemType),
+        quantity: String(r.quantity),
+        unitKins:
+          kinsUsd != null && unitUsd != null
+            ? usdToKins(unitUsd, kinsUsd) ?? "0"
+            : String(unitUsd ?? 0),
+        unitUsd: unitUsd != null ? String(unitUsd) : null,
+        usdTotal: r.priceUsd != null ? String(r.priceUsd) : null,
+        timestamp: r.createdAt ?? new Date().toISOString(),
+        seller: r.sellerName,
+      };
+    });
 }
 
 export async function fetchOfficialItemStats(

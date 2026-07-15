@@ -156,7 +156,7 @@ function MarketHubInner() {
   const tabs: { id: Tab; label: string }[] = [
     { id: "overview", label: "Overview" },
     { id: "floors", label: "Floors" },
-    { id: "sales", label: "Live sales" },
+    { id: "sales", label: "Activity" },
     { id: "watch", label: "Watchlist" },
   ];
 
@@ -172,25 +172,8 @@ function MarketHubInner() {
             Floors + live sales
           </h1>
           <p className="mt-1.5 max-w-xl text-sm text-muted">
-            Combines{" "}
-            <a
-              href="https://kintaramarket.xyz"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sky underline underline-offset-2"
-            >
-              kintaramarket.xyz
-            </a>{" "}
-            floors with{" "}
-            <a
-              href="https://www.kintrade.xyz"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sky underline underline-offset-2"
-            >
-              kintrade.xyz
-            </a>{" "}
-            completed trades — edge, watchlist, item drill-down.
+            Live floors and newest listings from the official Kintara marketplace.
+            Watchlist, edge vs recent listing prices, and item drill-down.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -223,27 +206,21 @@ function MarketHubInner() {
           </p>
         </Card>
         <Card>
-          <CardTitle>Gold floor</CardTitle>
-          <StatValue className="text-lg">
-            {hub.goldFloorUsd
-              ? formatUsd(hub.goldFloorUsd, { maxDecimals: 4 })
-              : "—"}
-          </StatValue>
-          <p className="mt-1 text-[11px] text-muted">From market ticker</p>
-        </Card>
-        <Card>
-          <CardTitle>Items with floors</CardTitle>
+          <CardTitle>Tracked items</CardTitle>
           <StatValue>{hub.floors.length || "—"}</StatValue>
-          <p className="mt-1 text-[11px] text-muted">
-            {hub.goneCount != null
-              ? `${hub.goneCount.toLocaleString()} gone listings filtered`
-              : "Live book"}
-          </p>
+          <p className="mt-1 text-[11px] text-muted">From live listings</p>
         </Card>
         <Card>
-          <CardTitle>Recent sales feed</CardTitle>
+          <CardTitle>Open listings scanned</CardTitle>
+          <StatValue>
+            {hub.floors.reduce((a, f) => a + (f.listings ?? 0), 0) || "—"}
+          </StatValue>
+          <p className="mt-1 text-[11px] text-muted">Official marketplace</p>
+        </Card>
+        <Card>
+          <CardTitle>Recent activity</CardTitle>
           <StatValue>{hub.sales.length || "—"}</StatValue>
-          <p className="mt-1 text-[11px] text-muted">Completed trades (kintrade)</p>
+          <p className="mt-1 text-[11px] text-muted">Newest listings</p>
         </Card>
       </div>
 
@@ -293,7 +270,7 @@ function MarketHubInner() {
               </Card>
               <Card className="lg:col-span-2">
                 <div className="mb-3 flex items-center justify-between gap-2">
-                  <CardTitle>Live sales tape</CardTitle>
+                  <CardTitle>Newest listings</CardTitle>
                   <button
                     type="button"
                     className="text-xs text-sky"
@@ -354,8 +331,8 @@ function MarketHubInner() {
                 onWatch={onToggleWatch}
               />
               <p className="mt-3 text-[11px] text-muted">
-                Floor = lowest active listing (USD). Sale med = median recent completed
-                unit KINS. Edge ≈ how much cheaper the floor is vs recent sales.
+                Floor = lowest active listing (USD). Activity med = median unit price
+                from recent listings. Edge ≈ floor vs that median.
               </p>
             </Card>
           )}
@@ -364,7 +341,7 @@ function MarketHubInner() {
 
       {tab === "sales" && (
         <Card>
-          <CardTitle>Completed sales</CardTitle>
+          <CardTitle>Recent listing activity</CardTitle>
           {hub.salesNote && (
             <p className="mt-1 text-xs text-muted">{hub.salesNote}</p>
           )}
@@ -428,7 +405,7 @@ function MarketHubInner() {
                   }
                 />
                 <Metric
-                  label="Recent sale med"
+                  label="Activity med"
                   value={
                     selectedFloor?.saleMedianKins
                       ? `${formatKins(selectedFloor.saleMedianKins)} KINS`
@@ -436,7 +413,7 @@ function MarketHubInner() {
                   }
                 />
                 <Metric
-                  label="Edge vs sales"
+                  label="Edge vs activity"
                   value={
                     selectedFloor?.edgePct != null
                       ? `${selectedFloor.edgePct}%`
@@ -456,20 +433,20 @@ function MarketHubInner() {
               {detailStats && (
                 <div className="rounded-xl border border-border bg-surface-2 p-3 text-sm">
                   <p className="text-xs uppercase tracking-wide text-muted">
-                    Official + sales stats
+                    Marketplace stats
                   </p>
                   <ul className="mt-2 space-y-1 font-mono text-xs text-muted">
                     {detailStats.avg30dKins && (
                       <li>30d avg: {formatKins(detailStats.avg30dKins)} KINS/u</li>
                     )}
-                    {detailStats.medianRecentSalesKins && (
+                    {detailStats.lowestActiveKins && (
                       <li>
-                        Median sale:{" "}
-                        {formatKins(detailStats.medianRecentSalesKins)} KINS/u
+                        Lowest listing:{" "}
+                        {formatKins(detailStats.lowestActiveKins)} KINS/u
                       </li>
                     )}
                     {detailStats.sales30d != null && (
-                      <li>Sales samples: {detailStats.sales30d}</li>
+                      <li>History samples: {detailStats.sales30d}</li>
                     )}
                   </ul>
                   {selectedFloor?.lowestKinsPerUnit && kinsUsd && (
@@ -490,10 +467,12 @@ function MarketHubInner() {
 
               <div>
                 <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted">
-                  Recent sales of this item
+                  Recent listings of this item
                 </p>
                 {selectedSales.length === 0 && (
-                  <p className="text-sm text-muted">No recent sales in feed.</p>
+                  <p className="text-sm text-muted">
+                    No recent activity for this item in the scanned pages.
+                  </p>
                 )}
                 <div className="space-y-1.5">
                   {selectedSales.slice(0, 15).map((s) => (
@@ -629,7 +608,7 @@ function FloorTable({
             </div>
             {row.saleMedianKins && (
               <div className="text-muted">
-                sale {formatKins(row.saleMedianKins)}
+                act {formatKins(row.saleMedianKins)}
               </div>
             )}
             {row.edgePct != null && (

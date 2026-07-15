@@ -1,9 +1,8 @@
-import { isMarketplaceConfigured } from "@/config/kintara-api";
-import { marketplaceAdapter } from "@/lib/kintara/marketplace-adapter";
 import { fail, ok } from "@/lib/api/response";
-import { fetchGoneListingIds } from "@/lib/kintara/kintrade-gone";
 import { portfolioIdToMarketType } from "@/lib/kintara/item-type-map";
 import { STATIC_CATALOG } from "@/data/static-catalog";
+import { fetchOfficialListingsForItem } from "@/lib/kintara/official-marketplace";
+import { resolveKinsUsd } from "@/lib/prices/resolve-kins-usd";
 
 export const runtime = "nodejs";
 
@@ -16,39 +15,24 @@ export async function GET(
     return fail("INVALID_ITEM", "Invalid item id", { status: 400 });
   }
 
-  if (!isMarketplaceConfigured()) {
-    return ok(
-      { itemId, listings: [], configured: false },
-      { source: "unconfigured" },
-    );
-  }
-
   try {
     const marketType = portfolioIdToMarketType(itemId, STATIC_CATALOG);
-    const [listings, gone] = await Promise.all([
-      marketplaceAdapter.getActiveListings(marketType),
-      fetchGoneListingIds().catch(() => null),
-    ]);
-
-    // Adapter already filters for kintaramarket path; re-filter for custom adapters
-    const active = gone
-      ? listings.filter((l) => !gone.idSet.has(String(l.id)))
-      : listings;
-    const removed = listings.length - active.length;
+    const rate = await resolveKinsUsd();
+    const listings = await fetchOfficialListingsForItem(marketType, {
+      pages: 4,
+      kinsUsd: rate?.kinsUsd,
+    });
 
     return ok(
       {
         itemId,
         marketType,
-        listings: active,
-        filteredGone: removed,
-        goneSource: gone ? "kintrade.xyz/api/gone" : null,
+        listings,
         configured: true,
-        note:
-          "Active listings only. IDs in kintrade /api/gone (sold/cancelled/expired) are excluded.",
+        note: "Official Kintara marketplace listings (read-only).",
       },
       {
-        source: "marketplace",
+        source: "kintara.com",
         updatedAt: new Date().toISOString(),
       },
     );

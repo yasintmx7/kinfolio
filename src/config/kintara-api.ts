@@ -1,11 +1,10 @@
 /**
- * Read-only Kintara marketplace API configuration.
- * Default public source: https://kintaramarket.xyz/api/market
+ * Official Kintara marketplace configuration (read-only).
+ * Default: https://kintara.com
  */
 
 export type EndpointConfig = {
   method: "GET" | "POST";
-  /** Path template relative to base, e.g. /api/market/{itemId} */
   pathTemplate: string;
   timeoutMs: number;
   cacheTtlSeconds: number;
@@ -18,29 +17,29 @@ export type KintaraApiConfig = {
   listings: EndpointConfig;
   itemStats: EndpointConfig;
   soldHistory: EndpointConfig;
-  provider: "kintaramarket.xyz" | "custom" | "none";
+  provider: "kintara.com" | "custom" | "none";
 };
 
 function env(name: string, fallback = ""): string {
   return process.env[name]?.trim() || fallback;
 }
 
-const DEFAULT_BASE = "https://kintaramarket.xyz";
-const DEFAULT_CATALOG = "/api/market";
-const DEFAULT_LISTINGS = "/api/market/{itemId}";
+const DEFAULT_BASE = "https://kintara.com";
+const DEFAULT_LISTINGS = "/api/marketplace/listings";
+const DEFAULT_STATS = "/api/marketplace/stats";
 
 export function getKintaraApiConfig(): KintaraApiConfig {
   const baseUrl = env("KINTARA_PUBLIC_API_BASE", DEFAULT_BASE);
-  const catalogPath = env("KINTARA_CATALOG_PATH", DEFAULT_CATALOG);
   const listingsPath = env("KINTARA_LISTINGS_PATH", DEFAULT_LISTINGS);
-  const statsPath = env("KINTARA_ITEM_STATS_PATH", DEFAULT_LISTINGS);
+  const statsPath = env("KINTARA_ITEM_STATS_PATH", DEFAULT_STATS);
+  const catalogPath = env("KINTARA_CATALOG_PATH", DEFAULT_LISTINGS);
   const soldPath = env("KINTARA_SOLD_HISTORY_PATH");
 
   const provider =
     !baseUrl
       ? "none"
-      : baseUrl.includes("kintaramarket.xyz")
-        ? "kintaramarket.xyz"
+      : baseUrl.includes("kintara.com")
+        ? "kintara.com"
         : "custom";
 
   return {
@@ -62,10 +61,10 @@ export function getKintaraApiConfig(): KintaraApiConfig {
     },
     itemStats: {
       method: "GET",
-      pathTemplate: statsPath || listingsPath,
+      pathTemplate: statsPath,
       timeoutMs: 10000,
-      cacheTtlSeconds: 60,
-      enabled: Boolean(baseUrl && (statsPath || listingsPath)),
+      cacheTtlSeconds: 120,
+      enabled: Boolean(baseUrl && statsPath),
     },
     soldHistory: {
       method: "GET",
@@ -79,8 +78,5 @@ export function getKintaraApiConfig(): KintaraApiConfig {
 
 export function isMarketplaceConfigured(): boolean {
   const cfg = getKintaraApiConfig();
-  return (
-    Boolean(cfg.baseUrl) &&
-    (cfg.catalog.enabled || cfg.listings.enabled || cfg.itemStats.enabled)
-  );
+  return Boolean(cfg.baseUrl) && cfg.listings.enabled;
 }

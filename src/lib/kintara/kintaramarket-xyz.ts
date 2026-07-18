@@ -40,6 +40,19 @@ const listingSchema = z.object({
 
 export type MarketSummaryRow = z.infer<typeof summarySchema>;
 
+/** Completed sales feed (longer history than kintrade ~50). */
+const saleEventSchema = z.object({
+  ts: z.number(),
+  itemType: z.string(),
+  quantity: z.number(),
+  currency: z.string().optional(),
+  priceUsd: z.number().nullable().optional(),
+  sellerName: z.string().optional(),
+  confidence: z.string().optional(),
+});
+
+export type MarketSaleEvent = z.infer<typeof saleEventSchema>;
+
 export type NormalizedMarketRow = {
   itemType: string;
   name: string;
@@ -99,6 +112,40 @@ export async function fetchItemListings(itemType: string): Promise<
     .filter((r) => r.success)
     .map((r) => r.data);
   setCache(cacheKey, rows, 45);
+  return rows;
+}
+
+/**
+ * Recent completed sales (kintaramarket.xyz/api/sales).
+ * Supports limit up to ~500 (hours of history). kintrade only has ~50.
+ */
+export async function fetchMarketSales(options?: {
+  limit?: number;
+}): Promise<MarketSaleEvent[]> {
+  const limit = Math.min(Math.max(options?.limit ?? 300, 1), 500);
+  const cacheKey = `kmxyz:sales:v1:${limit}`;
+  const cached = getCached<MarketSaleEvent[]>(cacheKey);
+  if (cached && !cached.stale) return cached.value;
+
+  const url = new URL(`${BASE}/api/sales`);
+  url.searchParams.set("limit", String(limit));
+  const res = await fetchWithTimeout(url.toString(), {
+    timeoutMs: 12000,
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) throw new Error(`kintaramarket sales failed: ${res.status}`);
+  const json: unknown = await res.json();
+  if (!Array.isArray(json)) throw new Error("Unexpected sales shape");
+
+  const rows: MarketSaleEvent[] = [];
+  for (const row of json) {
+    const one = saleEventSchema.safeParse(row);
+    if (!one.success) continue;
+    if (!one.data.itemType || !(one.data.quantity > 0)) continue;
+    rows.push(one.data);
+  }
+  rows.sort((a, b) => b.ts - a.ts);
+  setCache(cacheKey, rows, 4);
   return rows;
 }
 

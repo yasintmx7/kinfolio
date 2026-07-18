@@ -150,7 +150,7 @@ function listingKey(row: {
 export function mergeSoldFeeds<T extends InstantSoldRow>(
   fromBook: T[],
   fromChain: T[],
-  limit = 60,
+  limit = 150,
 ): T[] {
   const byListing = new Map<string, T>();
   const extras: T[] = [];
@@ -230,13 +230,13 @@ export function mergeSoldFeeds<T extends InstantSoldRow>(
   return [...byListing.values(), ...extras]
     .map((r) => scrubSoldSellerFields(r))
     .sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp))
-    .slice(0, Math.min(Math.max(limit, 1), 100));
+    .slice(0, Math.min(Math.max(limit, 1), 200));
 }
 
-/** Drop book-delta rows older than maxAgeMs (default 20 min). */
+/** Drop book-delta rows older than maxAgeMs (default 45 min). */
 export function pruneBookDeltaSold<T extends InstantSoldRow>(
   rows: T[],
-  maxAgeMs = 20 * 60 * 1000,
+  maxAgeMs = 45 * 60 * 1000,
   now = Date.now(),
 ): T[] {
   return rows.filter((r) => {

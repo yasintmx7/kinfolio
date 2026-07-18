@@ -171,7 +171,8 @@ function filterSales(
         s.itemType.replace(/_/g, "-") === t.replace(/_/g, "-"),
     );
   }
-  const limit = options?.limit ?? 50;
+  // Upstream feed is ~50 today; allow up to 200 if they expand
+  const limit = options?.limit ?? 100;
   return out.slice(0, Math.min(Math.max(limit, 1), 200));
 }
 

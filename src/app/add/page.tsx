@@ -10,6 +10,11 @@ import { usePortfolioContext } from "@/components/providers/portfolio-provider";
 import { useToast } from "@/components/feedback/toast";
 import { parseKintaraAlert, parsedAlertToPlain } from "@/lib/parser/kintara-alert";
 import { splitAlertPaste, type AlertChunk } from "@/lib/parser/split-alerts";
+import {
+  looksLikeMarketplaceHistory,
+  parseMarketplaceHistory,
+  type MarketplaceHistoryLine,
+} from "@/lib/parser/marketplace-history";
 import { buildFingerprint } from "@/lib/parser/fingerprint";
 import { previewSell } from "@/lib/accounting/engine";
 import { d } from "@/lib/accounting/decimal";
@@ -46,12 +51,41 @@ const SAMPLE_SELL = `Kintara Game · SOL | ✏️
 Received: 9.31 KINS (~$0.0764) From: AVeH..J4Ce
 Tx hash`;
 
+const SAMPLE_MARKETPLACE = `You sold 500 Cooked Fish Meat for $0.69 USD (42.54 $KINS).
+MarketplaceJul 5 09:29 AM
+You sold 5 Gold for $4.47 USD (275 $KINS).
+MarketplaceJul 5 09:34 AM
+You bought 638 Stone for $0.02 USD (1.45 $KINS).
+MarketplaceJul 5 09:34 AM
+You bought 1,000 Wood for $0.02 USD (1.24 $KINS).
+MarketplaceJul 5 10:58 AM
+You bought 2,600 Wood for $0.02 USD (1.23 $KINS).
+MarketplaceJul 6 09:17 AM`;
+
 type QueueRow = {
   chunk: AlertChunk;
   itemId: string;
   quantity: string;
   selected: boolean;
 };
+
+type MarketQueueRow = {
+  line: MarketplaceHistoryLine;
+  itemId: string;
+  quantity: string;
+  selected: boolean;
+};
+
+function formatWhen(iso: string): string {
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return iso;
+  return new Date(ms).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
 
 export default function AddEntryPage() {
   const { items, settings, transactions, addTransaction, summary } =
@@ -79,6 +113,10 @@ export default function AddEntryPage() {
   const [saving, setSaving] = useState(false);
   const [recentIds, setRecentIds] = useState<string[]>([]);
   const [queue, setQueue] = useState<QueueRow[] | null>(null);
+  const [marketQueue, setMarketQueue] = useState<MarketQueueRow[] | null>(null);
+  const [marketWarnings, setMarketWarnings] = useState<string[]>([]);
+  /** When true, missing stock before a sell is seeded as $0-cost gift (partial history). */
+  const [seedMissingStock, setSeedMissingStock] = useState(true);
 
   const favorites = settings?.favoriteItemIds ?? [];
 
@@ -162,6 +200,28 @@ export default function AddEntryPage() {
   }
 
   function applyPaste(text: string) {
+    // In-game marketplace history (buy/sell log) — not Solana wallet alerts
+    if (looksLikeMarketplaceHistory(text)) {
+      const parsed = parseMarketplaceHistory(text, items);
+      if (parsed.matched && parsed.lines.length > 0) {
+        setQueue(null);
+        setMarketWarnings(parsed.warnings);
+        setMarketQueue(
+          parsed.lines.map((line) => ({
+            line,
+            itemId: line.itemId ?? (getLastItemId() || itemId || "stone"),
+            quantity: line.quantity,
+            selected: true,
+          })),
+        );
+        setAlertText(text);
+        return;
+      }
+    }
+
+    setMarketQueue(null);
+    setMarketWarnings([]);
+
     const chunks = splitAlertPaste(text);
     const usable = chunks.filter((c) => c.parsed.direction !== "unknown");
 
@@ -207,7 +267,9 @@ export default function AddEntryPage() {
     tool?: string;
     durationMinutes?: string;
     note?: string;
+    transactionAt?: string;
   }) {
+    const transactionAt = params.transactionAt ?? new Date().toISOString();
     const fingerprint = buildFingerprint({
       rawAlert: params.rawAlert,
       direction: params.type,
@@ -216,13 +278,14 @@ export default function AddEntryPage() {
       kinsAmount: params.kins,
       usdAmount: params.usd,
       txHash: params.txHash,
+      transactionAt,
     });
 
     const result = await addTransaction({
       type: params.type,
       itemId: params.itemId,
       quantity: params.quantity,
-      transactionAt: new Date().toISOString(),
+      transactionAt,
       kinsAmount: params.kins,
       usdAmountAtTransaction: params.usd,
       impliedKinsUsd: d(params.kins).gt(0)
@@ -378,6 +441,272 @@ export default function AddEntryPage() {
     }
   }
 
+  async function saveMarketQueue() {
+    if (!marketQueue) return;
+    setSaving(true);
+    let saved = 0;
+    let seeded = 0;
+    let failed = 0;
+    const failNotes: string[] = [];
+    // Track running qty mid-batch (addTransaction also re-reads DB)
+    const localQty = new Map<string, string>();
+    for (const pos of summary.positions) {
+      localQty.set(pos.itemId, pos.quantity);
+    }
+
+    try {
+      // Parser already sorts oldest-first so buys land before later sells
+      for (const row of marketQueue) {
+        if (!row.selected) continue;
+        if (!row.itemId) {
+          failed++;
+          failNotes.push(`Missing item for ${row.line.itemName}`);
+          continue;
+        }
+        if (!row.quantity || d(row.quantity).lte(0)) {
+          failed++;
+          continue;
+        }
+        const type: TransactionType =
+          row.line.direction === "sell" ? "sell" : "buy";
+
+        if (type === "sell" && seedMissingStock) {
+          const have = d(localQty.get(row.itemId) ?? "0");
+          const need = d(row.quantity);
+          if (need.gt(have)) {
+            const shortfall = need.minus(have);
+            const seedAt = new Date(
+              Date.parse(row.line.transactionAt) - 1,
+            ).toISOString();
+            const seed = await saveOne({
+              type: "gift",
+              itemId: row.itemId,
+              quantity: shortfall.toFixed(),
+              kins: "0",
+              usd: "0",
+              transactionAt: seedAt,
+              note: "Auto-seed for marketplace import (unknown prior cost)",
+              forceDup: true,
+            });
+            if (seed.ok) {
+              seeded++;
+              localQty.set(row.itemId, have.plus(shortfall).toFixed());
+            }
+          }
+        }
+
+        const result = await saveOne({
+          type,
+          itemId: row.itemId,
+          quantity: row.quantity,
+          kins: row.line.kins,
+          usd: row.line.usd,
+          rawAlert: row.line.raw,
+          // Marketplace USD/KINS are the amounts you paid/received (already net)
+          sellAmountIsNet: type === "sell" ? true : undefined,
+          transactionAt: row.line.transactionAt,
+          note: "Marketplace history import",
+        });
+        if (result.ok) {
+          saved++;
+          rememberItem(row.itemId);
+          const cur = d(localQty.get(row.itemId) ?? "0");
+          localQty.set(
+            row.itemId,
+            type === "buy"
+              ? cur.plus(d(row.quantity)).toFixed()
+              : cur.minus(d(row.quantity)).toFixed(),
+          );
+        } else {
+          failed++;
+          if ("error" in result && result.error) {
+            failNotes.push(result.error);
+          } else if ("duplicate" in result && result.duplicate) {
+            failNotes.push(`Duplicate: ${row.line.itemName} ×${row.quantity}`);
+          }
+        }
+      }
+      setRecentIds(getRecentItemIds());
+      if (saved) {
+        push(
+          `Imported ${saved} marketplace trade${saved === 1 ? "" : "s"}${
+            seeded ? ` (+${seeded} zero-cost seed${seeded === 1 ? "" : "s"})` : ""
+          }. Check My portfolio for P/L.`,
+          "ok",
+        );
+      }
+      if (failed) {
+        const detail = failNotes.slice(0, 2).join(" · ");
+        push(
+          `${failed} skipped${detail ? ` — ${detail}` : " (qty, inventory, or duplicate)"}.`,
+          "info",
+        );
+      }
+      if (saved && !failed) {
+        setMarketQueue(null);
+        setMarketWarnings([]);
+        setAlertText("");
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Marketplace history review UI
+  if (marketQueue && marketQueue.length > 0) {
+    const buyN = marketQueue.filter(
+      (r) => r.selected && r.line.direction === "buy",
+    ).length;
+    const sellN = marketQueue.filter(
+      (r) => r.selected && r.line.direction === "sell",
+    ).length;
+    const totalUsdIn = marketQueue
+      .filter((r) => r.selected && r.line.direction === "buy")
+      .reduce((s, r) => s.plus(d(r.line.usd)), d(0));
+    const totalUsdOut = marketQueue
+      .filter((r) => r.selected && r.line.direction === "sell")
+      .reduce((s, r) => s.plus(d(r.line.usd)), d(0));
+
+    return (
+      <div className="mx-auto max-w-2xl space-y-4">
+        <div>
+          <h1 className="text-2xl font-semibold">Marketplace history</h1>
+          <p className="mt-1 text-sm text-muted">
+            Parsed {marketQueue.length} trades ({buyN} buys · {sellN} sells).
+            Review items, then import to calculate portfolio P/L.
+          </p>
+          <p className="mt-1 font-mono text-xs text-muted">
+            Buys {formatUsd(totalUsdIn.toFixed())} · Sells{" "}
+            {formatUsd(totalUsdOut.toFixed())}
+          </p>
+        </div>
+
+        {marketWarnings.length > 0 && (
+          <Card className="border-sky/30 bg-sky/5">
+            <ul className="space-y-1 text-xs text-sky-hi">
+              {marketWarnings.slice(0, 6).map((w) => (
+                <li key={w}>{w}</li>
+              ))}
+            </ul>
+          </Card>
+        )}
+
+        <Card className="space-y-2">
+          <label className="flex items-start gap-2 text-sm text-muted">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={seedMissingStock}
+              onChange={(e) => setSeedMissingStock(e.target.checked)}
+            />
+            <span>
+              <strong className="text-primary">Incomplete history OK</strong> —
+              if a sell needs stock you never imported, seed the missing qty at{" "}
+              <strong className="text-primary">$0 cost</strong> so P/L still
+              records. Turn off if you only want sells you already hold.
+            </span>
+          </label>
+        </Card>
+
+        {marketQueue.map((row, idx) => {
+          return (
+            <Card key={`${row.line.raw}-${idx}`} className="space-y-3">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <CardTitle>
+                    #{idx + 1} ·{" "}
+                    <span
+                      className={
+                        row.line.direction === "sell"
+                          ? "text-profit"
+                          : "text-sky"
+                      }
+                    >
+                      {row.line.direction === "sell" ? "Sold" : "Bought"}
+                    </span>
+                  </CardTitle>
+                  <p className="mt-1 text-sm text-primary">
+                    {row.line.itemName}{" "}
+                    <span className="font-mono text-muted">
+                      ×{row.quantity}
+                    </span>
+                  </p>
+                  <p className="mt-0.5 font-mono text-xs text-muted">
+                    {formatKins(row.line.kins)} · {formatUsd(row.line.usd)} ·{" "}
+                    {formatWhen(row.line.transactionAt)}
+                  </p>
+                  {row.line.warnings.map((w) => (
+                    <p key={w} className="mt-1 text-xs text-sky-hi">
+                      {w}
+                    </p>
+                  ))}
+                </div>
+                <label className="flex items-center gap-2 text-xs text-muted">
+                  <input
+                    type="checkbox"
+                    checked={row.selected}
+                    onChange={(e) => {
+                      const next = [...marketQueue];
+                      next[idx] = { ...row, selected: e.target.checked };
+                      setMarketQueue(next);
+                    }}
+                  />
+                  Include
+                </label>
+              </div>
+              <ItemPicker
+                items={items}
+                value={row.itemId}
+                onChange={(id) => {
+                  const next = [...marketQueue];
+                  next[idx] = { ...row, itemId: id };
+                  setMarketQueue(next);
+                }}
+                favoriteIds={favorites}
+                recentIds={recentIds}
+              />
+              <div>
+                <Label>Quantity</Label>
+                <Input
+                  inputMode="decimal"
+                  value={row.quantity}
+                  onChange={(e) => {
+                    const next = [...marketQueue];
+                    next[idx] = { ...row, quantity: e.target.value };
+                    setMarketQueue(next);
+                  }}
+                />
+              </div>
+            </Card>
+          );
+        })}
+
+        <div className="sticky bottom-24 z-20 flex flex-col gap-2 md:bottom-4">
+          <Button
+            className="w-full shadow-lg"
+            onClick={saveMarketQueue}
+            disabled={saving}
+          >
+            {saving
+              ? "Importing…"
+              : `Import ${buyN + sellN} trade${buyN + sellN === 1 ? "" : "s"}`}
+          </Button>
+          <Button
+            variant="ghost"
+            className="w-full"
+            onClick={() => {
+              setMarketQueue(null);
+              setMarketWarnings([]);
+              setAlertText("");
+            }}
+          >
+            Cancel import
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   // Multi-alert review UI
   if (queue && queue.length > 1) {
     return (
@@ -474,7 +803,12 @@ export default function AddEntryPage() {
       <div>
         <h1 className="text-2xl font-semibold">Add entry</h1>
         <p className="mt-1 text-sm text-muted">
-          Paste an alert → pick item & quantity → save. Multiple alerts open a review list.
+          Paste marketplace history or a wallet alert → review → save. Portfolio
+          P/L updates on{" "}
+          <a href="/dashboard" className="text-info underline">
+            My portfolio
+          </a>
+          .
         </p>
       </div>
 
@@ -504,7 +838,7 @@ export default function AddEntryPage() {
       {tab !== "earned" && (
         <Card>
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <CardTitle>Transaction alert</CardTitle>
+            <CardTitle>Paste trades</CardTitle>
             <div className="flex flex-wrap gap-2">
               <Button variant="secondary" className="min-h-9 px-3 text-xs" onClick={pasteClipboard}>
                 <ClipboardPaste className="h-4 w-4" />
@@ -520,9 +854,14 @@ export default function AddEntryPage() {
               </label>
             </div>
           </div>
+          <p className="mt-2 text-xs text-muted">
+            Supports in-game marketplace history (
+            <span className="font-mono">You bought/sold … for $X USD (Y $KINS)</span>
+            ) and Solana wallet alerts.
+          </p>
           <div className="mt-3">
             <Textarea
-              placeholder={`Paste Kintara alert here…\n\nSent: 7.15 KINS (~$0.0571) To: …`}
+              placeholder={`Paste marketplace history or wallet alert…\n\nYou bought 500 Wood for $0.01 USD (0.58 $KINS).\nMarketplaceJul 5 07:24 AM`}
               value={alertText}
               onChange={(e) => setAlertText(e.target.value)}
               onBlur={() => {
@@ -534,16 +873,23 @@ export default function AddEntryPage() {
             <button
               type="button"
               className="text-xs text-info underline"
+              onClick={() => applyPaste(SAMPLE_MARKETPLACE)}
+            >
+              Try marketplace sample
+            </button>
+            <button
+              type="button"
+              className="text-xs text-info underline"
               onClick={() => applyPaste(SAMPLE_BUY)}
             >
-              Try sample buy
+              Wallet buy sample
             </button>
             <button
               type="button"
               className="text-xs text-info underline"
               onClick={() => applyPaste(SAMPLE_SELL)}
             >
-              Try sample sell
+              Wallet sell sample
             </button>
           </div>
           {plain && plain.direction !== "unknown" && (

@@ -1246,7 +1246,7 @@ function SoldActivityCard({
   }
 
   return (
-    <div className="max-h-[min(38dvh,20rem)] divide-y divide-border/20 overflow-y-auto lg:max-h-[calc(100dvh-12rem)]">
+    <div className="max-h-[min(52dvh,32rem)] divide-y divide-border/20 overflow-y-auto lg:max-h-[calc(100dvh-12rem)]">
       {rows.map((r) => {
         const seller = sellerDisplay(r);
         const buyer = buyerLabel(r);

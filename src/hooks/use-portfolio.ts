@@ -96,14 +96,16 @@ export function usePortfolio() {
           transactionAt: input.transactionAt,
         });
 
-      const existing = transactions.find((t) => t.fingerprint === fingerprint);
+      // Always read fresh from DB so bulk imports (buy then sell) see prior rows
+      const current = await getAllTransactions();
+      const existing = current.find((t) => t.fingerprint === fingerprint);
       if (existing && !input.id) {
         return { ok: false as const, duplicate: existing };
       }
 
       if (input.type === "sell") {
         const { canSell } = await import("@/lib/accounting/engine");
-        const check = canSell(transactions, input.itemId, input.quantity);
+        const check = canSell(current, input.itemId, input.quantity);
         if (!check.ok) {
           return { ok: false as const, error: check.message, available: check.available };
         }
@@ -121,7 +123,7 @@ export function usePortfolio() {
       await refresh();
       return { ok: true as const, transaction: row };
     },
-    [transactions, refresh],
+    [refresh],
   );
 
   const removeTransaction = useCallback(

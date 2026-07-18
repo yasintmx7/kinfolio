@@ -119,19 +119,19 @@ const empty: MarketHubData = {
 };
 
 /**
- * Live book is ~500 token + ~500 gold. Must not slice under ~1000 or we drop
- * listings and miss locker-name reverse-map (seller ids never seen).
- */
-/**
- * Dual feed:
- *  - cheap book = full price ladder + locks on older lots
- *  - new pages = brand-new listings that may sit above cheap scan
+ * Dual feed (official kintara.com pages of 100):
+ *  - cheap book = full price ladder + locks (token + gold)
+ *  - new pages  = brand-new listings that may sit above cheap scan
  * Client merges by listing id so "New" sort and search always see latest.
+ *
+ * Raised from ~1200: market is often 2.5k–3.5k open lots. Cap ~3000 keeps
+ * 3s poll workable while covering far more of the book.
  */
 const CHEAP_URL =
-  "/api/market/activity?limit=1200&pages=10&gold=1&sort=cheap";
-const NEW_URL = "/api/market/activity?limit=400&pages=4&gold=1&sort=new";
-const SOLD_URL = "/api/market/sold?limit=40";
+  "/api/market/activity?limit=3000&pages=18&gold=1&sort=cheap";
+const NEW_URL = "/api/market/activity?limit=800&pages=6&gold=1&sort=new";
+// kintaramarket /api/sales supports up to ~500 (hours of history)
+const SOLD_URL = "/api/market/sold?limit=300";
 
 function bestSellerName(
   a: string | null | undefined,
@@ -437,7 +437,7 @@ export function useMarketHub(pollMs = 3_000) {
       }
       const bookRows = pruneBookDeltaSold(
         [...bookDeltaSoldRef.current.values()],
-        20 * 60 * 1000,
+        45 * 60 * 1000,
       );
       bookDeltaSoldRef.current = new Map(
         bookRows
@@ -452,7 +452,8 @@ export function useMarketHub(pollMs = 3_000) {
         enrichSold(chainSoldRef.current, knownListingsRef.current, openBook),
         sellerIdNameRef.current,
       );
-      const merged = mergeSoldFeeds(bookRows, chainEnriched, 60);
+      // Longer Activity history: kintaramarket sales + book-delta solds
+      const merged = mergeSoldFeeds(bookRows, chainEnriched, 350);
       return resolveLockerNames(merged, sellerIdNameRef.current);
     },
     [],
@@ -467,8 +468,9 @@ export function useMarketHub(pollMs = 3_000) {
     try {
       // Promise.allSettled: one feed failing must not drop the other
       const [cheapSettled, newSettled] = await Promise.allSettled([
-        fetchJson(CHEAP_URL, 18000),
-        fetchJson(NEW_URL, 12000),
+        // Larger book needs a bit more headroom on cold serverless
+        fetchJson(CHEAP_URL, 28000),
+        fetchJson(NEW_URL, 15000),
       ]);
       const cheap = actFromSettled(cheapSettled);
       const newest = actFromSettled(newSettled);

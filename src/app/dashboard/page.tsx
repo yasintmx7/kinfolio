@@ -113,7 +113,10 @@ export default function DashboardPage() {
   const nextSteps = useMemo(() => {
     const steps: { text: string; href?: string; action?: string }[] = [];
     if (transactions.length === 0) {
-      steps.push({ text: "Paste your first trade alert", href: "/add" });
+      steps.push({
+        text: "Paste marketplace history or a wallet alert",
+        href: "/add",
+      });
     }
     if (unrealized && unrealized.unpriced > 0) {
       steps.push({
@@ -168,7 +171,7 @@ export default function DashboardPage() {
             <Button variant="secondary">Calculator</Button>
           </Link>
           <Link href="/add">
-            <Button>Log trade</Button>
+            <Button>Import trades</Button>
           </Link>
         </div>
       </div>
@@ -179,19 +182,21 @@ export default function DashboardPage() {
             Welcome to Kinfolio
           </h2>
           <p className="mt-1 text-sm text-muted">
-            Market tracker first · calculator for quick math · portfolio for your books
+            Market tracker first · paste marketplace history to track real P/L
           </p>
           <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-muted">
             <li>Check live floors on Market</li>
-            <li>Run break-even on Calculator</li>
-            <li>Log trades to track real profit (optional demo below)</li>
+            <li>
+              Paste “You bought/sold …” marketplace history under Import trades
+            </li>
+            <li>See paper profit/loss here (optional demo below)</li>
           </ol>
           <div className="mt-4 flex flex-wrap gap-2">
-            <Link href="/market">
-              <Button>Open market</Button>
+            <Link href="/add">
+              <Button>Import trades</Button>
             </Link>
-            <Link href="/calculator">
-              <Button variant="secondary">Calculator</Button>
+            <Link href="/market">
+              <Button variant="secondary">Open market</Button>
             </Link>
             <Button
               variant="ghost"

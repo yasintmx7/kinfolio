@@ -41,7 +41,7 @@ const NAV = [
 const EXTRA = [
   { href: "/dashboard", label: "My portfolio", icon: Wallet },
   { href: "/inventory", label: "Inventory", icon: Package },
-  { href: "/add", label: "Log trade", icon: PlusCircle },
+  { href: "/add", label: "Import trades", icon: PlusCircle },
   { href: "/history", label: "History", icon: History },
   { href: "/calculator", label: "Calculator", icon: Calculator },
   { href: "/settings", label: "Settings", icon: Settings },

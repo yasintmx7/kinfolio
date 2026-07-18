@@ -1,5 +1,9 @@
 import { fail, ok } from "@/lib/api/response";
 import { fetchOfficialRecentActivity } from "@/lib/kintara/official-marketplace";
+import {
+  fetchMarketActivityFeed,
+  type MarketActivityRow,
+} from "@/lib/kintara/kintaramarket-xyz";
 import { resolveKinsUsd } from "@/lib/prices/resolve-kins-usd";
 import { marketTypeToPortfolioId } from "@/lib/kintara/item-type-map";
 import { STATIC_CATALOG } from "@/data/static-catalog";
@@ -9,70 +13,168 @@ export const runtime = "nodejs";
 /** Allow larger book scans on Vercel (default hobby is often 10s). */
 export const maxDuration = 60;
 
+type ActivityOut = MarketActivityRow & {
+  seller: string | null;
+  portfolioItemId: string | null;
+  solscanUrl: null;
+};
+
+function toClientRow(r: MarketActivityRow): ActivityOut {
+  const sellerName = sanitizePersonName(r.sellerName) ?? null;
+  return {
+    ...r,
+    sellerName,
+    seller: sellerName,
+    buyerName: sanitizePersonName(r.buyerName) ?? null,
+    portfolioItemId:
+      marketTypeToPortfolioId(r.itemType, STATIC_CATALOG) ?? null,
+    solscanUrl: null,
+  };
+}
+
 /**
- * Live marketplace feed — official listings.
- * Query: limit (default 1200), pages (default 10 × 100 parallel per currency), gold=1.
- * Client uses a fast pass then optional deep fill.
+ * Merge official rows into KM rows by listing id.
+ * Prefer official for sellerId / fresher lock state when present.
+ */
+function mergeById(
+  primary: MarketActivityRow[],
+  secondary: MarketActivityRow[],
+): MarketActivityRow[] {
+  const map = new Map<string, MarketActivityRow>();
+  for (const row of primary) {
+    map.set(String(row.id), row);
+  }
+  for (const row of secondary) {
+    const id = String(row.id);
+    const prev = map.get(id);
+    if (!prev) {
+      map.set(id, row);
+      continue;
+    }
+    map.set(id, {
+      ...prev,
+      ...row,
+      // Keep best-known people fields
+      sellerName: row.sellerName ?? prev.sellerName,
+      sellerId: row.sellerId ?? prev.sellerId,
+      buyerId: row.buyerId ?? prev.buyerId,
+      buyerName: row.buyerName ?? prev.buyerName,
+      reserved: Boolean(row.reserved || prev.reserved),
+      reservedUntilMs:
+        Math.max(row.reservedUntilMs ?? 0, prev.reservedUntilMs ?? 0) || null,
+    });
+  }
+  return [...map.values()];
+}
+
+/**
+ * Live marketplace feed.
+ *
+ * Primary: kintaramarket.xyz/api/listings (works from Vercel).
+ * Soft enrich: official kintara.com pages when not rate-limited (often 429 on serverless).
+ *
+ * Query: limit (default 1000), pages (official only), gold=1, sort=cheap|new
  */
 export async function GET(request: Request) {
   const sp = new URL(request.url).searchParams;
-  const limit = Number(sp.get("limit") ?? "1200");
-  const pages = Number(sp.get("pages") ?? "10");
+  const limit = Number(sp.get("limit") ?? "1000");
+  const pages = Number(sp.get("pages") ?? "4");
   const includeGold = sp.get("gold") === "1" || sp.get("gold") === "true";
-  const sort = sp.get("sort") === "cheap" ? "cheap" : "new";
+  const sort = sp.get("sort") === "new" ? "new" : "cheap";
+  const want = Number.isFinite(limit)
+    ? Math.min(Math.max(limit, 1), 3000)
+    : 1000;
 
   try {
     const rate = await resolveKinsUsd();
-    const rows = await fetchOfficialRecentActivity({
-      // Soft cap: full-ish book; client prefers progressive load
-      limit: Number.isFinite(limit) ? Math.min(Math.max(limit, 1), 4000) : 1200,
-      pages: Number.isFinite(pages) ? Math.min(Math.max(pages, 1), 25) : 10,
-      kinsUsd: rate?.kinsUsd,
-      includeGold,
-      sort,
+    const kinsUsd = rate?.kinsUsd;
+
+    // 1) Reliable path for Vercel (kintara.com returns 429 to many serverless IPs)
+    let source = "kintaramarket.xyz";
+    let note =
+      "Live open book via kintaramarket.xyz (official kintara.com often rate-limits Vercel).";
+    let rows: MarketActivityRow[] = [];
+
+    try {
+      rows = await fetchMarketActivityFeed({
+        limit: want,
+        kinsUsd,
+        sort,
+      });
+    } catch {
+      rows = [];
+    }
+
+    // 2) Soft official enrich — small page budget to avoid 429; never wipe KM data
+    let official: MarketActivityRow[] = [];
+    try {
+      official = await fetchOfficialRecentActivity({
+        limit: Math.min(want, 400),
+        pages: Number.isFinite(pages)
+          ? Math.min(Math.max(pages, 1), 6)
+          : 4,
+        kinsUsd,
+        includeGold,
+        sort,
+      });
+    } catch {
+      official = [];
+    }
+
+    if (official.length > 0) {
+      rows = mergeById(rows, official);
+      if (rows.length === 0) {
+        rows = official;
+      }
+      source =
+        rows.length > official.length
+          ? "kintaramarket.xyz+kintara.com"
+          : "kintara.com+kintaramarket.xyz";
+      note =
+        "Merged kintaramarket open book + official kintara.com pages (locks/seller ids when available).";
+    }
+
+    if (rows.length === 0 && official.length === 0) {
+      // Last chance: official alone already empty; surface soft empty with note
+      note =
+        "No listings returned (kintaramarket empty and kintara.com rate-limited or down).";
+    }
+
+    // Re-sort after merge
+    rows.sort((a, b) => {
+      if (sort === "new") {
+        return Date.parse(b.timestamp) - Date.parse(a.timestamp);
+      }
+      const ra = a.reserved ? 1 : 0;
+      const rb = b.reserved ? 1 : 0;
+      if (ra !== rb) return ra - rb;
+      const ua =
+        a.unitUsd != null ? Number(a.unitUsd) : Number.POSITIVE_INFINITY;
+      const ub =
+        b.unitUsd != null ? Number(b.unitUsd) : Number.POSITIVE_INFINITY;
+      if (Number.isFinite(ua) && Number.isFinite(ub) && ua !== ub) {
+        return ua - ub;
+      }
+      return Date.parse(b.timestamp) - Date.parse(a.timestamp);
     });
+    rows = rows.slice(0, want);
 
     return ok(
       {
-        activity: rows.map((r) => {
-          const sellerName = sanitizePersonName(r.sellerName);
-          return {
-            id: r.id,
-            listingId: r.listingId,
-            name: r.name,
-            itemType: r.itemType,
-            quantity: r.quantity,
-            unitKins: r.unitKins,
-            totalKins: r.totalKins,
-            unitUsd: r.unitUsd,
-            usdTotal: r.usdTotal,
-            priceGold: r.priceGold,
-            currency: r.currency,
-            timestamp: r.timestamp,
-            sellerName,
-            sellerId: r.sellerId,
-            // Never put wallet into seller / sellerName
-            seller: sellerName,
-            buyerId: r.buyerId,
-            buyerName: sanitizePersonName(r.buyerName),
-            reserved: r.reserved,
-            reservedUntilMs: r.reservedUntilMs,
-            itemDurability: r.itemDurability,
-            portfolioItemId: marketTypeToPortfolioId(r.itemType, STATIC_CATALOG),
-            solscanUrl: null,
-          };
-        }),
+        activity: rows.map(toClientRow),
         count: rows.length,
         kinsUsd: rate != null ? String(rate.kinsUsd) : null,
         rateSource: rate?.source ?? null,
-        note:
-          "Live official listings (cheap book). ~5s client poll. Read-only.",
+        note,
+        providers: {
+          kintaramarket: rows.length > 0,
+          official: official.length,
+        },
       },
       {
-        source: "kintara.com",
+        source,
         updatedAt: new Date().toISOString(),
-        // Match ~5s client poll
-        cacheControl: "public, s-maxage=3, stale-while-revalidate=8",
+        cacheControl: "public, s-maxage=4, stale-while-revalidate=10",
       },
     );
   } catch (e) {

@@ -53,6 +53,50 @@ const saleEventSchema = z.object({
 
 export type MarketSaleEvent = z.infer<typeof saleEventSchema>;
 
+/**
+ * Open-book rows from GET /api/listings (global feed, up to ~1000).
+ * Works from Vercel; official kintara.com often 429s serverless IPs.
+ */
+const openListingSchema = z.object({
+  id: z.union([z.string(), z.number()]),
+  itemType: z.string(),
+  sellerName: z.string().optional().nullable(),
+  quantity: z.number(),
+  currency: z.string().optional().nullable(),
+  priceUsd: z.number().nullable().optional(),
+  priceGold: z.number().nullable().optional(),
+  unitPrice: z.number().nullable().optional(),
+  reservedBy: z.unknown().nullable().optional(),
+  reservedUntilMs: z.number().nullable().optional(),
+  firstSeen: z.number().optional().nullable(),
+  lastSeen: z.number().optional().nullable(),
+});
+
+export type OpenMarketListing = z.infer<typeof openListingSchema>;
+
+/** Activity-shaped row shared with market hub / activity API. */
+export type MarketActivityRow = {
+  id: string;
+  listingId: string;
+  itemType: string;
+  name: string;
+  quantity: string;
+  unitKins: string;
+  totalKins: string | null;
+  unitUsd: string | null;
+  usdTotal: string | null;
+  priceGold: string | null;
+  currency: string;
+  timestamp: string;
+  sellerName: string | null;
+  sellerId: string | null;
+  buyerId: string | null;
+  buyerName: string | null;
+  reserved: boolean;
+  reservedUntilMs: number | null;
+  itemDurability: string | null;
+};
+
 export type NormalizedMarketRow = {
   itemType: string;
   name: string;
@@ -147,6 +191,142 @@ export async function fetchMarketSales(options?: {
   rows.sort((a, b) => b.ts - a.ts);
   setCache(cacheKey, rows, 4);
   return rows;
+}
+
+/**
+ * Global open book from kintaramarket.xyz/api/listings (caps ~1000 server-side).
+ * Prefer this on Vercel — kintara.com/marketplace/listings rate-limits (429) serverless.
+ */
+export async function fetchOpenListings(options?: {
+  limit?: number;
+}): Promise<OpenMarketListing[]> {
+  const limit = Math.min(Math.max(options?.limit ?? 1000, 1), 3000);
+  const cacheKey = `kmxyz:open-listings:v1:${limit}`;
+  const cached = getCached<OpenMarketListing[]>(cacheKey);
+  if (cached && !cached.stale) return cached.value;
+
+  const url = new URL(`${BASE}/api/listings`);
+  url.searchParams.set("limit", String(limit));
+  const res = await fetchWithTimeout(url.toString(), {
+    timeoutMs: 14000,
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) throw new Error(`kintaramarket listings failed: ${res.status}`);
+  const json: unknown = await res.json();
+  if (!Array.isArray(json)) throw new Error("Unexpected open listings shape");
+
+  const rows: OpenMarketListing[] = [];
+  for (const row of json) {
+    const one = openListingSchema.safeParse(row);
+    if (!one.success) continue;
+    if (!one.data.itemType || !(one.data.quantity > 0)) continue;
+    rows.push(one.data);
+  }
+  setCache(cacheKey, rows, 6);
+  return rows;
+}
+
+function reservedBuyerId(v: unknown): string | null {
+  if (v == null) return null;
+  if (typeof v === "number" && Number.isFinite(v)) return String(v);
+  if (typeof v === "string" && v.trim()) return v.trim();
+  if (typeof v === "object" && v !== null) {
+    const o = v as Record<string, unknown>;
+    if (o.id != null) return String(o.id);
+    if (o.userId != null) return String(o.userId);
+  }
+  return null;
+}
+
+/** Map kintaramarket open listings → market hub activity rows. */
+export function openListingsToActivity(
+  rows: OpenMarketListing[],
+  options?: { kinsUsd?: number; sort?: "cheap" | "new"; limit?: number },
+): MarketActivityRow[] {
+  const kinsUsd = options?.kinsUsd;
+  const sort = options?.sort ?? "cheap";
+  const max = Math.min(Math.max(options?.limit ?? 1000, 1), 3000);
+
+  const mapped: MarketActivityRow[] = rows.map((r) => {
+    const priced = normalizeListingPrice({
+      quantity: r.quantity,
+      priceUsd: r.priceUsd,
+      unitUsd: r.unitPrice,
+      priceGold: r.priceGold,
+      currency: r.currency ?? "token",
+    });
+    const qty = priced.quantity;
+    const unitUsd = priced.unitUsd;
+    const lotUsd = priced.lotUsd;
+    const isToken = (r.currency ?? "token") === "token";
+    const unitKins =
+      kinsUsd != null && unitUsd != null && isToken
+        ? usdToKins(unitUsd, kinsUsd)
+        : null;
+    const totalKins =
+      kinsUsd != null && lotUsd != null && isToken
+        ? usdToKins(lotUsd, kinsUsd)
+        : unitKins != null
+          ? d(unitKins).mul(qty).toFixed()
+          : null;
+    const tsMs = r.lastSeen ?? r.firstSeen ?? Date.now();
+    const reserved =
+      r.reservedBy != null ||
+      (typeof r.reservedUntilMs === "number" && r.reservedUntilMs > Date.now());
+
+    return {
+      id: String(r.id),
+      listingId: String(r.id),
+      itemType: r.itemType,
+      name: humanizeItemType(r.itemType),
+      quantity: String(qty),
+      unitKins: unitKins ?? "0",
+      totalKins,
+      unitUsd: unitUsd != null ? String(unitUsd) : null,
+      usdTotal: lotUsd != null ? String(lotUsd) : null,
+      priceGold: priced.priceGold != null ? String(priced.priceGold) : null,
+      currency: r.currency ?? "token",
+      timestamp: new Date(tsMs).toISOString(),
+      sellerName: sanitizePersonName(r.sellerName),
+      sellerId: null,
+      buyerId: reservedBuyerId(r.reservedBy),
+      buyerName: null,
+      reserved,
+      reservedUntilMs:
+        typeof r.reservedUntilMs === "number" ? r.reservedUntilMs : null,
+      itemDurability: null,
+    };
+  });
+
+  mapped.sort((a, b) => {
+    if (sort === "new") {
+      return Date.parse(b.timestamp) - Date.parse(a.timestamp);
+    }
+    // cheap: open first, then unit $
+    const ra = a.reserved ? 1 : 0;
+    const rb = b.reserved ? 1 : 0;
+    if (ra !== rb) return ra - rb;
+    const ua = a.unitUsd != null ? Number(a.unitUsd) : Number.POSITIVE_INFINITY;
+    const ub = b.unitUsd != null ? Number(b.unitUsd) : Number.POSITIVE_INFINITY;
+    if (Number.isFinite(ua) && Number.isFinite(ub) && ua !== ub) return ua - ub;
+    return Date.parse(b.timestamp) - Date.parse(a.timestamp);
+  });
+
+  return mapped.slice(0, max);
+}
+
+export async function fetchMarketActivityFeed(options?: {
+  limit?: number;
+  kinsUsd?: number;
+  sort?: "cheap" | "new";
+}): Promise<MarketActivityRow[]> {
+  const limit = Math.min(Math.max(options?.limit ?? 1000, 1), 3000);
+  const raw = await fetchOpenListings({ limit });
+  return openListingsToActivity(raw, {
+    kinsUsd: options?.kinsUsd,
+    sort: options?.sort,
+    limit,
+  });
 }
 
 export function normalizeSummary(

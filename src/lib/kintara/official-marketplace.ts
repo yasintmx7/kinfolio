@@ -75,7 +75,8 @@ export async function fetchOfficialListings(params?: {
   const category = params?.category ?? "all";
   const limit = Math.min(Math.max(params?.limit ?? 60, 1), 100);
   const offset = Math.max(params?.offset ?? 0, 0);
-  const ttl = params?.cacheTtlSeconds ?? (sort === "new" ? 8 : 40);
+  // Longer TTL reduces 429s from kintara.com on shared Vercel IPs
+  const ttl = params?.cacheTtlSeconds ?? (sort === "new" ? 12 : 55);
 
   const cacheKey = `official:listings:${sort}:${currency}:${category}:${limit}:${offset}`;
   const cached = getCached<OfficialListing[]>(cacheKey);
@@ -90,7 +91,11 @@ export async function fetchOfficialListings(params?: {
 
   const res = await fetchWithTimeout(url.toString(), {
     timeoutMs: 12000,
-    headers: { Accept: "application/json" },
+    headers: {
+      Accept: "application/json",
+      // Identify as public read-only mirror (helps some CDNs; still may 429)
+      "User-Agent": "Kinfolio/1.0 (+https://kinloxg.vercel.app; read-only market mirror)",
+    },
   });
   if (!res.ok) throw new Error(`official listings failed: ${res.status}`);
   const json: unknown = await res.json();
@@ -562,9 +567,8 @@ export async function fetchOfficialRecentActivity(options?: {
     : ["token"];
 
   for (const currency of currencies) {
-    // Parallel chunks of 4 — never treat a failed page as "empty book"
-    // (empty catch used to mass-mark listings as sold on the client).
-    const PARALLEL = 4;
+    // Parallel 2 only — 4× pages was 429'ing kintara.com from Vercel IPs
+    const PARALLEL = 2;
     let endOffset: number | null = null;
     for (let start = 0; start < pages; start += PARALLEL) {
       if (endOffset != null && start * pageSize >= endOffset) break;
@@ -581,8 +585,8 @@ export async function fetchOfficialRecentActivity(options?: {
               category: "all",
               limit: pageSize,
               offset: p * pageSize,
-              // Short TTL so 5s client poll sees new listings / locks
-              cacheTtlSeconds: sort === "new" ? 2 : 4,
+              // Longer TTL under rate limits; client also has KM primary feed
+              cacheTtlSeconds: sort === "new" ? 8 : 20,
             });
             return { p, batch, ok: true as const };
           } catch {

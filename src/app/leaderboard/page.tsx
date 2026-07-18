@@ -23,6 +23,7 @@ type Entry = {
   pvpKills: number | null;
   mobKills: number | null;
   totalKills: number | null;
+  delta24h?: number | null;
   guild: string | null;
 };
 
@@ -346,11 +347,13 @@ export default function LeaderboardPage() {
             Leaderboard
           </h1>
           <p className="mt-1 text-sm text-muted">
-            {PAGE_SIZE} per page · Load more for the next {PAGE_SIZE}
+            Public data from{" "}
+            <span className="font-mono text-xs">kintaramarket.xyz/api/lb</span>
+            {" · "}
+            {PAGE_SIZE}/page
             {upstreamCategory ? (
               <>
-                {" "}
-                · upstream{" "}
+                {" · "}
                 <span className="font-mono text-xs text-sky-hi">
                   {upstreamCategory}
                 </span>
@@ -456,15 +459,16 @@ export default function LeaderboardPage() {
       {unauthorized && (
         <Card className="border-amber/40 bg-amber/10 space-y-2">
           <p className="text-sm font-medium text-amber">
-            Why no data: Kintara leaderboard is private (HTTP 401)
+            Leaderboard temporarily unavailable
           </p>
           <p className="text-xs text-muted leading-relaxed">
-            Set{" "}
-            <code className="font-mono text-[11px] text-sky-hi">
-              KINTARA_SESSION_COOKIE
+            Public feed is{" "}
+            <code className="font-mono text-[11px]">
+              kintaramarket.xyz/api/lb/pvp
             </code>{" "}
-            in Vercel (from a logged-in kintara.com browser), redeploy, then
-            ranks load here — {PAGE_SIZE} at a time with Load more.
+            +{" "}
+            <code className="font-mono text-[11px]">/api/lb/mob</code>. If you
+            see this, refresh or try again shortly.
           </p>
         </Card>
       )}
@@ -551,7 +555,9 @@ export default function LeaderboardPage() {
                   <th className="px-3 py-2.5 font-medium text-right">Score</th>
                   <th className="px-3 py-2.5 font-medium text-right">PvP</th>
                   <th className="px-3 py-2.5 font-medium text-right">Mob</th>
-                  <th className="px-3 py-2.5 font-medium text-right">Total</th>
+                  <th className="px-3 py-2.5 font-medium text-right">
+                    Δ 24h
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/25">
@@ -584,7 +590,9 @@ export default function LeaderboardPage() {
                       {formatScore(e.mobKills)}
                     </td>
                     <td className="px-3 py-2.5 text-right font-mono tabular-nums text-muted">
-                      {formatScore(e.totalKills)}
+                      {e.delta24h != null && e.delta24h > 0
+                        ? `+${formatScore(e.delta24h)}`
+                        : formatScore(e.delta24h)}
                     </td>
                   </tr>
                 ))}

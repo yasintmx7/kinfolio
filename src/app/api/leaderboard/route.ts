@@ -67,14 +67,15 @@ export async function GET(request: Request) {
           count: found.matches.length,
           pagesScanned: found.pagesScanned,
           authConfigured: isLeaderboardAuthConfigured(),
+          source: found.source ?? "kintaramarket.xyz",
           note: found.error
             ? found.error
             : found.matches.length
-              ? `Found ${found.matches.length} player(s) matching “${q}” (scanned ${found.pagesScanned} page(s)).`
-              : `No players matching “${q}” in the first ${found.pagesScanned} page(s).`,
+              ? `Found ${found.matches.length} player(s) matching “${q}”.`
+              : `No players matching “${q}”.`,
         },
         {
-          source: "kintara.com",
+          source: found.source ?? "kintaramarket.xyz",
           updatedAt: new Date().toISOString(),
           cacheControl: "public, s-maxage=30, stale-while-revalidate=90",
         },
@@ -100,10 +101,13 @@ export async function GET(request: Request) {
         total: board.total,
         hasMore: board.hasMore,
         authConfigured: isLeaderboardAuthConfigured(),
+        source: board.source,
+        ts: board.ts,
+        prevTs: board.prevTs,
         note: board.note,
       },
       {
-        source: "kintara.com",
+        source: board.source,
         updatedAt: new Date().toISOString(),
         cacheControl: "public, s-maxage=45, stale-while-revalidate=120",
       },
@@ -111,12 +115,10 @@ export async function GET(request: Request) {
   } catch (e) {
     const lb = (e as Error & { lb?: LeaderboardFetchError }).lb;
     if (lb?.code === "UNAUTHORIZED") {
-      // Include setup hint in message; UI also shows structured help
-      return fail(
-        "LEADERBOARD_UNAUTHORIZED",
-        lb.message,
-        { status: 502, retryable: true },
-      );
+      return fail("LEADERBOARD_UNAUTHORIZED", lb.message, {
+        status: 502,
+        retryable: true,
+      });
     }
     if (lb?.code === "EMPTY") {
       return fail("LEADERBOARD_EMPTY", lb.message, {

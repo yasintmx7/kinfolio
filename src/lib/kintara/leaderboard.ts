@@ -1,26 +1,22 @@
 /**
- * Official Kintara leaderboard — read-only proxy of
- * GET https://kintara.com/api/leaderboard?category=…&offset=…&limit=…
+ * Kill leaderboards — primary: public kintaramarket.xyz
+ *   GET https://kintaramarket.xyz/api/lb/pvp
+ *   GET https://kintaramarket.xyz/api/lb/mob
  *
- * Note: as of 2026-07 the endpoint returns 401 without a game session.
- * We still call it publicly (no cookies / no private keys) and surface
- * structured errors so the UI can explain availability.
+ * Shape: { ts, prevTs (~24h earlier), rows: [{ id, name, value, d }] }
+ *   value = total kills in that category
+ *   d     = delta since prevTs (~last 24 hours)
+ *
+ * Official kintara.com/api/leaderboard is 401 without a game session;
+ * optional KINTARA_SESSION* env still tried as soft enrich only.
  */
 
 import { z } from "zod";
 import { fetchWithTimeout, getCached, setCache } from "@/lib/api/cache";
 
-const BASE = "https://kintara.com";
+const KM_BASE = "https://kintaramarket.xyz";
+const OFFICIAL_BASE = "https://kintara.com";
 
-/**
- * Optional server-only session cookie for leaderboard (Vercel env).
- * Official /api/leaderboard returns 401 without a game login.
- * Never expose this to the client. Do not commit real values.
- *
- * Set either:
- *  - KINTARA_SESSION_COOKIE = full Cookie header value, e.g. "session=abc; …"
- *  - or KINTARA_SESSION = just the session token (sent as session=<value>)
- */
 export function getLeaderboardAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
     Accept: "application/json",
@@ -32,7 +28,6 @@ export function getLeaderboardAuthHeaders(): Record<string, string> {
   if (full) {
     headers.Cookie = full;
   } else if (token) {
-    // Common patterns: raw token or already "name=value"
     headers.Cookie = token.includes("=") ? token : `session=${token}`;
   }
   return headers;
@@ -65,8 +60,9 @@ export type LeaderboardEntry = {
   pvpKills: number | null;
   mobKills: number | null;
   totalKills: number | null;
+  /** ~24h delta for active metric when available */
+  delta24h: number | null;
   guild: string | null;
-  /** Extra numeric fields from upstream (best-effort) */
   extras: Record<string, number>;
 };
 
@@ -74,12 +70,16 @@ export type LeaderboardResult = {
   category: LeaderboardCategory;
   period: LeaderboardPeriod;
   upstreamCategory: string;
+  source: string;
   entries: LeaderboardEntry[];
   offset: number;
   limit: number;
   total: number | null;
   hasMore: boolean;
   note: string | null;
+  /** Snapshot times from kintaramarket (ms) */
+  ts: number | null;
+  prevTs: number | null;
 };
 
 export type LeaderboardFetchError = {
@@ -87,260 +87,214 @@ export type LeaderboardFetchError = {
   message: string;
   status?: number;
   rawSample?: string;
-  /** True when no KINTARA_SESSION* env is set on the server */
   authConfigured?: boolean;
 };
 
-/** Map our UI category → upstream query params. */
 export function resolveUpstreamQuery(category: LeaderboardCategory): {
   category: string;
   period: LeaderboardPeriod;
-  extra: Record<string, string>;
+  kmPath: "pvp" | "mob" | "both";
+  useDelta: boolean;
 } {
   switch (category) {
     case "pvp":
-      return { category: "pvp", period: "all", extra: {} };
+      return { category: "pvp", period: "all", kmPath: "pvp", useDelta: false };
     case "mob":
-      return { category: "mob", period: "all", extra: {} };
-    case "kills_24h":
-      return {
-        category: "kills",
-        period: "24h",
-        extra: { period: "24h", range: "24h", window: "day" },
-      };
+      return { category: "mob", period: "all", kmPath: "mob", useDelta: false };
     case "pvp_24h":
       return {
         category: "pvp",
         period: "24h",
-        extra: { period: "24h", range: "24h", window: "day" },
+        kmPath: "pvp",
+        useDelta: true,
       };
     case "mob_24h":
       return {
         category: "mob",
         period: "24h",
-        extra: { period: "24h", range: "24h", window: "day" },
+        kmPath: "mob",
+        useDelta: true,
+      };
+    case "kills_24h":
+      return {
+        category: "kills",
+        period: "24h",
+        kmPath: "both",
+        useDelta: true,
       };
     case "kills":
     default:
-      return { category: "kills", period: "all", extra: {} };
+      return {
+        category: "kills",
+        period: "all",
+        kmPath: "both",
+        useDelta: false,
+      };
   }
 }
 
-/** Alternate category strings if primary 404s (order matters). */
+/** @deprecated kept for tests / official fallback naming */
 export function categoryFallbacks(primary: string): string[] {
   const map: Record<string, string[]> = {
-    kills: ["kills", "total_kills", "totalKills", "all_kills"],
-    pvp: ["pvp", "pvp_kills", "pvpKills", "player_kills", "pk"],
-    mob: ["mob", "mobs", "mob_kills", "mobKills", "monster", "monsters", "pve"],
+    kills: ["kills", "total_kills"],
+    pvp: ["pvp", "pvp_kills"],
+    mob: ["mob", "mobs", "mob_kills"],
   };
   return map[primary] ?? [primary];
 }
 
-function num(v: unknown): number | null {
-  if (typeof v === "number" && Number.isFinite(v)) return v;
-  if (typeof v === "string" && v.trim() && Number.isFinite(Number(v))) {
-    return Number(v);
+const kmRowSchema = z.object({
+  id: z.union([z.number(), z.string()]),
+  name: z.string(),
+  value: z.number(),
+  d: z.number().optional(),
+});
+
+const kmPayloadSchema = z.object({
+  ts: z.number().optional(),
+  prevTs: z.number().optional(),
+  rows: z.array(kmRowSchema),
+});
+
+type KmBoard = {
+  ts: number | null;
+  prevTs: number | null;
+  byId: Map<
+    string,
+    { id: string; name: string; value: number; d: number }
+  >;
+};
+
+async function fetchKmLb(kind: "pvp" | "mob"): Promise<KmBoard> {
+  const cacheKey = `km:lb:${kind}:v1`;
+  const cached = getCached<KmBoard>(cacheKey);
+  if (cached && !cached.stale) return cached.value;
+
+  const res = await fetchWithTimeout(`${KM_BASE}/api/lb/${kind}`, {
+    timeoutMs: 15000,
+    headers: {
+      Accept: "application/json",
+      "User-Agent":
+        "Kinfolio/1.0 (+https://kinloxg.vercel.app; read-only leaderboard)",
+    },
+  });
+  if (!res.ok) {
+    throw new Error(`kintaramarket lb/${kind} failed: ${res.status}`);
   }
-  return null;
-}
-
-function str(v: unknown): string | null {
-  if (typeof v === "string" && v.trim()) return v.trim();
-  if (typeof v === "number" && Number.isFinite(v)) return String(v);
-  return null;
-}
-
-function pickNum(obj: Record<string, unknown>, keys: string[]): number | null {
-  for (const k of keys) {
-    if (k in obj) {
-      const n = num(obj[k]);
-      if (n != null) return n;
-    }
-  }
-  return null;
-}
-
-function pickStr(obj: Record<string, unknown>, keys: string[]): string | null {
-  for (const k of keys) {
-    if (k in obj) {
-      const s = str(obj[k]);
-      if (s) return s;
-    }
-  }
-  return null;
-}
-
-/** Loose row — game shapes vary by category. */
-const looseRow = z.record(z.string(), z.unknown());
-
-function extractRows(json: unknown): unknown[] {
-  if (Array.isArray(json)) return json;
-  if (!json || typeof json !== "object") return [];
-  const o = json as Record<string, unknown>;
-  for (const key of [
-    "entries",
-    "leaderboard",
-    "rows",
-    "players",
-    "data",
-    "results",
-    "items",
-    "list",
-  ]) {
-    const v = o[key];
-    if (Array.isArray(v)) return v;
-    if (v && typeof v === "object") {
-      const inner = v as Record<string, unknown>;
-      for (const k2 of ["entries", "leaderboard", "rows", "players"]) {
-        if (Array.isArray(inner[k2])) return inner[k2] as unknown[];
-      }
-    }
-  }
-  return [];
-}
-
-function extractTotal(json: unknown): number | null {
-  if (!json || typeof json !== "object") return null;
-  const o = json as Record<string, unknown>;
-  return (
-    pickNum(o, ["total", "totalCount", "count", "totalEntries", "size"]) ?? null
-  );
-}
-
-export function normalizeLeaderboardEntry(
-  raw: unknown,
-  index: number,
-  offset: number,
-): LeaderboardEntry | null {
-  const parsed = looseRow.safeParse(raw);
-  if (!parsed.success) return null;
-  const o = parsed.data;
-
-  const username =
-    pickStr(o, [
-      "username",
-      "userName",
-      "name",
-      "playerName",
-      "player",
-      "displayName",
-      "nick",
-      "nickname",
-    ]) ?? null;
-  if (!username) return null;
-
-  const userId = pickStr(o, [
-    "userId",
-    "playerId",
-    "id",
-    "uid",
-    "accountId",
-  ]);
-
-  const pvpKills = pickNum(o, [
-    "pvpKills",
-    "pvp_kills",
-    "pvp",
-    "playerKills",
-    "player_kills",
-    "pk",
-  ]);
-  const mobKills = pickNum(o, [
-    "mobKills",
-    "mob_kills",
-    "mobs",
-    "mob",
-    "monsterKills",
-    "monster_kills",
-    "pveKills",
-    "pve_kills",
-    "pve",
-  ]);
-  const totalKills = pickNum(o, [
-    "totalKills",
-    "total_kills",
-    "kills",
-    "killCount",
-    "kill_count",
-  ]);
-
-  const score =
-    pickNum(o, [
-      "score",
-      "value",
-      "points",
-      "amount",
-      "count",
-      "kills",
-      "total",
-      "totalKills",
-      "pvpKills",
-      "mobKills",
-    ]) ??
-    totalKills ??
-    pvpKills ??
-    mobKills ??
-    0;
-
-  const rank =
-    pickNum(o, ["rank", "position", "place", "index"]) ?? offset + index + 1;
-
-  const guild = pickStr(o, [
-    "guild",
-    "guildName",
-    "guild_name",
-    "clan",
-    "tag",
-    "guildTag",
-  ]);
-
-  const extras: Record<string, number> = {};
-  for (const [k, v] of Object.entries(o)) {
-    const n = num(v);
-    if (n != null && !["rank", "position", "place", "index", "id", "userId"].includes(k)) {
-      extras[k] = n;
-    }
+  const json: unknown = await res.json();
+  const parsed = kmPayloadSchema.safeParse(json);
+  if (!parsed.success) {
+    throw new Error(`Unexpected kintaramarket lb/${kind} shape`);
   }
 
-  return {
-    rank: Math.max(1, Math.floor(rank)),
-    userId,
-    username,
-    score,
-    pvpKills,
-    mobKills,
-    totalKills: totalKills ?? (pvpKills != null && mobKills != null ? pvpKills + mobKills : totalKills),
-    guild,
-    extras,
+  const byId = new Map<
+    string,
+    { id: string; name: string; value: number; d: number }
+  >();
+  for (const r of parsed.data.rows) {
+    const id = String(r.id);
+    byId.set(id, {
+      id,
+      name: r.name.trim(),
+      value: r.value,
+      d: r.d ?? 0,
+    });
+  }
+
+  const board: KmBoard = {
+    ts: parsed.data.ts ?? null,
+    prevTs: parsed.data.prevTs ?? null,
+    byId,
   };
+  setCache(cacheKey, board, 60);
+  return board;
 }
 
-export function normalizeLeaderboardPayload(
-  json: unknown,
-  options: { offset: number; limit: number; category: LeaderboardCategory },
-): LeaderboardResult {
-  const rows = extractRows(json);
-  const entries: LeaderboardEntry[] = [];
-  for (let i = 0; i < rows.length; i++) {
-    const e = normalizeLeaderboardEntry(rows[i], i, options.offset);
-    if (e) entries.push(e);
+function buildEntriesFromKm(
+  pvp: KmBoard | null,
+  mob: KmBoard | null,
+  options: {
+    category: LeaderboardCategory;
+    useDelta: boolean;
+    kmPath: "pvp" | "mob" | "both";
+  },
+): LeaderboardEntry[] {
+  const ids = new Set<string>();
+  if (pvp) for (const id of pvp.byId.keys()) ids.add(id);
+  if (mob) for (const id of mob.byId.keys()) ids.add(id);
+
+  const raw: LeaderboardEntry[] = [];
+  for (const id of ids) {
+    const pr = pvp?.byId.get(id);
+    const mr = mob?.byId.get(id);
+    const username = pr?.name || mr?.name;
+    if (!username) continue;
+
+    const pvpKills = pr?.value ?? null;
+    const mobKills = mr?.value ?? null;
+    const pvpD = pr?.d ?? null;
+    const mobD = mr?.d ?? null;
+    const totalKills =
+      pvpKills != null || mobKills != null
+        ? (pvpKills ?? 0) + (mobKills ?? 0)
+        : null;
+    const totalD =
+      pvpD != null || mobD != null ? (pvpD ?? 0) + (mobD ?? 0) : null;
+
+    let score = 0;
+    let delta24h: number | null = null;
+
+    if (options.kmPath === "pvp") {
+      score = options.useDelta ? (pvpD ?? 0) : (pvpKills ?? 0);
+      delta24h = pvpD;
+    } else if (options.kmPath === "mob") {
+      score = options.useDelta ? (mobD ?? 0) : (mobKills ?? 0);
+      delta24h = mobD;
+    } else {
+      score = options.useDelta ? (totalD ?? 0) : (totalKills ?? 0);
+      delta24h = totalD;
+    }
+
+    raw.push({
+      rank: 0,
+      userId: id,
+      username,
+      score,
+      pvpKills,
+      mobKills,
+      totalKills,
+      delta24h,
+      guild: null,
+      extras: {
+        ...(pvpD != null ? { pvpDelta24h: pvpD } : {}),
+        ...(mobD != null ? { mobDelta24h: mobD } : {}),
+      },
+    });
   }
 
-  const total = extractTotal(json);
-  const period = resolveUpstreamQuery(options.category).period;
+  // Rank by score desc; for 24h, players with d=0 still appear but lower
+  raw.sort(
+    (a, b) =>
+      b.score - a.score ||
+      a.username.localeCompare(b.username, undefined, {
+        sensitivity: "base",
+      }),
+  );
+  return raw.map((e, i) => ({ ...e, rank: i + 1 }));
+}
 
+export function paginateEntries(
+  entries: LeaderboardEntry[],
+  offset: number,
+  limit: number,
+): { page: LeaderboardEntry[]; hasMore: boolean; total: number } {
+  const off = Math.max(0, offset);
+  const lim = Math.min(Math.max(limit, 1), 200);
+  const page = entries.slice(off, off + lim);
   return {
-    category: options.category,
-    period,
-    upstreamCategory: resolveUpstreamQuery(options.category).category,
-    entries,
-    offset: options.offset,
-    limit: options.limit,
-    total,
-    hasMore:
-      rows.length >= options.limit ||
-      (total != null && options.offset + entries.length < total),
-    note: null,
+    page,
+    hasMore: off + page.length < entries.length,
+    total: entries.length,
   };
 }
 
@@ -359,149 +313,244 @@ export function filterEntriesByQuery(
   );
 }
 
+/** Test helper — normalize loose official-style rows (kept for unit tests). */
+export function normalizeLeaderboardEntry(
+  raw: unknown,
+  index: number,
+  offset: number,
+): LeaderboardEntry | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const username =
+    (typeof o.username === "string" && o.username) ||
+    (typeof o.name === "string" && o.name) ||
+    (typeof o.playerName === "string" && o.playerName) ||
+    null;
+  if (!username) return null;
+  const num = (v: unknown) =>
+    typeof v === "number" && Number.isFinite(v)
+      ? v
+      : typeof v === "string" && Number.isFinite(Number(v))
+        ? Number(v)
+        : null;
+  const pvpKills = num(o.pvpKills ?? o.pvp_kills ?? o.pvp);
+  const mobKills = num(o.mobKills ?? o.mob_kills ?? o.mob);
+  const totalKills = num(o.totalKills ?? o.kills ?? o.total);
+  const score =
+    num(o.score ?? o.value ?? o.kills ?? o.pvpKills ?? o.mobKills) ??
+    totalKills ??
+    pvpKills ??
+    mobKills ??
+    0;
+  const rank = num(o.rank ?? o.position) ?? offset + index + 1;
+  const userId =
+    o.userId != null
+      ? String(o.userId)
+      : o.id != null
+        ? String(o.id)
+        : null;
+  return {
+    rank: Math.max(1, Math.floor(rank)),
+    userId,
+    username: String(username).trim(),
+    score,
+    pvpKills,
+    mobKills,
+    totalKills:
+      totalKills ??
+      (pvpKills != null && mobKills != null ? pvpKills + mobKills : totalKills),
+    delta24h: num(o.d ?? o.delta ?? o.delta24h),
+    guild:
+      typeof o.guild === "string"
+        ? o.guild
+        : typeof o.guildName === "string"
+          ? o.guildName
+          : null,
+    extras: {},
+  };
+}
+
+export function normalizeLeaderboardPayload(
+  json: unknown,
+  options: { offset: number; limit: number; category: LeaderboardCategory },
+): LeaderboardResult {
+  // Official-style wrapper
+  let rows: unknown[] = [];
+  if (Array.isArray(json)) rows = json;
+  else if (json && typeof json === "object") {
+    const o = json as Record<string, unknown>;
+    for (const key of ["entries", "leaderboard", "rows", "players", "data"]) {
+      const v = o[key];
+      if (Array.isArray(v)) {
+        rows = v;
+        break;
+      }
+    }
+  }
+  const entries: LeaderboardEntry[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    const e = normalizeLeaderboardEntry(rows[i], i, options.offset);
+    if (e) entries.push(e);
+  }
+  const resolved = resolveUpstreamQuery(options.category);
+  const { page, hasMore, total } = paginateEntries(
+    entries,
+    options.offset,
+    options.limit,
+  );
+  return {
+    category: options.category,
+    period: resolved.period,
+    upstreamCategory: resolved.category,
+    source: "normalized",
+    entries: page,
+    offset: options.offset,
+    limit: options.limit,
+    total,
+    hasMore,
+    note: null,
+    ts: null,
+    prevTs: null,
+  };
+}
+
 /**
- * Fetch one page from official leaderboard.
- * Throws LeaderboardFetchError-shaped Error with `.code` property.
+ * Primary public fetch via kintaramarket lb/pvp + lb/mob.
  */
-export async function fetchOfficialLeaderboard(options: {
+export async function fetchMarketLeaderboard(options: {
   category?: LeaderboardCategory;
   offset?: number;
   limit?: number;
-  /** Force skip cache */
   force?: boolean;
 }): Promise<LeaderboardResult> {
   const category = options.category ?? "kills";
   const offset = Math.max(options.offset ?? 0, 0);
   const limit = Math.min(Math.max(options.limit ?? 30, 1), 100);
   const resolved = resolveUpstreamQuery(category);
-  const candidates = categoryFallbacks(resolved.category);
 
-  const cacheKey = `lb:v1:${category}:${offset}:${limit}`;
+  const cacheKey = `lb:km:v2:${category}:${offset}:${limit}`;
   if (!options.force) {
     const cached = getCached<LeaderboardResult>(cacheKey);
     if (cached && !cached.stale) return cached.value;
   }
 
-  let lastErr: LeaderboardFetchError | null = null;
+  // Full boards cached inside fetchKmLb; build merged list then paginate
+  const needPvp = resolved.kmPath === "pvp" || resolved.kmPath === "both";
+  const needMob = resolved.kmPath === "mob" || resolved.kmPath === "both";
 
-  for (const cat of candidates) {
-    const url = new URL(`${BASE}/api/leaderboard`);
-    url.searchParams.set("category", cat);
+  const [pvpSettled, mobSettled] = await Promise.allSettled([
+    needPvp ? fetchKmLb("pvp") : Promise.resolve(null),
+    needMob ? fetchKmLb("mob") : Promise.resolve(null),
+  ]);
+
+  const pvp =
+    pvpSettled.status === "fulfilled" ? pvpSettled.value : null;
+  const mob =
+    mobSettled.status === "fulfilled" ? mobSettled.value : null;
+
+  if (!pvp && !mob) {
+    const err = new Error(
+      "kintaramarket leaderboard unavailable (lb/pvp and lb/mob failed)",
+    ) as Error & { lb?: LeaderboardFetchError };
+    err.lb = {
+      code: "UPSTREAM",
+      message: err.message,
+    };
+    throw err;
+  }
+
+  const all = buildEntriesFromKm(pvp, mob, {
+    category,
+    useDelta: resolved.useDelta,
+    kmPath: resolved.kmPath,
+  });
+
+  // For 24h boards, optionally drop pure zeros so top is meaningful
+  const ranked = resolved.useDelta
+    ? all.filter((e) => e.score > 0)
+    : all;
+  // Re-rank after filter
+  const ordered = ranked.map((e, i) => ({ ...e, rank: i + 1 }));
+
+  const { page, hasMore, total } = paginateEntries(ordered, offset, limit);
+  const ts = pvp?.ts ?? mob?.ts ?? null;
+  const prevTs = pvp?.prevTs ?? mob?.prevTs ?? null;
+  const hours =
+    ts != null && prevTs != null && ts > prevTs
+      ? Math.round((ts - prevTs) / 3_600_000)
+      : 24;
+
+  const result: LeaderboardResult = {
+    category,
+    period: resolved.period,
+    upstreamCategory:
+      resolved.kmPath === "both"
+        ? "lb/pvp+lb/mob"
+        : `lb/${resolved.kmPath}`,
+    source: "kintaramarket.xyz",
+    entries: page,
+    offset,
+    limit,
+    total,
+    hasMore,
+    note: resolved.useDelta
+      ? `Δ ≈ last ${hours}h (kintaramarket snapshot delta). Score = kills in that window.`
+      : "Totals from kintaramarket.xyz public leaderboards (no game login).",
+    ts,
+    prevTs,
+  };
+
+  setCache(cacheKey, result, 45);
+  return result;
+}
+
+/**
+ * Public entry — kintaramarket first; optional official if session configured.
+ */
+export async function fetchOfficialLeaderboard(options: {
+  category?: LeaderboardCategory;
+  offset?: number;
+  limit?: number;
+  force?: boolean;
+}): Promise<LeaderboardResult> {
+  try {
+    return await fetchMarketLeaderboard(options);
+  } catch (kmErr) {
+    // Soft fallback to official only if auth cookie present
+    if (!isLeaderboardAuthConfigured()) {
+      throw kmErr;
+    }
+    // Official path (rarely works without cookie; cookie may help)
+    const category = options.category ?? "kills";
+    const offset = Math.max(options.offset ?? 0, 0);
+    const limit = Math.min(Math.max(options.limit ?? 30, 1), 100);
+    const resolved = resolveUpstreamQuery(category);
+    const url = new URL(`${OFFICIAL_BASE}/api/leaderboard`);
+    url.searchParams.set("category", resolved.category);
     url.searchParams.set("offset", String(offset));
     url.searchParams.set("limit", String(limit));
-    for (const [k, v] of Object.entries(resolved.extra)) {
-      if (!url.searchParams.has(k)) url.searchParams.set(k, v);
+    if (resolved.period === "24h") {
+      url.searchParams.set("period", "24h");
     }
-
-    let res: Response;
-    try {
-      res = await fetchWithTimeout(url.toString(), {
-        timeoutMs: 12000,
-        headers: getLeaderboardAuthHeaders(),
-      });
-    } catch (e) {
-      lastErr = {
-        code: "UPSTREAM",
-        message: e instanceof Error ? e.message : "Network error",
-      };
-      continue;
-    }
-
-    if (res.status === 401 || res.status === 403) {
-      const configured = isLeaderboardAuthConfigured();
-      lastErr = {
-        code: "UNAUTHORIZED",
-        message: configured
-          ? "Leaderboard session cookie rejected (401). Cookie may be expired — refresh KINTARA_SESSION_COOKIE from a logged-in browser (F12 → Application → Cookies)."
-          : "Official leaderboard returns 401 without a game session. Set KINTARA_SESSION_COOKIE (or KINTARA_SESSION) in Vercel env so the server can read it. Public unauthenticated access is not available.",
-        status: res.status,
-        authConfigured: configured,
-      };
-      // All categories will 401 the same way — stop early
-      break;
-    }
-
-    if (res.status === 404) {
-      lastErr = {
-        code: "NOT_FOUND",
-        message: `Category “${cat}” not found`,
-        status: 404,
-      };
-      continue; // try fallback category name
-    }
-
+    const res = await fetchWithTimeout(url.toString(), {
+      timeoutMs: 12000,
+      headers: getLeaderboardAuthHeaders(),
+    });
     if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      lastErr = {
-        code: "UPSTREAM",
-        message: `Leaderboard upstream ${res.status}`,
-        status: res.status,
-        rawSample: text.slice(0, 200),
-      };
-      continue;
+      throw kmErr;
     }
-
     const json: unknown = await res.json();
-    // Some APIs return { ok: false, error: "…" } with 200
-    if (
-      json &&
-      typeof json === "object" &&
-      (json as { ok?: boolean }).ok === false
-    ) {
-      const err = String(
-        (json as { error?: string }).error ?? "upstream rejected",
-      );
-      if (/unauth/i.test(err)) {
-        lastErr = {
-          code: "UNAUTHORIZED",
-          message:
-            "Official leaderboard requires a logged-in Kintara session.",
-          status: 401,
-        };
-        break;
-      }
-      lastErr = { code: "UPSTREAM", message: err };
-      continue;
-    }
-
     const result = normalizeLeaderboardPayload(json, {
       offset,
       limit,
       category,
     });
-    result.upstreamCategory = cat;
-
-    if (!result.entries.length) {
-      lastErr = {
-        code: "EMPTY",
-        message: "Leaderboard returned no player rows for this category.",
-        rawSample: JSON.stringify(json).slice(0, 240),
-      };
-      continue;
-    }
-
-    if (result.period === "24h") {
-      result.note =
-        "Requested last-24h window (period/range query). If upstream ignores it, scores may be all-time.";
-    }
-
-    setCache(cacheKey, result, 45);
+    result.source = "kintara.com";
+    result.upstreamCategory = resolved.category;
     return result;
   }
-
-  const err = lastErr ?? {
-    code: "UPSTREAM" as const,
-    message: "Failed to load leaderboard",
-  };
-  const e = new Error(err.message) as Error & { lb?: LeaderboardFetchError };
-  e.lb = err;
-  throw e;
 }
 
-/**
- * Scan pages to find players matching a search query (username / id / guild).
- * Caps network: maxPages × limit rows.
- */
 export async function searchLeaderboardPlayers(options: {
   category?: LeaderboardCategory;
   query: string;
@@ -513,58 +562,72 @@ export async function searchLeaderboardPlayers(options: {
   category: LeaderboardCategory;
   unauthorized?: boolean;
   error?: string;
+  source?: string;
 }> {
   const q = options.query.trim();
   const category = options.category ?? "kills";
-  const pageSize = Math.min(Math.max(options.pageSize ?? 30, 1), 50);
-  const maxPages = Math.min(Math.max(options.maxPages ?? 10, 1), 20);
-
   if (!q) {
     return { matches: [], pagesScanned: 0, category };
   }
 
-  const matches: LeaderboardEntry[] = [];
-  const seen = new Set<string>();
-  let pagesScanned = 0;
-
   try {
-    for (let p = 0; p < maxPages; p++) {
-      const page = await fetchOfficialLeaderboard({
-        category,
-        offset: p * pageSize,
-        limit: pageSize,
-      });
-      pagesScanned++;
-      const hit = filterEntriesByQuery(page.entries, q);
-      for (const e of hit) {
-        const key = `${e.userId ?? ""}:${e.username.toLowerCase()}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        matches.push(e);
-      }
-      if (!page.hasMore || page.entries.length === 0) break;
-      // Enough matches for UI
-      if (matches.length >= 40) break;
-    }
-  } catch (e) {
-    const lb = (e as Error & { lb?: LeaderboardFetchError }).lb;
-    if (lb?.code === "UNAUTHORIZED") {
-      return {
-        matches: [],
-        pagesScanned,
-        category,
-        unauthorized: true,
-        error: lb.message,
-      };
-    }
+    // Full board once (~1500 rows), filter client-side
+    const full = await fetchMarketLeaderboardFull(category);
+    const matches = filterEntriesByQuery(full.entries, q).slice(0, 50);
     return {
       matches,
-      pagesScanned,
+      pagesScanned: 1,
       category,
+      source: full.source,
+    };
+  } catch (e) {
+    const lb = (e as Error & { lb?: LeaderboardFetchError }).lb;
+    return {
+      matches: [],
+      pagesScanned: 0,
+      category,
+      unauthorized: lb?.code === "UNAUTHORIZED",
       error: e instanceof Error ? e.message : "Search failed",
     };
   }
+}
 
-  matches.sort((a, b) => a.rank - b.rank || b.score - a.score);
-  return { matches, pagesScanned, category };
+/** Full ranked list (no pagination) for search — uses same KM boards. */
+export async function fetchMarketLeaderboardFull(
+  category: LeaderboardCategory,
+): Promise<LeaderboardResult> {
+  const resolved = resolveUpstreamQuery(category);
+  const needPvp = resolved.kmPath === "pvp" || resolved.kmPath === "both";
+  const needMob = resolved.kmPath === "mob" || resolved.kmPath === "both";
+  const [pvpSettled, mobSettled] = await Promise.allSettled([
+    needPvp ? fetchKmLb("pvp") : Promise.resolve(null),
+    needMob ? fetchKmLb("mob") : Promise.resolve(null),
+  ]);
+  const pvp = pvpSettled.status === "fulfilled" ? pvpSettled.value : null;
+  const mob = mobSettled.status === "fulfilled" ? mobSettled.value : null;
+  if (!pvp && !mob) {
+    throw new Error("kintaramarket leaderboard unavailable");
+  }
+  const all = buildEntriesFromKm(pvp, mob, {
+    category,
+    useDelta: resolved.useDelta,
+    kmPath: resolved.kmPath,
+  });
+  const ranked = resolved.useDelta ? all.filter((e) => e.score > 0) : all;
+  const ordered = ranked.map((e, i) => ({ ...e, rank: i + 1 }));
+  return {
+    category,
+    period: resolved.period,
+    upstreamCategory:
+      resolved.kmPath === "both" ? "lb/pvp+lb/mob" : `lb/${resolved.kmPath}`,
+    source: "kintaramarket.xyz",
+    entries: ordered,
+    offset: 0,
+    limit: ordered.length,
+    total: ordered.length,
+    hasMore: false,
+    note: null,
+    ts: pvp?.ts ?? mob?.ts ?? null,
+    prevTs: pvp?.prevTs ?? mob?.prevTs ?? null,
+  };
 }

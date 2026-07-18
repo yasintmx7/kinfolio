@@ -343,18 +343,47 @@ export default function LeaderboardPage() {
       </Card>
 
       {unauthorized && (
-        <Card className="border-amber/40 bg-amber/10">
+        <Card className="border-amber/40 bg-amber/10 space-y-2">
           <p className="text-sm font-medium text-amber">
-            Official leaderboard is session-gated (401)
+            Why no data: Kintara leaderboard is private (HTTP 401)
           </p>
-          <p className="mt-1 text-xs text-muted leading-relaxed">
+          <p className="text-xs text-muted leading-relaxed">
+            Official{" "}
             <code className="font-mono text-[11px]">
-              GET /api/leaderboard?category=kills
+              kintara.com/api/leaderboard?category=kills
             </code>{" "}
-            currently returns unauthorized without a logged-in Kintara game
-            session. Kinfolio stays read-only and never stores your game
-            cookies. When Kintara opens this endpoint publicly, rankings will
-            appear here automatically.
+            only works when logged into the game. Market listings are public;
+            kills leaderboard is not. Kinfolio never puts your login in the
+            browser — only an optional server env cookie.
+          </p>
+          <ol className="list-decimal space-y-1 pl-4 text-xs text-muted leading-relaxed">
+            <li>Log into https://kintara.com in Chrome</li>
+            <li>
+              F12 → <strong>Application</strong> → Cookies →{" "}
+              <code className="font-mono">kintara.com</code>
+            </li>
+            <li>
+              Copy the full Cookie string (or the main session cookie value)
+            </li>
+            <li>
+              Vercel → Project → Settings → Environment Variables → add:
+              <br />
+              <code className="font-mono text-[11px] text-sky-hi">
+                KINTARA_SESSION_COOKIE
+              </code>{" "}
+              = pasted cookies
+              <br />
+              or{" "}
+              <code className="font-mono text-[11px] text-sky-hi">
+                KINTARA_SESSION
+              </code>{" "}
+              = session token only
+            </li>
+            <li>Redeploy, then refresh this page</li>
+          </ol>
+          <p className="text-[11px] text-muted">
+            Cookies expire — if data stops loading later, paste a fresh cookie.
+            Never commit cookies to git.
           </p>
         </Card>
       )}

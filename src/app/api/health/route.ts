@@ -1,4 +1,5 @@
 import { ok } from "@/lib/api/response";
+import { isLeaderboardAuthConfigured } from "@/lib/kintara/leaderboard";
 import { BLOCKED_WRITE_ENDPOINTS } from "@/lib/kintara/official-marketplace";
 
 export const runtime = "nodejs";
@@ -17,6 +18,8 @@ export async function GET() {
         worldEconomy: true,
         wikiIcons: true,
         leaderboard: true,
+        /** True if KINTARA_SESSION* env is set (not whether cookie is still valid) */
+        leaderboardAuthConfigured: isLeaderboardAuthConfigured(),
       },
       policy: {
         readOnly: true,

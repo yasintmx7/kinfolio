@@ -12,6 +12,39 @@ import { fetchWithTimeout, getCached, setCache } from "@/lib/api/cache";
 
 const BASE = "https://kintara.com";
 
+/**
+ * Optional server-only session cookie for leaderboard (Vercel env).
+ * Official /api/leaderboard returns 401 without a game login.
+ * Never expose this to the client. Do not commit real values.
+ *
+ * Set either:
+ *  - KINTARA_SESSION_COOKIE = full Cookie header value, e.g. "session=abc; …"
+ *  - or KINTARA_SESSION = just the session token (sent as session=<value>)
+ */
+export function getLeaderboardAuthHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    "User-Agent":
+      "Kinfolio/1.0 (+https://kinloxg.vercel.app; read-only leaderboard)",
+  };
+  const full = process.env.KINTARA_SESSION_COOKIE?.trim();
+  const token = process.env.KINTARA_SESSION?.trim();
+  if (full) {
+    headers.Cookie = full;
+  } else if (token) {
+    // Common patterns: raw token or already "name=value"
+    headers.Cookie = token.includes("=") ? token : `session=${token}`;
+  }
+  return headers;
+}
+
+export function isLeaderboardAuthConfigured(): boolean {
+  return Boolean(
+    process.env.KINTARA_SESSION_COOKIE?.trim() ||
+      process.env.KINTARA_SESSION?.trim(),
+  );
+}
+
 /** UI / API category keys we expose. */
 export type LeaderboardCategory =
   | "kills"
@@ -54,6 +87,8 @@ export type LeaderboardFetchError = {
   message: string;
   status?: number;
   rawSample?: string;
+  /** True when no KINTARA_SESSION* env is set on the server */
+  authConfigured?: boolean;
 };
 
 /** Map our UI category → upstream query params. */
@@ -362,11 +397,7 @@ export async function fetchOfficialLeaderboard(options: {
     try {
       res = await fetchWithTimeout(url.toString(), {
         timeoutMs: 12000,
-        headers: {
-          Accept: "application/json",
-          "User-Agent":
-            "Kinfolio/1.0 (+https://kinloxg.vercel.app; read-only leaderboard)",
-        },
+        headers: getLeaderboardAuthHeaders(),
       });
     } catch (e) {
       lastErr = {
@@ -377,11 +408,14 @@ export async function fetchOfficialLeaderboard(options: {
     }
 
     if (res.status === 401 || res.status === 403) {
+      const configured = isLeaderboardAuthConfigured();
       lastErr = {
         code: "UNAUTHORIZED",
-        message:
-          "Official leaderboard requires a logged-in Kintara session (401). Public read is not available yet.",
+        message: configured
+          ? "Leaderboard session cookie rejected (401). Cookie may be expired — refresh KINTARA_SESSION_COOKIE from a logged-in browser (F12 → Application → Cookies)."
+          : "Official leaderboard returns 401 without a game session. Set KINTARA_SESSION_COOKIE (or KINTARA_SESSION) in Vercel env so the server can read it. Public unauthenticated access is not available.",
         status: res.status,
+        authConfigured: configured,
       };
       // All categories will 401 the same way — stop early
       break;

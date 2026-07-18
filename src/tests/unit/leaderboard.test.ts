@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   categoryFallbacks,
   filterEntriesByQuery,
+  getLeaderboardAuthHeaders,
+  isLeaderboardAuthConfigured,
   normalizeLeaderboardEntry,
   normalizeLeaderboardPayload,
   resolveUpstreamQuery,
@@ -121,5 +123,26 @@ describe("leaderboard normalizer", () => {
 
   it("skips rows without a display name", () => {
     expect(normalizeLeaderboardEntry({ kills: 1 }, 0, 0)).toBeNull();
+  });
+
+  it("builds auth headers only when env is set", () => {
+    const prevCookie = process.env.KINTARA_SESSION_COOKIE;
+    const prevSession = process.env.KINTARA_SESSION;
+    delete process.env.KINTARA_SESSION_COOKIE;
+    delete process.env.KINTARA_SESSION;
+    expect(isLeaderboardAuthConfigured()).toBe(false);
+    expect(getLeaderboardAuthHeaders().Cookie).toBeUndefined();
+
+    process.env.KINTARA_SESSION = "abc123token";
+    expect(isLeaderboardAuthConfigured()).toBe(true);
+    expect(getLeaderboardAuthHeaders().Cookie).toBe("session=abc123token");
+
+    process.env.KINTARA_SESSION_COOKIE = "sid=xyz; other=1";
+    expect(getLeaderboardAuthHeaders().Cookie).toBe("sid=xyz; other=1");
+
+    if (prevCookie === undefined) delete process.env.KINTARA_SESSION_COOKIE;
+    else process.env.KINTARA_SESSION_COOKIE = prevCookie;
+    if (prevSession === undefined) delete process.env.KINTARA_SESSION;
+    else process.env.KINTARA_SESSION = prevSession;
   });
 });

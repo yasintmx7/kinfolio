@@ -1,6 +1,7 @@
 import { fail, ok } from "@/lib/api/response";
 import {
   fetchOfficialLeaderboard,
+  isLeaderboardAuthConfigured,
   searchLeaderboardPlayers,
   type LeaderboardCategory,
   type LeaderboardFetchError,
@@ -65,6 +66,7 @@ export async function GET(request: Request) {
           entries: found.matches,
           count: found.matches.length,
           pagesScanned: found.pagesScanned,
+          authConfigured: isLeaderboardAuthConfigured(),
           note: found.error
             ? found.error
             : found.matches.length
@@ -97,6 +99,7 @@ export async function GET(request: Request) {
         limit: board.limit,
         total: board.total,
         hasMore: board.hasMore,
+        authConfigured: isLeaderboardAuthConfigured(),
         note: board.note,
       },
       {
@@ -108,6 +111,7 @@ export async function GET(request: Request) {
   } catch (e) {
     const lb = (e as Error & { lb?: LeaderboardFetchError }).lb;
     if (lb?.code === "UNAUTHORIZED") {
+      // Include setup hint in message; UI also shows structured help
       return fail(
         "LEADERBOARD_UNAUTHORIZED",
         lb.message,

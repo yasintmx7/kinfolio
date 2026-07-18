@@ -27,8 +27,11 @@ git push -u origin main
 | `KINTARA_LISTINGS_PATH` | No | Supports `{itemId}` |
 | `KINTARA_ITEM_STATS_PATH` | No | Supports `{itemId}` |
 | `KINTARA_SOLD_HISTORY_PATH` | No | Supports `{itemId}` |
+| `KINTARA_SESSION_COOKIE` | No | **Leaderboard only.** Full `Cookie` header from a logged-in kintara.com browser session. Server-side only. |
+| `KINTARA_SESSION` | No | **Leaderboard only.** Alternate: session token alone (sent as `session=…`). |
 
-Do **not** set private keys, seed phrases, or personal cookie values.
+Do **not** set private keys or seed phrases.  
+`KINTARA_SESSION*` is optional and **only** used server-side for the kills leaderboard (official API is 401 without a game session). Never commit cookie values; refresh when they expire.
 
 ## 4. Verify
 

@@ -200,21 +200,26 @@ export default function AddEntryPage() {
   }
 
   function applyPaste(text: string) {
-    // In-game marketplace history (buy/sell log) — not Solana wallet alerts
+    // In-game marketplace history — names/qty/USD/KINS are in the paste; no manual pick
     if (looksLikeMarketplaceHistory(text)) {
       const parsed = parseMarketplaceHistory(text, items);
       if (parsed.matched && parsed.lines.length > 0) {
         setQueue(null);
         setMarketWarnings(parsed.warnings);
-        setMarketQueue(
-          parsed.lines.map((line) => ({
-            line,
-            itemId: line.itemId ?? (getLastItemId() || itemId || "stone"),
-            quantity: line.quantity,
-            selected: true,
-          })),
-        );
+        const rows: MarketQueueRow[] = parsed.lines.map((line) => ({
+          line,
+          // Prefer catalog match from name; only fall back for unknown names
+          itemId: line.itemId ?? "",
+          quantity: line.quantity,
+          selected: Boolean(line.itemId),
+        }));
+        setMarketQueue(rows);
         setAlertText(text);
+        // All names resolved → import immediately (parse → calculate → add)
+        const allKnown = rows.every((r) => r.itemId && r.line.itemId);
+        if (allKnown) {
+          void importMarketRows(rows, { auto: true });
+        }
         return;
       }
     }
@@ -441,26 +446,28 @@ export default function AddEntryPage() {
     }
   }
 
-  async function saveMarketQueue() {
-    if (!marketQueue) return;
+  async function importMarketRows(
+    rows: MarketQueueRow[],
+    opts?: { auto?: boolean },
+  ) {
     setSaving(true);
     let saved = 0;
     let seeded = 0;
     let failed = 0;
     const failNotes: string[] = [];
-    // Track running qty mid-batch (addTransaction also re-reads DB)
     const localQty = new Map<string, string>();
     for (const pos of summary.positions) {
       localQty.set(pos.itemId, pos.quantity);
     }
 
     try {
-      // Parser already sorts oldest-first so buys land before later sells
-      for (const row of marketQueue) {
+      // Oldest-first so buys land before later sells (WAC)
+      for (const row of rows) {
         if (!row.selected) continue;
-        if (!row.itemId) {
+        const resolvedId = row.itemId || row.line.itemId || "";
+        if (!resolvedId) {
           failed++;
-          failNotes.push(`Missing item for ${row.line.itemName}`);
+          failNotes.push(`Unknown item: ${row.line.itemName}`);
           continue;
         }
         if (!row.quantity || d(row.quantity).lte(0)) {
@@ -471,7 +478,7 @@ export default function AddEntryPage() {
           row.line.direction === "sell" ? "sell" : "buy";
 
         if (type === "sell" && seedMissingStock) {
-          const have = d(localQty.get(row.itemId) ?? "0");
+          const have = d(localQty.get(resolvedId) ?? "0");
           const need = d(row.quantity);
           if (need.gt(have)) {
             const shortfall = need.minus(have);
@@ -480,7 +487,7 @@ export default function AddEntryPage() {
             ).toISOString();
             const seed = await saveOne({
               type: "gift",
-              itemId: row.itemId,
+              itemId: resolvedId,
               quantity: shortfall.toFixed(),
               kins: "0",
               usd: "0",
@@ -490,29 +497,28 @@ export default function AddEntryPage() {
             });
             if (seed.ok) {
               seeded++;
-              localQty.set(row.itemId, have.plus(shortfall).toFixed());
+              localQty.set(resolvedId, have.plus(shortfall).toFixed());
             }
           }
         }
 
         const result = await saveOne({
           type,
-          itemId: row.itemId,
+          itemId: resolvedId,
           quantity: row.quantity,
           kins: row.line.kins,
           usd: row.line.usd,
           rawAlert: row.line.raw,
-          // Marketplace USD/KINS are the amounts you paid/received (already net)
           sellAmountIsNet: type === "sell" ? true : undefined,
           transactionAt: row.line.transactionAt,
           note: "Marketplace history import",
         });
         if (result.ok) {
           saved++;
-          rememberItem(row.itemId);
-          const cur = d(localQty.get(row.itemId) ?? "0");
+          rememberItem(resolvedId);
+          const cur = d(localQty.get(resolvedId) ?? "0");
           localQty.set(
-            row.itemId,
+            resolvedId,
             type === "buy"
               ? cur.plus(d(row.quantity)).toFixed()
               : cur.minus(d(row.quantity)).toFixed(),
@@ -529,16 +535,16 @@ export default function AddEntryPage() {
       setRecentIds(getRecentItemIds());
       if (saved) {
         push(
-          `Imported ${saved} marketplace trade${saved === 1 ? "" : "s"}${
-            seeded ? ` (+${seeded} zero-cost seed${seeded === 1 ? "" : "s"})` : ""
-          }. Check My portfolio for P/L.`,
+          `${opts?.auto ? "Auto-imported" : "Imported"} ${saved} trade${
+            saved === 1 ? "" : "s"
+          }${seeded ? ` (+${seeded} $0 seed${seeded === 1 ? "" : "s"})` : ""}. Portfolio P/L updated.`,
           "ok",
         );
       }
       if (failed) {
         const detail = failNotes.slice(0, 2).join(" · ");
         push(
-          `${failed} skipped${detail ? ` — ${detail}` : " (qty, inventory, or duplicate)"}.`,
+          `${failed} skipped${detail ? ` — ${detail}` : ""}.`,
           "info",
         );
       }
@@ -546,50 +552,166 @@ export default function AddEntryPage() {
         setMarketQueue(null);
         setMarketWarnings([]);
         setAlertText("");
+      } else if (saved && failed) {
+        // Keep only unresolved / failed rows for fix-up
+        setMarketQueue((prev) =>
+          prev
+            ? prev.filter((r) => !r.itemId || !r.line.itemId || !r.selected)
+            : null,
+        );
       }
     } finally {
       setSaving(false);
     }
   }
 
-  // Marketplace history review UI
+  async function saveMarketQueue() {
+    if (!marketQueue) return;
+    await importMarketRows(marketQueue);
+  }
+
+  // Marketplace history — compact preview (names/qty/$ already parsed)
   if (marketQueue && marketQueue.length > 0) {
-    const buyN = marketQueue.filter(
-      (r) => r.selected && r.line.direction === "buy",
-    ).length;
-    const sellN = marketQueue.filter(
-      (r) => r.selected && r.line.direction === "sell",
-    ).length;
-    const totalUsdIn = marketQueue
-      .filter((r) => r.selected && r.line.direction === "buy")
+    const ready = marketQueue.filter((r) => r.itemId || r.line.itemId);
+    const unknown = marketQueue.filter((r) => !r.itemId && !r.line.itemId);
+    const buyN = ready.filter((r) => r.line.direction === "buy").length;
+    const sellN = ready.filter((r) => r.line.direction === "sell").length;
+    const totalUsdIn = ready
+      .filter((r) => r.line.direction === "buy")
       .reduce((s, r) => s.plus(d(r.line.usd)), d(0));
-    const totalUsdOut = marketQueue
-      .filter((r) => r.selected && r.line.direction === "sell")
+    const totalUsdOut = ready
+      .filter((r) => r.line.direction === "sell")
       .reduce((s, r) => s.plus(d(r.line.usd)), d(0));
+    const net = totalUsdOut.minus(totalUsdIn);
 
     return (
       <div className="mx-auto max-w-2xl space-y-4">
         <div>
-          <h1 className="text-2xl font-semibold">Marketplace history</h1>
+          <h1 className="text-2xl font-semibold">
+            {saving ? "Importing…" : "Marketplace import"}
+          </h1>
           <p className="mt-1 text-sm text-muted">
-            Parsed {marketQueue.length} trades ({buyN} buys · {sellN} sells).
-            Review items, then import to calculate portfolio P/L.
+            Parsed from paste — item name, qty, USD &amp; KINS. No manual pick
+            when the catalog matches.
           </p>
           <p className="mt-1 font-mono text-xs text-muted">
-            Buys {formatUsd(totalUsdIn.toFixed())} · Sells{" "}
-            {formatUsd(totalUsdOut.toFixed())}
+            {ready.length} ready · {buyN} buys · {sellN} sells · in{" "}
+            {formatUsd(totalUsdIn.toFixed())} · out{" "}
+            {formatUsd(totalUsdOut.toFixed())} · cash Δ{" "}
+            <span className={signedClass(net.toFixed())}>
+              {formatUsd(net.toFixed())}
+            </span>
           </p>
         </div>
 
-        {marketWarnings.length > 0 && (
-          <Card className="border-sky/30 bg-sky/5">
-            <ul className="space-y-1 text-xs text-sky-hi">
-              {marketWarnings.slice(0, 6).map((w) => (
-                <li key={w}>{w}</li>
-              ))}
-            </ul>
+        {saving && (
+          <Card className="border-sky/30 bg-sky/10">
+            <p className="text-sm text-sky-hi">
+              Saving trades &amp; recalculating average cost / P/L…
+            </p>
           </Card>
         )}
+
+        {unknown.length > 0 && (
+          <Card className="border-amber/40 bg-amber/10 space-y-3">
+            <p className="text-sm text-amber">
+              {unknown.length} name{unknown.length === 1 ? "" : "s"} not in
+              catalog — pick once, then import.
+            </p>
+            {unknown.map((row) => {
+              const idx = marketQueue.indexOf(row);
+              return (
+                <div key={`unk-${row.line.raw}-${idx}`} className="space-y-2">
+                  <p className="text-sm font-medium">
+                    {row.line.direction === "sell" ? "Sold" : "Bought"}{" "}
+                    {row.line.itemName} ×{row.quantity} ·{" "}
+                    {formatUsd(row.line.usd)}
+                  </p>
+                  <ItemPicker
+                    items={items}
+                    value={row.itemId || "stone"}
+                    onChange={(id) => {
+                      const next = [...marketQueue];
+                      next[idx] = {
+                        ...row,
+                        itemId: id,
+                        selected: true,
+                        line: { ...row.line, itemId: id, warnings: [] },
+                      };
+                      setMarketQueue(next);
+                    }}
+                    favoriteIds={favorites}
+                    recentIds={recentIds}
+                  />
+                </div>
+              );
+            })}
+          </Card>
+        )}
+
+        <Card className="overflow-hidden p-0">
+          <div className="border-b border-border/40 px-3 py-2">
+            <p className="text-xs font-medium text-muted">
+              Parsed trades (from marketplace text)
+            </p>
+          </div>
+          <div className="max-h-[min(50dvh,28rem)] overflow-y-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="sticky top-0 bg-surface-2 text-[11px] uppercase text-muted">
+                <tr>
+                  <th className="px-2 py-2">Type</th>
+                  <th className="px-2 py-2">Item</th>
+                  <th className="px-2 py-2 text-right">Qty</th>
+                  <th className="px-2 py-2 text-right">USD</th>
+                  <th className="px-2 py-2 text-right">KINS</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/20">
+                {marketQueue.map((row, idx) => {
+                  const known = Boolean(row.itemId || row.line.itemId);
+                  return (
+                    <tr
+                      key={`${row.line.raw}-${idx}`}
+                      className={known ? "" : "bg-amber/5"}
+                    >
+                      <td className="px-2 py-1.5">
+                        <span
+                          className={
+                            row.line.direction === "sell"
+                              ? "text-profit"
+                              : "text-sky"
+                          }
+                        >
+                          {row.line.direction === "sell" ? "Sell" : "Buy"}
+                        </span>
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <span className="font-medium">{row.line.itemName}</span>
+                        {!known && (
+                          <span className="ml-1 text-[10px] text-amber">
+                            pick↑
+                          </span>
+                        )}
+                        <div className="font-mono text-[10px] text-muted">
+                          {formatWhen(row.line.transactionAt)}
+                        </div>
+                      </td>
+                      <td className="px-2 py-1.5 text-right font-mono tabular-nums">
+                        {row.quantity}
+                      </td>
+                      <td className="px-2 py-1.5 text-right font-mono tabular-nums">
+                        {formatUsd(row.line.usd)}
+                      </td>
+                      <td className="px-2 py-1.5 text-right font-mono tabular-nums text-muted">
+                        {formatKins(row.line.kins)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
 
         <Card className="space-y-2">
           <label className="flex items-start gap-2 text-sm text-muted">
@@ -601,106 +723,32 @@ export default function AddEntryPage() {
             />
             <span>
               <strong className="text-primary">Incomplete history OK</strong> —
-              if a sell needs stock you never imported, seed the missing qty at{" "}
-              <strong className="text-primary">$0 cost</strong> so P/L still
-              records. Turn off if you only want sells you already hold.
+              seed missing sell stock at $0 cost so P/L still records.
             </span>
           </label>
         </Card>
-
-        {marketQueue.map((row, idx) => {
-          return (
-            <Card key={`${row.line.raw}-${idx}`} className="space-y-3">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <CardTitle>
-                    #{idx + 1} ·{" "}
-                    <span
-                      className={
-                        row.line.direction === "sell"
-                          ? "text-profit"
-                          : "text-sky"
-                      }
-                    >
-                      {row.line.direction === "sell" ? "Sold" : "Bought"}
-                    </span>
-                  </CardTitle>
-                  <p className="mt-1 text-sm text-primary">
-                    {row.line.itemName}{" "}
-                    <span className="font-mono text-muted">
-                      ×{row.quantity}
-                    </span>
-                  </p>
-                  <p className="mt-0.5 font-mono text-xs text-muted">
-                    {formatKins(row.line.kins)} · {formatUsd(row.line.usd)} ·{" "}
-                    {formatWhen(row.line.transactionAt)}
-                  </p>
-                  {row.line.warnings.map((w) => (
-                    <p key={w} className="mt-1 text-xs text-sky-hi">
-                      {w}
-                    </p>
-                  ))}
-                </div>
-                <label className="flex items-center gap-2 text-xs text-muted">
-                  <input
-                    type="checkbox"
-                    checked={row.selected}
-                    onChange={(e) => {
-                      const next = [...marketQueue];
-                      next[idx] = { ...row, selected: e.target.checked };
-                      setMarketQueue(next);
-                    }}
-                  />
-                  Include
-                </label>
-              </div>
-              <ItemPicker
-                items={items}
-                value={row.itemId}
-                onChange={(id) => {
-                  const next = [...marketQueue];
-                  next[idx] = { ...row, itemId: id };
-                  setMarketQueue(next);
-                }}
-                favoriteIds={favorites}
-                recentIds={recentIds}
-              />
-              <div>
-                <Label>Quantity</Label>
-                <Input
-                  inputMode="decimal"
-                  value={row.quantity}
-                  onChange={(e) => {
-                    const next = [...marketQueue];
-                    next[idx] = { ...row, quantity: e.target.value };
-                    setMarketQueue(next);
-                  }}
-                />
-              </div>
-            </Card>
-          );
-        })}
 
         <div className="sticky bottom-24 z-20 flex flex-col gap-2 md:bottom-4">
           <Button
             className="w-full shadow-lg"
             onClick={saveMarketQueue}
-            disabled={saving}
+            disabled={saving || ready.length === 0}
           >
             {saving
-              ? "Importing…"
-              : `Import ${buyN + sellN} trade${buyN + sellN === 1 ? "" : "s"}`}
+              ? "Importing & calculating…"
+              : `Import ${ready.length} trade${ready.length === 1 ? "" : "s"} → portfolio`}
           </Button>
           <Button
             variant="ghost"
             className="w-full"
+            disabled={saving}
             onClick={() => {
               setMarketQueue(null);
               setMarketWarnings([]);
               setAlertText("");
             }}
           >
-            Cancel import
+            Cancel
           </Button>
         </div>
       </div>
@@ -803,8 +851,9 @@ export default function AddEntryPage() {
       <div>
         <h1 className="text-2xl font-semibold">Add entry</h1>
         <p className="mt-1 text-sm text-muted">
-          Paste marketplace history or a wallet alert → review → save. Portfolio
-          P/L updates on{" "}
+          Paste marketplace history (“You bought/sold …”) — names, qty, USD &amp;
+          KINS parse automatically and import. No item pick when catalog
+          matches. P/L on{" "}
           <a href="/dashboard" className="text-info underline">
             My portfolio
           </a>
@@ -855,9 +904,10 @@ export default function AddEntryPage() {
             </div>
           </div>
           <p className="mt-2 text-xs text-muted">
-            Supports in-game marketplace history (
-            <span className="font-mono">You bought/sold … for $X USD (Y $KINS)</span>
-            ) and Solana wallet alerts.
+            Marketplace paste auto-fills item · qty · USD · KINS and imports
+            when names match the catalog. Also supports wallet alerts (
+            <span className="font-mono">Sent:</span> /{" "}
+            <span className="font-mono">Received:</span>).
           </p>
           <div className="mt-3">
             <Textarea

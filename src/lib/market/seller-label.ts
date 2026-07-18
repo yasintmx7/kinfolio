@@ -43,28 +43,57 @@ export function sanitizePersonName(
   return t;
 }
 
+/**
+ * Split raw API fields into safe slots.
+ * Invariant: sellerName / seller NEVER hold a wallet (full or short form).
+ * Wallets only live in sellerWallet.
+ */
+export function cleanSellerFields(input: {
+  sellerName?: string | null;
+  seller?: string | null;
+  sellerId?: string | number | null;
+  sellerWallet?: string | null;
+}): {
+  sellerName: string | null;
+  seller: string | null;
+  sellerId: string | null;
+  sellerWallet: string | null;
+} {
+  const wallet =
+    (input.sellerWallet && isSolanaAddress(input.sellerWallet)
+      ? input.sellerWallet.trim()
+      : null) ??
+    (isSolanaAddress(input.seller) ? String(input.seller).trim() : null) ??
+    (isSolanaAddress(input.sellerName) ? String(input.sellerName).trim() : null);
+
+  const name =
+    sanitizePersonName(input.sellerName) ?? sanitizePersonName(input.seller);
+
+  const rawId = input.sellerId;
+  const sellerId =
+    rawId != null && String(rawId).trim() !== "" && /^\d+$/.test(String(rawId).trim())
+      ? String(rawId).trim()
+      : null;
+
+  return {
+    sellerName: name,
+    // Keep seller === real name only (same as pre-instant-sold contract)
+    seller: name,
+    sellerId,
+    sellerWallet: wallet,
+  };
+}
+
 export function formatSellerLabel(input: {
   sellerName?: string | null;
   seller?: string | null;
   sellerId?: string | number | null;
   sellerWallet?: string | null;
 }): string {
-  const name = sanitizePersonName(input.sellerName ?? input.seller);
-  if (name) return name;
-
-  const id = input.sellerId;
-  if (id != null && String(id).trim() !== "" && /^\d+$/.test(String(id).trim())) {
-    return `#${String(id).trim()}`;
-  }
-
-  const wallet =
-    (input.sellerWallet && isSolanaAddress(input.sellerWallet)
-      ? input.sellerWallet
-      : null) ??
-    (isSolanaAddress(input.seller) ? String(input.seller) : null) ??
-    (isSolanaAddress(input.sellerName) ? String(input.sellerName) : null);
-
-  if (wallet) return shortWallet(wallet) || "Seller";
+  const cleaned = cleanSellerFields(input);
+  if (cleaned.sellerName) return cleaned.sellerName;
+  if (cleaned.sellerId) return `#${cleaned.sellerId}`;
+  if (cleaned.sellerWallet) return shortWallet(cleaned.sellerWallet) || "Seller";
   return "Seller";
 }
 

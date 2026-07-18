@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  cleanSellerFields,
   formatSellerLabel,
   isSolanaAddress,
   officialListingId,
@@ -48,5 +49,20 @@ describe("seller-label", () => {
     expect(officialListingId(956354)).toBe("956354");
     expect(officialListingId("kh72se1xjnxk338bahyermmeps8ajbs2")).toBeNull();
     expect(officialListingId(undefined)).toBeNull();
+  });
+
+  it("cleanSellerFields never stores wallet in name slots", () => {
+    const w = "7fauE6LpwpmMPjeqbcuJY6RM6WyJwEQrKPBiYxHMV3GH";
+    const cleaned = cleanSellerFields({
+      sellerName: w,
+      seller: w,
+      sellerId: "99",
+      sellerWallet: null,
+    });
+    expect(cleaned.sellerName).toBeNull();
+    expect(cleaned.seller).toBeNull();
+    expect(cleaned.sellerId).toBe("99");
+    expect(cleaned.sellerWallet).toBe(w);
+    expect(formatSellerLabel(cleaned)).toBe("#99");
   });
 });

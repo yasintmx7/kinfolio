@@ -145,8 +145,8 @@ export async function fetchRecentSales(options?: {
         new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
     );
     all = out;
-    // Short TTL so ~5s client poll gets fresh sold activity
-    setCache(cacheKey, all, 4);
+    // 2s TTL — Activity clock should track kintrade, not lag on our cache
+    setCache(cacheKey, all, 2);
   }
 
   return filterSales(all, options);
@@ -157,7 +157,7 @@ function filterSales(
   options?: { itemType?: string; limit?: number; requireItem?: boolean },
 ): KinTradeSale[] {
   let out = sales;
-  if (options?.requireItem !== false) {
+  if (options?.requireItem === true) {
     // Must have item + qty so unit/avg prices are real
     out = out.filter(
       (s) => s.hasItem && s.itemType !== "unknown" && s.quantity !== "?",

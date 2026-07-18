@@ -7,6 +7,8 @@ import type {
   MarketplaceListing,
   ReferencePrice,
 } from "@/lib/kintara/marketplace-adapter";
+import { normalizeListingPrice } from "@/lib/market/listing-price";
+import { sanitizePersonName } from "@/lib/market/seller-label";
 import { z } from "zod";
 
 const BASE = "https://kintaramarket.xyz";
@@ -30,6 +32,8 @@ const listingSchema = z.object({
   priceGold: z.number().nullable().optional(),
   nativePrice: z.number().nullable().optional(),
   unitPrice: z.number().nullable().optional(),
+  reservedBy: z.unknown().nullable().optional(),
+  reservedUntilMs: z.number().nullable().optional(),
   firstSeen: z.number().optional(),
   lastSeen: z.number().optional(),
 });
@@ -102,22 +106,141 @@ export function normalizeSummary(
   rows: MarketSummaryRow[],
   kinsUsd?: number,
 ): NormalizedMarketRow[] {
-  return rows.map((r) => ({
-    itemType: r.itemType,
-    name: humanizeItemType(r.itemType),
-    listings: r.listings ?? 0,
-    totalQty: r.totalQty ?? 0,
-    lowestUsdPerUnit:
-      r.lowestUsdPerUnit != null ? String(r.lowestUsdPerUnit) : null,
-    lowestGoldPerUnit:
-      r.lowestGoldPerUnit != null ? String(r.lowestGoldPerUnit) : null,
-    kinsListings: r.kinsListings ?? 0,
-    goldListings: r.goldListings ?? 0,
-    lowestKinsPerUnit:
-      kinsUsd != null
-        ? usdToKins(r.lowestUsdPerUnit ?? null, kinsUsd)
-        : null,
-  }));
+  return rows
+    .map((r) => ({
+      itemType: r.itemType,
+      name: humanizeItemType(r.itemType),
+      listings: r.listings ?? 0,
+      totalQty: r.totalQty ?? 0,
+      lowestUsdPerUnit:
+        r.lowestUsdPerUnit != null ? String(r.lowestUsdPerUnit) : null,
+      lowestGoldPerUnit:
+        r.lowestGoldPerUnit != null ? String(r.lowestGoldPerUnit) : null,
+      kinsListings: r.kinsListings ?? 0,
+      goldListings: r.goldListings ?? 0,
+      lowestKinsPerUnit:
+        kinsUsd != null
+          ? usdToKins(r.lowestUsdPerUnit ?? null, kinsUsd)
+          : null,
+    }))
+    .sort((a, b) => b.listings - a.listings);
+}
+
+/** Aggregate stats for the All-items board header. */
+export function summarizeMarketBoard(rows: NormalizedMarketRow[]): {
+  itemCount: number;
+  itemsWithListings: number;
+  totalListings: number;
+  totalQty: number;
+  tokenListings: number;
+  goldListings: number;
+} {
+  let totalListings = 0;
+  let totalQty = 0;
+  let tokenListings = 0;
+  let goldListings = 0;
+  let itemsWithListings = 0;
+  for (const r of rows) {
+    totalListings += r.listings;
+    totalQty += r.totalQty;
+    tokenListings += r.kinsListings;
+    goldListings += r.goldListings;
+    if (r.listings > 0) itemsWithListings += 1;
+  }
+  return {
+    itemCount: rows.length,
+    itemsWithListings,
+    totalListings,
+    totalQty,
+    tokenListings,
+    goldListings,
+  };
+}
+
+/** UI DTO matching official listing rows (price list sheet). */
+export type MarketListingDto = {
+  id: string;
+  itemType: string;
+  name: string;
+  quantity: string;
+  unitUsd: string | null;
+  usdTotal: string | null;
+  priceGold: string | null;
+  currency: string;
+  sellerName: string | null;
+  sellerId: string | null;
+  reserved: boolean;
+  reservedUntilMs: number | null;
+  buyerId: string | null;
+  timestamp: string | null;
+};
+
+/**
+ * Full open book for one item from kintaramarket.xyz (complete list).
+ * Includes token + gold lots; sorts open first then cheap unit $.
+ */
+export async function fetchItemListingsAsDtos(
+  itemType: string,
+): Promise<MarketListingDto[]> {
+  const rows = await fetchItemListings(itemType);
+  const out: MarketListingDto[] = [];
+
+  for (const r of rows) {
+    const qty = Math.max(r.quantity || 1, 1);
+    // unitPrice is authoritative on kintaramarket; priceUsd is lot total
+    const priced = normalizeListingPrice({
+      quantity: qty,
+      priceUsd: r.priceUsd,
+      unitUsd: r.unitPrice,
+      usdTotal: r.priceUsd,
+      priceGold: r.priceGold,
+      currency: r.currency ?? "token",
+    });
+    const reserved = r.reservedBy != null;
+    const buyerId =
+      r.reservedBy == null
+        ? null
+        : typeof r.reservedBy === "number" || typeof r.reservedBy === "string"
+          ? String(r.reservedBy)
+          : null;
+
+    out.push({
+      id: String(r.id),
+      itemType,
+      name: humanizeItemType(itemType),
+      quantity: String(priced.quantity),
+      unitUsd: priced.unitUsd != null ? String(priced.unitUsd) : null,
+      usdTotal: priced.lotUsd != null ? String(priced.lotUsd) : null,
+      priceGold: priced.priceGold != null ? String(priced.priceGold) : null,
+      currency: r.currency ?? "token",
+      sellerName: sanitizePersonName(r.sellerName),
+      sellerId: null,
+      reserved,
+      reservedUntilMs:
+        typeof r.reservedUntilMs === "number" ? r.reservedUntilMs : null,
+      buyerId,
+      timestamp: r.firstSeen
+        ? new Date(r.firstSeen).toISOString()
+        : r.lastSeen
+          ? new Date(r.lastSeen).toISOString()
+          : null,
+    });
+  }
+
+  // Open first, then cheapest unit (token $ first; gold after)
+  out.sort((a, b) => {
+    const ra = a.reserved ? 1 : 0;
+    const rb = b.reserved ? 1 : 0;
+    if (ra !== rb) return ra - rb;
+    const ua = a.unitUsd != null ? Number(a.unitUsd) : Number.POSITIVE_INFINITY;
+    const ub = b.unitUsd != null ? Number(b.unitUsd) : Number.POSITIVE_INFINITY;
+    if (Number.isFinite(ua) && Number.isFinite(ub) && ua !== ub) return ua - ub;
+    const ga = a.priceGold != null ? Number(a.priceGold) : Number.POSITIVE_INFINITY;
+    const gb = b.priceGold != null ? Number(b.priceGold) : Number.POSITIVE_INFINITY;
+    return ga - gb;
+  });
+
+  return out;
 }
 
 export async function getCatalogFromKintaraMarket(): Promise<MarketplaceItem[]> {

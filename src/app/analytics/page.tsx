@@ -22,10 +22,12 @@ export default function AnalyticsPage() {
   const filteredSales = useMemo(() => {
     if (range === "all") return summary.realizedSales;
     const days = range === "7d" ? 7 : range === "30d" ? 30 : 90;
-    const cutoff = Date.now() - days * 86400000;
+    // Wall-clock cutoff for range chips (recomputed when range/sales change)
+    const cutoff = globalThis.Date.now() - days * 86400000;
     return summary.realizedSales.filter(
       (s) => new Date(s.transactionAt).getTime() >= cutoff,
     );
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional live cutoff
   }, [summary.realizedSales, range]);
 
   const realizedUsd = filteredSales.reduce(

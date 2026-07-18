@@ -1,12 +1,20 @@
 "use client";
 
-import { memo, Suspense, useEffect, useMemo, useState } from "react";
+import {
+  memo,
+  Suspense,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronDown, Lock, RefreshCw, SlidersHorizontal, Star, X } from "lucide-react";
 import { ItemIcon } from "@/components/items/item-icon";
 import { SellerAvatar } from "@/components/sellers/seller-avatar";
 import {
   useMarketHub,
+  type MarketBoardStats,
   type MarketFloorItem,
   type RecentSale,
 } from "@/hooks/use-market-hub";
@@ -18,7 +26,9 @@ import {
   formatUsdShort,
 } from "@/lib/formatting/money";
 import {
-  listingPriceLabels,
+  formatUsdMarket,
+  formatUsdPer1kMarket,
+  getListingRateDisplay,
   normalizeListingPrice,
 } from "@/lib/market/listing-price";
 import {
@@ -27,13 +37,28 @@ import {
   sanitizePersonName,
   shortWallet as shortWalletShared,
 } from "@/lib/market/seller-label";
+import { listingDedupeKey } from "@/lib/market/sold-filter";
+import {
+  costVsFloor,
+  formatDeltaPct,
+  type CostVsFloor,
+} from "@/lib/market/cost-vs-floor";
 import { getWatchlist, toggleWatch } from "@/lib/market/watchlist";
+import { STATIC_CATALOG } from "@/data/static-catalog";
+import {
+  humanizeItemType,
+  portfolioIdToMarketType,
+} from "@/lib/kintara/item-type-map";
+import { usePortfolioContext } from "@/components/providers/portfolio-provider";
+import { d } from "@/lib/accounting/decimal";
 import { cn } from "@/lib/utils";
 
-/** market = both lists at once (default) */
+/** market = live book; floors = all-items browse (kintaramarket-style) */
 type Tab = "market" | "floors" | "watch";
 type CurrencyFilter = "all" | "token" | "gold";
 type SortFilter = "cheap" | "new" | "qty";
+/** All-items board sort */
+type BrowseSort = "listings" | "floor" | "name";
 type CategoryFilter =
   | "all"
   | "resource"
@@ -190,17 +215,6 @@ function sellerDisplay(r: RecentSale): string {
   });
 }
 
-/** Single path for row prices — never re-derive ad-hoc in UI. */
-function priceOf(r: RecentSale) {
-  return listingPriceLabels({
-    quantity: r.quantity,
-    usdTotal: r.usdTotal,
-    unitUsd: r.unitUsd,
-    priceGold: r.priceGold,
-    currency: r.currency,
-  });
-}
-
 function unitSortKey(r: RecentSale): number {
   const p = normalizeListingPrice({
     quantity: r.quantity,
@@ -209,7 +223,124 @@ function unitSortKey(r: RecentSale): number {
     priceGold: r.priceGold,
     currency: r.currency,
   });
-  return p.unitUsd ?? Number.POSITIVE_INFINITY;
+  // Gold without USD: sort after token by gold unit (lot/qty)
+  if (p.unitUsd != null) return p.unitUsd;
+  if (p.priceGold != null && p.quantity > 0) {
+    return 1e12 + p.priceGold / p.quantity;
+  }
+  return Number.POSITIVE_INFINITY;
+}
+
+/** Cheapest → expensive; open (unlocked) first, then locked. */
+function sortListingsCheapFirst(rows: RecentSale[]): RecentSale[] {
+  return [...rows].sort((a, b) => {
+    const la = isLocked(a) ? 1 : 0;
+    const lb = isLocked(b) ? 1 : 0;
+    if (la !== lb) return la - lb;
+    const ua = unitSortKey(a);
+    const ub = unitSortKey(b);
+    if (ua !== ub) return ua - ub;
+    // Same unit price: larger stacks first (better for bulk buyers)
+    return qtySortKey(b) - qtySortKey(a);
+  });
+}
+
+type ItemDepthStats = {
+  openUnlocked: number;
+  openLocked: number;
+  totalQty: number;
+  unlockedQty: number;
+  lockedQty: number;
+  totalLotUsd: number | null;
+  floorUnit: number | null;
+  floorPer1k: number | null;
+  highUnit: number | null;
+  highPer1k: number | null;
+  medianUnit: number | null;
+  medianPer1k: number | null;
+  avgUnit: number | null;
+  avgPer1k: number | null;
+  cheapest3AvgPer1k: number | null;
+  spreadPct: number | null;
+};
+
+function computeItemDepth(rows: RecentSale[]): ItemDepthStats {
+  let totalQty = 0;
+  let unlockedQty = 0;
+  let lockedQty = 0;
+  let openUnlocked = 0;
+  let openLocked = 0;
+  let lotSum = 0;
+  let hasLot = false;
+  const units: number[] = [];
+
+  for (const r of rows) {
+    const p = normalizeListingPrice({
+      quantity: r.quantity,
+      usdTotal: r.usdTotal,
+      unitUsd: r.unitUsd,
+      priceGold: r.priceGold,
+      currency: r.currency,
+    });
+    const qty = p.quantity > 0 ? p.quantity : 0;
+    totalQty += qty;
+    if (isLocked(r)) {
+      openLocked++;
+      lockedQty += qty;
+    } else {
+      openUnlocked++;
+      unlockedQty += qty;
+    }
+    if (p.lotUsd != null) {
+      lotSum += p.lotUsd;
+      hasLot = true;
+    }
+    if (p.unitUsd != null && p.unitUsd > 0) units.push(p.unitUsd);
+  }
+
+  units.sort((a, b) => a - b);
+  const floorUnit = units[0] ?? null;
+  const highUnit = units.length ? units[units.length - 1]! : null;
+  let medianUnit: number | null = null;
+  if (units.length) {
+    const mid = Math.floor(units.length / 2);
+    medianUnit =
+      units.length % 2 === 1
+        ? units[mid]!
+        : (units[mid - 1]! + units[mid]!) / 2;
+  }
+  const avgUnit =
+    units.length > 0
+      ? units.reduce((a, b) => a + b, 0) / units.length
+      : null;
+  const top3 = units.slice(0, 3);
+  const cheapest3Avg =
+    top3.length > 0
+      ? top3.reduce((a, b) => a + b, 0) / top3.length
+      : null;
+  const spreadPct =
+    floorUnit != null && highUnit != null && floorUnit > 0
+      ? ((highUnit - floorUnit) / floorUnit) * 100
+      : null;
+
+  return {
+    openUnlocked,
+    openLocked,
+    totalQty,
+    unlockedQty,
+    lockedQty,
+    totalLotUsd: hasLot ? lotSum : null,
+    floorUnit,
+    floorPer1k: floorUnit != null ? floorUnit * 1000 : null,
+    highUnit,
+    highPer1k: highUnit != null ? highUnit * 1000 : null,
+    medianUnit,
+    medianPer1k: medianUnit != null ? medianUnit * 1000 : null,
+    avgUnit,
+    avgPer1k: avgUnit != null ? avgUnit * 1000 : null,
+    cheapest3AvgPer1k: cheapest3Avg != null ? cheapest3Avg * 1000 : null,
+    spreadPct,
+  };
 }
 
 function MarketHubInner() {
@@ -218,20 +349,24 @@ function MarketHubInner() {
   const rawTab = searchParams.get("tab");
   const tab = parseTab(rawTab);
 
-  const hub = useMarketHub(5_000);
+  // 3s poll → sold on Activity typically within ~3–9s of leaving official book
+  const hub = useMarketHub(3_000);
   const { price, reload: reloadPrice } = useKinsPrice(15_000);
   const { push } = useToast();
+  const { summary: portfolioSummary, ready: portfolioReady } =
+    usePortfolioContext();
 
   const [q, setQ] = useState("");
   const [watch, setWatch] = useState<string[]>([]);
   const [itemFocus, setItemFocus] = useState<string | null>(null);
   const [sellerFocus, setSellerFocus] = useState<SellerFocus | null>(null);
   const [currencyFilter, setCurrencyFilter] = useState<CurrencyFilter>("all");
-  /** Default New so brand-new listings appear first (cheap still one click). */
-  const [sortFilter, setSortFilter] = useState<SortFilter>("new");
+  /** Default cheap → expensive (unit $/u). "New" / "Qty" still one click. */
+  const [sortFilter, setSortFilter] = useState<SortFilter>("cheap");
   /** false = show locked/reserved rows on the listings page (default) */
   const [hideLocked, setHideLocked] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
+  const [browseSort, setBrowseSort] = useState<BrowseSort>("listings");
   const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
@@ -253,6 +388,7 @@ function MarketHubInner() {
     }
   }, [rawTab, router, searchParams]);
 
+  // Shareable deep links: ?item=gold · ?seller= · ?sellerName=
   useEffect(() => {
     const item = searchParams.get("item");
     const seller = searchParams.get("seller");
@@ -263,9 +399,40 @@ function MarketHubInner() {
     } else if (seller || sellerName) {
       setSellerFocus({ sellerId: seller, sellerName: sellerName });
       setItemFocus(null);
+    } else {
+      setItemFocus(null);
+      setSellerFocus(null);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [searchParams]);
+
+  /** Portfolio avg USD/unit keyed by market type + portfolio id */
+  const costByKey = useMemo(() => {
+    const m = new Map<string, { avgUsd: number; qty: string }>();
+    if (!portfolioReady) return m;
+    for (const pos of portfolioSummary.positions) {
+      if (d(pos.quantity).lte(0)) continue;
+      const avg = Number(pos.averageUsdPerItem);
+      if (!Number.isFinite(avg) || avg <= 0) continue;
+      const entry = { avgUsd: avg, qty: pos.quantity };
+      m.set(pos.itemId, entry);
+      const mt = portfolioIdToMarketType(pos.itemId, STATIC_CATALOG);
+      m.set(mt, entry);
+      m.set(mt.replace(/_/g, "-"), entry);
+      m.set(pos.itemId.replace(/-/g, "_"), entry);
+    }
+    return m;
+  }, [portfolioReady, portfolioSummary.positions]);
+
+  function replaceMarketQuery(
+    patch: Record<string, string | null | undefined>,
+  ) {
+    const p = new URLSearchParams(searchParams.toString());
+    for (const [k, v] of Object.entries(patch)) {
+      if (v == null || v === "") p.delete(k);
+      else p.set(k, v);
+    }
+    router.replace(`/market?${p.toString()}`, { scroll: false });
+  }
 
   const kinsUsd = price?.priceUsd ?? hub.kinsUsd ?? undefined;
 
@@ -373,19 +540,77 @@ function MarketHubInner() {
     return list;
   }, [hub.sold, q]);
 
-  const filteredFloors = useMemo(() => {
-    let list = hub.floors;
-    if (tab === "watch") list = list.filter((i) => watch.includes(i.id));
+  /**
+   * All-items board — same data as kintaramarket.xyz /api/market
+   * (listings, totalQty, floor, token/gold split). Click → full price list.
+   */
+  const browseItems = useMemo(() => {
+    type BrowseRow = MarketFloorItem & {
+      category?: string;
+      hasLiveFloor: boolean;
+    };
+
+    let list: BrowseRow[] = hub.floors.map((f) => ({
+      ...f,
+      category: itemCategory(f.id),
+      hasLiveFloor: (f.listings ?? 0) > 0 || f.lowestUsdPerUnit != null,
+      // Prefer wiki catalog name when we have a portfolio match
+      name: (() => {
+        const pid = f.portfolioItemId;
+        if (pid) {
+          const cat = STATIC_CATALOG.find((c) => c.id === pid);
+          if (cat?.name) return cat.name;
+        }
+        return f.name || humanizeItemType(f.id);
+      })(),
+    }));
+
+    if (tab === "watch") {
+      list = list.filter(
+        (i) =>
+          watch.includes(i.id) ||
+          (i.portfolioItemId != null && watch.includes(i.portfolioItemId)),
+      );
+    }
+    if (categoryFilter !== "all" && (tab === "floors" || tab === "watch")) {
+      list = list.filter((i) => {
+        const cat = i.category ?? itemCategory(i.id);
+        return cat === categoryFilter;
+      });
+    }
     const query = q.trim().toLowerCase();
     if (query) {
       list = list.filter(
         (i) =>
           i.name.toLowerCase().includes(query) ||
-          i.id.toLowerCase().includes(query),
+          i.id.toLowerCase().includes(query) ||
+          (i.portfolioItemId?.toLowerCase().includes(query) ?? false),
       );
     }
-    return [...list].sort((a, b) => (b.listings ?? 0) - (a.listings ?? 0));
-  }, [hub.floors, q, tab, watch]);
+    return list.sort((a, b) => {
+      if (browseSort === "name") {
+        return a.name.localeCompare(b.name);
+      }
+      if (browseSort === "floor") {
+        const pa =
+          a.lowestUsdPerUnit != null ? Number(a.lowestUsdPerUnit) : Infinity;
+        const pb =
+          b.lowestUsdPerUnit != null ? Number(b.lowestUsdPerUnit) : Infinity;
+        if (pa !== pb) return pa - pb;
+        return (b.listings ?? 0) - (a.listings ?? 0);
+      }
+      // listings (default) — kintaramarket style
+      const la = a.listings ?? 0;
+      const lb = b.listings ?? 0;
+      if (la !== lb) return lb - la;
+      const pa =
+        a.lowestUsdPerUnit != null ? Number(a.lowestUsdPerUnit) : Infinity;
+      const pb =
+        b.lowestUsdPerUnit != null ? Number(b.lowestUsdPerUnit) : Infinity;
+      if (pa !== pb && Number.isFinite(pa) && Number.isFinite(pb)) return pa - pb;
+      return a.name.localeCompare(b.name);
+    });
+  }, [hub.floors, q, tab, watch, categoryFilter, browseSort]);
 
   const lockedCount = useMemo(
     () => hub.sales.filter(isLocked).length,
@@ -440,25 +665,42 @@ function MarketHubInner() {
 
   const sellerListings = useMemo(() => {
     if (!sellerFocus) return [];
-    // Open listings + this seller's recent sold (for profile activity)
-    const open = hub.sales.filter(matchSeller);
+    // Open listings + this seller's recent sold (for profile activity).
+    // Dedupe by listing id so a false/early sale never appears twice
+    // (open + "Sold") for the same marketplace lot.
+    const open = hub.sales.filter(matchSeller).map((r) => ({
+      ...r,
+      isSold: false as const,
+    }));
     const sold = (hub.sold ?? []).filter(matchSeller);
-    const seen = new Set(open.map((r) => String(r.id)));
-    const extra = sold.filter((r) => !seen.has(String(r.id)));
+    const seen = new Set<string>();
+    for (const r of open) {
+      seen.add(listingDedupeKey(r));
+      seen.add(`id:${String(r.id)}`);
+      if (r.listingId) seen.add(`id:${String(r.listingId)}`);
+    }
+    const extra = sold.filter((r) => {
+      const keys = [
+        listingDedupeKey(r),
+        `id:${String(r.id)}`,
+        r.listingId ? `id:${String(r.listingId)}` : "",
+      ].filter(Boolean);
+      return !keys.some((k) => seen.has(k));
+    });
     return [...open, ...extra];
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hub.sales, hub.sold, sellerFocus]);
 
   const sellerDisplayName = useMemo(() => {
     if (!sellerFocus) return "Seller";
-    // Never trust raw hit.seller (may be a wallet)
+    // Never trust raw hit.seller / sellerName (may be a wallet)
     const hit = sellerListings[0];
     return formatSellerLabel({
       sellerName:
         sanitizePersonName(sellerFocus.sellerName) ??
-        hit?.sellerName ??
+        sanitizePersonName(hit?.sellerName) ??
         null,
-      seller: hit?.seller ?? null,
+      seller: sanitizePersonName(hit?.seller) ?? null,
       sellerId: sellerFocus.sellerId ?? hit?.sellerId,
       sellerWallet: hit?.sellerWallet ?? null,
     });
@@ -467,12 +709,24 @@ function MarketHubInner() {
   function setTab(next: Tab) {
     setItemFocus(null);
     setSellerFocus(null);
-    router.push(`/market?tab=${next}`);
+    replaceMarketQuery({
+      tab: next,
+      item: null,
+      seller: null,
+      sellerName: null,
+    });
   }
 
   function openItem(id: string) {
     setSellerFocus(null);
     setItemFocus(id);
+    // Shareable deep link — keep current tab when possible
+    replaceMarketQuery({
+      tab: tab || "floors",
+      item: id,
+      seller: null,
+      sellerName: null,
+    });
   }
 
   function openSeller(row: RecentSale) {
@@ -494,16 +748,29 @@ function MarketHubInner() {
     });
     if (display === "Seller" && !id) return;
     setItemFocus(null);
+    const sellerName =
+      name ?? (row.sellerId != null ? `#${row.sellerId}` : null);
     setSellerFocus({
       sellerId: id,
       // Real name or #id only — never store a wallet string as the name
-      sellerName: name ?? (row.sellerId != null ? `#${row.sellerId}` : null),
+      sellerName,
+    });
+    replaceMarketQuery({
+      tab: tab || "market",
+      item: null,
+      seller: id,
+      sellerName: sellerName,
     });
   }
 
   function closeSheet() {
     setItemFocus(null);
     setSellerFocus(null);
+    replaceMarketQuery({
+      item: null,
+      seller: null,
+      sellerName: null,
+    });
   }
 
   function onWatch(id: string) {
@@ -515,7 +782,11 @@ function MarketHubInner() {
   const advancedActive = categoryFilter !== "all" || sortFilter === "qty";
 
   const pageTitle =
-    tab === "market" ? "Market" : tab === "floors" ? "Floors" : "Watchlist";
+    tab === "market"
+      ? "Market"
+      : tab === "floors"
+        ? "All items"
+        : "Watchlist";
 
   return (
     <div className="space-y-3">
@@ -538,7 +809,7 @@ function MarketHubInner() {
           {(
             [
               ["market", "Market"],
-              ["floors", "Floors"],
+              ["floors", "All items"],
               ["watch", "Watch"],
             ] as const
           ).map(([id, label]) => (
@@ -549,6 +820,11 @@ function MarketHubInner() {
               className={cn("seg-item", tab === id && "seg-item-active")}
             >
               {label}
+              {id === "floors" && browseItems.length > 0 ? (
+                <span className="ml-1 tabular-nums opacity-80">
+                  {browseItems.filter((i) => (i.listings ?? 0) > 0).length}
+                </span>
+              ) : null}
               {id === "watch" && watch.length > 0 ? (
                 <span className="ml-1 tabular-nums opacity-80">
                   {watch.length}
@@ -594,10 +870,49 @@ function MarketHubInner() {
             placeholder={
               tab === "market"
                 ? "Search item, seller, reserved…"
-                : "Search items…"
+                : tab === "floors"
+                  ? "Search all items…"
+                  : "Search watchlist…"
             }
             className="field min-h-10 flex-1"
           />
+          {(tab === "floors" || tab === "watch") && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {(
+                [
+                  ["listings", "Listings"],
+                  ["floor", "Cheapest"],
+                  ["name", "A–Z"],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setBrowseSort(id)}
+                  className={cn(
+                    "chip min-h-9",
+                    browseSort === id && "chip-active",
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+              <span className="mx-0.5 hidden h-4 w-px bg-border/50 sm:inline" />
+              {CATEGORY_CHIPS.map(({ id, label }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setCategoryFilter(id)}
+                  className={cn(
+                    "chip min-h-9",
+                    categoryFilter === id && "chip-active",
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
           {tab === "market" && (
             <div className="flex flex-wrap items-center gap-1.5">
               {(
@@ -794,17 +1109,45 @@ function MarketHubInner() {
       )}
 
       {(tab === "floors" || tab === "watch") && (
-        <FloorList
-          rows={filteredFloors}
+        <ItemBrowseBoard
+          rows={browseItems}
+          boardStats={hub.boardStats}
+          floorsNote={hub.floorsNote}
           watch={watch}
+          costByKey={costByKey}
+          loading={hub.loading && hub.floors.length === 0}
           onOpen={openItem}
           onWatch={onWatch}
           empty={
             tab === "watch"
-              ? "No watched items yet."
-              : "No floors loaded yet."
+              ? "No watched items yet. Star an item from Market or All items."
+              : "No items match. Try clearing search or category."
           }
         />
+      )}
+
+      {/* Quick jump from live market → all-items board */}
+      {tab === "market" && (
+        <button
+          type="button"
+          onClick={() => setTab("floors")}
+          className="card-quiet flex w-full items-center justify-between gap-3 rounded-2xl px-4 py-3.5 text-left transition-colors hover:border-sky/35 hover:bg-sky/5"
+        >
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-sky-hi">
+              Browse
+            </p>
+            <p className="mt-0.5 text-[15px] font-semibold">
+              All items · floors &amp; price lists
+            </p>
+            <p className="mt-0.5 text-[12px] text-muted">
+              Like kintaramarket — pick an item, see every listing cheap → expensive
+            </p>
+          </div>
+          <span className="shrink-0 rounded-xl bg-sky/15 px-3 py-2 text-[12px] font-semibold text-sky-hi">
+            Open
+          </span>
+        </button>
       )}
 
       {itemFocus && (
@@ -812,16 +1155,20 @@ function MarketHubInner() {
           title={selectedFloor?.name ?? selected[0]?.name ?? itemFocus}
           subtitle={
             selectedFloor?.lowestUsdPerUnit
-              ? `Floor ${formatUsdShort(selectedFloor.lowestUsdPerUnit)}/u`
+              ? (() => {
+                  const r = floorRateLabel(selectedFloor.lowestUsdPerUnit);
+                  return `Floor ${r.main}${r.suffix}`;
+                })()
               : "Loading item detail…"
           }
           itemId={itemFocus}
           rows={selected}
           soldRows={(hub.sold ?? []).filter(
             (s) =>
-              itemIdsMatch(s.itemType, itemFocus) ||
-              (s.portfolioItemId != null &&
-                itemIdsMatch(s.portfolioItemId, itemFocus)),
+              !isItemPending(s) &&
+              (itemIdsMatch(s.itemType, itemFocus) ||
+                (s.portfolioItemId != null &&
+                  itemIdsMatch(s.portfolioItemId, itemFocus))),
           )}
           watching={watch.includes(itemFocus)}
           onClose={closeSheet}
@@ -858,6 +1205,26 @@ function MarketHubInner() {
   );
 }
 
+/** Relative age for Activity (explains lag vs wall clock). */
+function formatSoldAge(iso: string): string {
+  const ms = Date.now() - Date.parse(iso);
+  if (!Number.isFinite(ms) || ms < 0) return "";
+  const s = Math.floor(ms / 1000);
+  if (s < 5) return "just now";
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  return `${h}h ago`;
+}
+
+function isItemPending(r: RecentSale): boolean {
+  if (r.itemPending) return true;
+  if (r.itemType === "unknown" || !r.itemType) return true;
+  if (r.quantity === "?" || r.quantity === "") return true;
+  return false;
+}
+
 /** Compact sold-only activity feed with seller username. */
 function SoldActivityCard({
   rows,
@@ -883,30 +1250,51 @@ function SoldActivityCard({
       {rows.map((r) => {
         const seller = sellerDisplay(r);
         const buyer = buyerLabel(r);
+        const pending = isItemPending(r);
+        const age = formatSoldAge(r.timestamp);
+        const canOpenItem = !pending && r.itemType && r.itemType !== "unknown";
         return (
           <div
             key={`${r.id}-${r.timestamp}`}
             className="list-row-cv row-hover flex items-start gap-2.5 px-3 py-2.5"
           >
-            <button
-              type="button"
-              onClick={() => onOpenItem(r.itemType)}
-              className="shrink-0"
-              aria-label={r.name}
-            >
-              <ItemIcon itemId={r.itemType} name={r.name} size={40} clear />
-            </button>
-            <div className="min-w-0 flex-1">
+            {canOpenItem ? (
               <button
                 type="button"
                 onClick={() => onOpenItem(r.itemType)}
-                className="block w-full truncate text-left text-[13px] font-semibold hover:text-sky-hi"
+                className="shrink-0"
+                aria-label={r.name}
               >
-                <span className="font-mono tabular-nums text-sky-hi">
-                  {formatQtyCompact(r.quantity)}
-                </span>{" "}
-                {r.name}
+                <ItemIcon itemId={r.itemType} name={r.name} size={40} clear />
               </button>
+            ) : (
+              <div
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface-2 text-[10px] font-semibold uppercase tracking-wide text-muted"
+                title="Item name still indexing"
+              >
+                …
+              </div>
+            )}
+            <div className="min-w-0 flex-1">
+              {canOpenItem ? (
+                <button
+                  type="button"
+                  onClick={() => onOpenItem(r.itemType)}
+                  className="block w-full truncate text-left text-[13px] font-semibold hover:text-sky-hi"
+                >
+                  <span className="font-mono tabular-nums text-sky-hi">
+                    {qtyLabelFull(r.quantity)}
+                  </span>{" "}
+                  {r.name}
+                </button>
+              ) : (
+                <div className="truncate text-left text-[13px] font-semibold">
+                  <span className="text-primary">Sale</span>
+                  <span className="ml-1.5 text-[11px] font-medium text-muted">
+                    item updating…
+                  </span>
+                </div>
+              )}
               <button
                 type="button"
                 onClick={() => onOpenSeller(r)}
@@ -921,6 +1309,9 @@ function SoldActivityCard({
               </button>
               <div className="mt-0.5 text-[10px] text-muted">
                 sold · {new Date(r.timestamp).toLocaleTimeString()}
+                {age ? (
+                  <span className="text-sky-hi/90"> · {age}</span>
+                ) : null}
                 {buyer ? (
                   <span className="text-sky-hi">
                     {" · buyer "}
@@ -940,6 +1331,8 @@ function SoldActivityCard({
                       tx
                     </a>
                   </>
+                ) : r.fromBookDelta ? (
+                  <span className="text-muted/80"> · confirming tx…</span>
                 ) : null}
               </div>
             </div>
@@ -951,6 +1344,10 @@ function SoldActivityCard({
   );
 }
 
+/**
+ * Price column — always via getListingRateDisplay (lot÷qty, never fake /1k).
+ * qty 2 · $1.10 → $0.55/1 · total $1.10
+ */
 function PriceBlock({
   row,
   locked,
@@ -960,43 +1357,56 @@ function PriceBlock({
   locked?: boolean;
   compact?: boolean;
 }) {
-  const { lotLabel, per1kLabel, goldLabel } = priceOf(row);
-  const isGold = (row.currency ?? "token") === "gold";
+  const d = getListingRateDisplay({
+    quantity: row.quantity,
+    usdTotal: row.usdTotal,
+    unitUsd: row.unitUsd,
+    priceGold: row.priceGold,
+    currency: row.currency,
+  });
+  const mainCls = cn(
+    "font-mono font-bold tabular-nums leading-tight",
+    d.isGold ? "text-gold-hi" : "text-sky-hi",
+    compact ? "text-[15px] sm:text-[16px]" : "text-[17px]",
+    locked && "opacity-60",
+  );
+  const subCls = cn(
+    "font-mono tabular-nums leading-tight text-muted",
+    compact ? "text-[11px]" : "text-[12px]",
+  );
 
   return (
     <div
       className={cn(
         "shrink-0 whitespace-nowrap text-right",
-        "min-w-[5.25rem] sm:min-w-[5.75rem]",
+        "min-w-[5.5rem] sm:min-w-[6.25rem]",
       )}
     >
-      <div
-        className={cn(
-          "font-mono font-bold tabular-nums leading-tight",
-          isGold ? "text-gold-hi" : "text-sky-hi",
-          compact ? "text-[15px] sm:text-[16px]" : "text-[17px]",
-          locked && "opacity-60",
-        )}
-      >
-        {lotLabel}
+      <div className={mainCls}>
+        {d.rateLabel}
+        {d.rateSuffix ? (
+          <span className="text-[10px] font-medium text-muted">
+            {d.rateSuffix}
+          </span>
+        ) : null}
       </div>
-      {per1kLabel ? (
-        <div
-          className={cn(
-            "font-mono tabular-nums leading-tight text-muted",
-            compact ? "text-[11px]" : "text-[12px]",
-          )}
-        >
-          {per1kLabel}
-          <span className="text-[10px]">/1k</span>
-        </div>
-      ) : goldLabel ? (
-        <div className="font-mono text-[11px] tabular-nums text-gold/90">
-          {goldLabel}
+      {d.totalLine ? <div className={subCls}>{d.totalLine}</div> : null}
+      {d.goldLine && d.rateSuffix !== "" ? (
+        <div className="font-mono text-[10px] tabular-nums text-gold/90">
+          {d.goldLine}
         </div>
       ) : null}
     </div>
   );
+}
+
+/** Readable qty: 100 stays 100; 5000 → 5k; big stacks keep compact. */
+function qtyLabelFull(quantity: string): string {
+  const n = Number(quantity);
+  if (!Number.isFinite(n) || n <= 0) return formatQtyCompact(quantity);
+  if (n >= 1000) return formatQtyCompact(n);
+  if (Number.isInteger(n)) return String(n);
+  return formatQtyCompact(n);
 }
 
 const ListingRow = memo(function ListingRow({
@@ -1017,7 +1427,7 @@ const ListingRow = memo(function ListingRow({
   compact: boolean;
 }) {
   const seller = sellerDisplay(r);
-  const qtyLabel = formatQtyCompact(r.quantity);
+  const qtyLabel = qtyLabelFull(r.quantity);
   const locked = isLocked(r);
   const canOpenSeller = Boolean(
     (r.sellerName && !isWalletAddress(r.sellerName)) ||
@@ -1094,6 +1504,9 @@ const ListingRow = memo(function ListingRow({
           {r.sellerId != null && !seller.startsWith("#") && (
             <span className="shrink-0 font-mono text-muted">#{r.sellerId}</span>
           )}
+          <span className="shrink-0 font-mono tabular-nums text-muted/80">
+            · qty {qtyLabel}
+          </span>
           <span className="shrink-0 text-muted/70">
             · {new Date(r.timestamp).toLocaleTimeString()}
           </span>
@@ -1200,84 +1613,261 @@ function ListingList({
   );
 }
 
-function FloorList({
+/** Floor unit → display string ($/1 or $/1k) matching list price rules. */
+function floorRateLabel(unitUsd: string | null | undefined): {
+  main: string;
+  suffix: string;
+} {
+  if (unitUsd == null || unitUsd === "") return { main: "—", suffix: "" };
+  const d = getListingRateDisplay({
+    quantity: 1000,
+    unitUsd,
+    usdTotal: Number(unitUsd) * 1000,
+    currency: "token",
+  });
+  // High unit prices (gold item, etc.) force /1 even with qty 1000
+  if (Number(unitUsd) >= 0.01) {
+    return { main: formatUsdMarket(unitUsd), suffix: "/1" };
+  }
+  return {
+    main: d.rateLabel,
+    suffix: d.rateSuffix || "/1k",
+  };
+}
+
+/**
+ * kintaramarket-style board: every market item as a card + board totals.
+ * Click → DetailSheet with complete cheap→expensive price list.
+ */
+function ItemBrowseBoard({
   rows,
+  boardStats,
+  floorsNote,
   watch,
+  costByKey,
+  loading,
   onOpen,
   onWatch,
   empty,
 }: {
-  rows: MarketFloorItem[];
+  rows: (MarketFloorItem & { category?: string; hasLiveFloor?: boolean })[];
+  boardStats?: MarketBoardStats | null;
+  floorsNote?: string | null;
   watch: string[];
+  costByKey: Map<string, { avgUsd: number; qty: string }>;
+  loading?: boolean;
   onOpen: (id: string) => void;
   onWatch: (id: string) => void;
   empty: string;
 }) {
+  if (loading) {
+    return (
+      <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div
+              key={i}
+              className="card-quiet h-16 animate-pulse rounded-2xl bg-surface-2/50"
+            />
+          ))}
+        </div>
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+          {Array.from({ length: 10 }).map((_, i) => (
+            <div
+              key={i}
+              className="card-quiet h-40 animate-pulse rounded-2xl bg-surface-2/50"
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   if (!rows.length) {
     return <div className="card-quiet empty-state rounded-3xl">{empty}</div>;
   }
 
+  const stats = boardStats;
+  const shownListings = rows.reduce((a, r) => a + (r.listings ?? 0), 0);
+  const shownQty = rows.reduce((a, r) => a + (Number(r.totalQty) || 0), 0);
+
   return (
-    <div className="card-quiet overflow-hidden rounded-3xl">
-      <div className="max-h-[calc(100dvh-15rem)] divide-y divide-border/20 overflow-y-auto">
+    <div className="space-y-3">
+      {/* Board totals — same idea as kintaramarket header stats */}
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div className="card-quiet rounded-2xl px-3 py-2.5">
+          <p className="text-[10px] font-medium uppercase tracking-wider text-muted">
+            Items
+          </p>
+          <p className="mt-0.5 font-mono text-lg font-bold tabular-nums text-sky-hi">
+            {stats?.itemCount ?? rows.length}
+          </p>
+          <p className="text-[10px] text-muted">
+            {stats?.itemsWithListings ?? rows.filter((r) => (r.listings ?? 0) > 0).length}{" "}
+            with listings
+          </p>
+        </div>
+        <div className="card-quiet rounded-2xl px-3 py-2.5">
+          <p className="text-[10px] font-medium uppercase tracking-wider text-muted">
+            Listings
+          </p>
+          <p className="mt-0.5 font-mono text-lg font-bold tabular-nums text-sky-hi">
+            {(stats?.totalListings ?? shownListings).toLocaleString()}
+          </p>
+          <p className="text-[10px] text-muted">
+            <span className="text-sky-hi">
+              {(stats?.tokenListings ?? 0).toLocaleString()}
+            </span>{" "}
+            token ·{" "}
+            <span className="text-gold-hi">
+              {(stats?.goldListings ?? 0).toLocaleString()}
+            </span>{" "}
+            gold
+          </p>
+        </div>
+        <div className="card-quiet rounded-2xl px-3 py-2.5">
+          <p className="text-[10px] font-medium uppercase tracking-wider text-muted">
+            Total qty
+          </p>
+          <p className="mt-0.5 font-mono text-lg font-bold tabular-nums text-sky-hi">
+            {formatQtyCompact(stats?.totalQty ?? shownQty)}
+          </p>
+          <p className="text-[10px] text-muted">across open book</p>
+        </div>
+        <div className="card-quiet rounded-2xl px-3 py-2.5">
+          <p className="text-[10px] font-medium uppercase tracking-wider text-muted">
+            Showing
+          </p>
+          <p className="mt-0.5 font-mono text-lg font-bold tabular-nums text-sky-hi">
+            {rows.length}
+          </p>
+          <p className="text-[10px] text-muted">
+            {shownListings.toLocaleString()} lots in filter
+          </p>
+        </div>
+      </div>
+
+      {floorsNote ? (
+        <p className="px-0.5 text-[11px] leading-relaxed text-muted">
+          {floorsNote}
+        </p>
+      ) : null}
+
+      <div className="flex flex-wrap items-baseline justify-between gap-2 px-0.5">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-sky-hi">
+            All items
+          </p>
+          <p className="mt-0.5 text-[13px] text-muted">
+            Click any card for the full price list (cheap → expensive)
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
         {rows.map((row) => {
-          const qtyLabel =
-            row.totalQty != null ? formatQtyCompact(row.totalQty) : null;
+          const rate = floorRateLabel(row.lowestUsdPerUnit);
+          const listings = row.listings ?? 0;
+          const watching = watch.includes(row.id);
+          const kins = row.kinsListings ?? 0;
+          const gold = row.goldListings ?? 0;
+          const held =
+            costByKey.get(row.id) ??
+            (row.portfolioItemId
+              ? costByKey.get(row.portfolioItemId)
+              : undefined);
+          const vs: CostVsFloor | null = held
+            ? costVsFloor(held.avgUsd, row.lowestUsdPerUnit)
+            : null;
           return (
             <div
               key={row.id}
-              className="row-hover grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-3 px-4 py-3.5"
+              className="card-quiet group relative flex flex-col rounded-2xl p-3 transition-all hover:-translate-y-0.5 hover:border-sky/40 hover:shadow-[0_12px_28px_color-mix(in_srgb,#000_28%,transparent)]"
             >
               <button
                 type="button"
                 onClick={() => onOpen(row.id)}
-                className="shrink-0"
+                className="flex flex-1 flex-col items-center gap-2 text-center"
               >
-                <ItemIcon itemId={row.id} name={row.name} size={52} clear />
-              </button>
-              <button
-                type="button"
-                onClick={() => onOpen(row.id)}
-                className="min-w-0 text-left"
-              >
-                <div className="truncate text-[16px] font-semibold">
-                  {qtyLabel ? (
-                    <>
-                      <span className="font-mono tabular-nums text-sky-hi">
-                        {qtyLabel}
-                      </span>{" "}
-                    </>
+                <ItemIcon
+                  itemId={row.portfolioItemId ?? row.id}
+                  name={row.name}
+                  size={72}
+                  clear
+                />
+                <div className="w-full min-w-0">
+                  <div className="line-clamp-2 text-[13px] font-semibold leading-snug">
+                    {row.name}
+                  </div>
+                  <div className="mt-1 font-mono text-[15px] font-bold tabular-nums text-sky-hi">
+                    {rate.main}
+                    {rate.suffix ? (
+                      <span className="text-[10px] font-medium text-muted">
+                        {rate.suffix}
+                      </span>
+                    ) : null}
+                  </div>
+                  {vs ? (
+                    <div
+                      className={cn(
+                        "mt-1 inline-flex rounded-md px-1.5 py-0.5 text-[10px] font-semibold tabular-nums",
+                        vs.status === "profit" &&
+                          "bg-forest/15 text-forest-hi",
+                        vs.status === "loss" && "bg-loss/15 text-loss",
+                        vs.status === "flat" && "bg-raised text-muted",
+                      )}
+                      title={`Your avg cost ${formatUsdMarket(vs.avgCostUsd)}/1 · floor ${formatUsdMarket(vs.floorUsd)}/1`}
+                    >
+                      vs cost {formatDeltaPct(vs.deltaPct)}
+                    </div>
                   ) : null}
-                  {row.name}
-                </div>
-                <div className="text-[12px] text-muted">
-                  {row.listings ?? 0} listings
-                </div>
-              </button>
-              <button
-                type="button"
-                onClick={() => onOpen(row.id)}
-                className="min-w-[5rem] shrink-0 text-right"
-              >
-                <div className="font-mono text-[17px] font-semibold tabular-nums text-sky-hi">
-                  {row.lowestUsdPerUnit
-                    ? formatUsdShort(row.lowestUsdPerUnit)
-                    : "—"}
-                  <span className="text-[11px] font-medium text-muted">
-                    /u
-                  </span>
+                  <div className="mt-0.5 text-[11px] text-muted">
+                    {listings > 0 ? (
+                      <>
+                        <span className="font-mono tabular-nums text-primary/90">
+                          {listings}
+                        </span>{" "}
+                        list
+                        {row.totalQty != null && Number(row.totalQty) > 0 ? (
+                          <>
+                            {" · "}
+                            <span className="font-mono tabular-nums">
+                              {formatQtyCompact(row.totalQty)}
+                            </span>
+                          </>
+                        ) : null}
+                      </>
+                    ) : (
+                      "No open listings"
+                    )}
+                  </div>
+                  {(kins > 0 || gold > 0) && (
+                    <div className="mt-0.5 text-[10px] text-muted/80">
+                      {kins > 0 ? (
+                        <span className="text-sky-hi/90">{kins} token</span>
+                      ) : null}
+                      {kins > 0 && gold > 0 ? " · " : null}
+                      {gold > 0 ? (
+                        <span className="text-gold-hi/90">{gold} gold</span>
+                      ) : null}
+                    </div>
+                  )}
+                  <div className="mt-1 text-[10px] font-medium uppercase tracking-wide text-sky-hi/80 opacity-0 transition-opacity group-hover:opacity-100">
+                    View full list →
+                  </div>
                 </div>
               </button>
               <button
                 type="button"
                 onClick={() => onWatch(row.id)}
-                className="rounded-xl p-2 text-muted hover:bg-raised hover:text-sky"
+                className={cn(
+                  "absolute right-2 top-2 rounded-lg p-1.5 text-muted hover:bg-raised hover:text-sky-hi",
+                  watching && "bg-sky/10 text-sky-hi",
+                )}
+                aria-label="Watch"
               >
                 <Star
-                  className={cn(
-                    "h-4 w-4",
-                    watch.includes(row.id) && "fill-sky text-sky",
-                  )}
+                  className={cn("h-3.5 w-3.5", watching && "fill-sky-hi")}
                 />
               </button>
             </div>
@@ -1410,6 +2000,8 @@ function SheetListingRow({
   showLock,
   onOpenSeller,
   onOpenItem,
+  rank,
+  depth,
 }: {
   s: RecentSale;
   title: string;
@@ -1417,9 +2009,107 @@ function SheetListingRow({
   showLock?: boolean;
   onOpenSeller?: (row: RecentSale) => void;
   onOpenItem?: (id: string) => void;
+  /** 1-based rank in cheap→expensive ladder (item depth view) */
+  rank?: number;
+  /** Richer qty / $/1k / lot columns for item book */
+  depth?: boolean;
 }) {
   const locked = showLock && isLocked(s);
   const sold = Boolean(s.isSold);
+  const qtyFull =
+    Number.isFinite(Number(s.quantity)) && Number(s.quantity) >= 1000
+      ? Number(s.quantity).toLocaleString()
+      : formatQtyCompact(s.quantity);
+
+  if (depth && mode === "item" && !sold) {
+    return (
+      <div
+        className={cn(
+          "grid grid-cols-[1.75rem_minmax(0,1fr)_auto] items-center gap-2 rounded-2xl px-2.5 py-2.5 sm:px-3",
+          locked ? "bg-amber-500/10" : "bg-surface-2/60",
+        )}
+      >
+        <div className="text-center font-mono text-[11px] tabular-nums text-muted">
+          {rank != null ? `#${rank}` : "·"}
+        </div>
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+            <span className="font-mono text-[15px] font-bold tabular-nums text-sky-hi">
+              {qtyFull}
+            </span>
+            <span className="text-[11px] text-muted">qty</span>
+            {locked && (
+              <span className="inline-flex items-center gap-0.5 rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-200">
+                <Lock className="h-2.5 w-2.5" />
+                locked
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onOpenSeller?.(s);
+            }}
+            className="mt-0.5 flex max-w-full items-center gap-1.5 truncate text-left text-[12px] font-medium text-sky-hi underline decoration-sky/40 underline-offset-2 hover:bg-sky/10"
+          >
+            <SellerAvatar
+              sellerId={s.sellerId}
+              sellerName={sellerDisplay(s)}
+              size={18}
+            />
+            <span className="truncate">{sellerDisplay(s)}</span>
+            {s.sellerId != null && !sellerDisplay(s).startsWith("#") ? (
+              <span className="shrink-0 font-mono text-[10px] text-muted">
+                #{s.sellerId}
+              </span>
+            ) : null}
+          </button>
+          {locked && (
+            <div className="mt-0.5 truncate text-[10px] text-amber-200/90">
+              {lockLabel(s)}
+            </div>
+          )}
+        </div>
+        <div className="shrink-0 text-right">
+          {(() => {
+            const d = getListingRateDisplay({
+              quantity: s.quantity,
+              usdTotal: s.usdTotal,
+              unitUsd: s.unitUsd,
+              priceGold: s.priceGold,
+              currency: s.currency,
+            });
+            return (
+              <>
+                <div
+                  className={cn(
+                    "font-mono text-[15px] font-bold tabular-nums leading-tight",
+                    d.isGold ? "text-gold-hi" : "text-sky-hi",
+                    locked && "opacity-70",
+                  )}
+                >
+                  {d.rateLabel}
+                  {d.rateSuffix ? (
+                    <span className="text-[10px] font-medium text-muted">
+                      {d.rateSuffix}
+                    </span>
+                  ) : null}
+                </div>
+                {d.totalLine ? (
+                  <div className="font-mono text-[11px] tabular-nums text-muted">
+                    {d.totalLine}
+                  </div>
+                ) : null}
+              </>
+            );
+          })()}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className={cn(
@@ -1508,7 +2198,9 @@ function SheetListingRow({
           )}
         </div>
       </div>
-      <PriceBlock row={s} locked={locked && !sold} />
+      <div className="shrink-0 text-right">
+        <PriceBlock row={s} locked={locked && !sold} />
+      </div>
     </div>
   );
 }
@@ -1663,11 +2355,13 @@ function DetailSheet({
     return map;
   }, [rows]);
 
-  // Prefer official item listings; merge hub rows for any ids the scan missed
+  // Prefer official item listings; merge hub rows for any ids the scan missed.
+  // Always cheap → expensive for item depth (open first, then locked).
   const openListings = useMemo(() => {
     const hubOpen = rows.filter((r) => !r.isSold);
     if (mode !== "item") return hubOpen;
 
+    let merged: RecentSale[];
     if (liveStats?.listings?.length) {
       const fromStats = liveStats.listings.map((l) => {
         const locker =
@@ -1685,10 +2379,17 @@ function DetailSheet({
           fromStats.push(r);
         }
       }
-      return fromStats;
+      merged = fromStats;
+    } else {
+      merged = hubOpen;
     }
-    return hubOpen;
+    return sortListingsCheapFirst(merged);
   }, [mode, liveStats, rows, itemId, displayName, lockerNameById]);
+
+  const itemDepth = useMemo(
+    () => (mode === "item" ? computeItemDepth(openListings) : null),
+    [mode, openListings],
+  );
 
   /** Seller: book scan + hub open/sold merged */
   const sellerInventory = useMemo(() => {
@@ -1696,7 +2397,12 @@ function DetailSheet({
     const hubOpen = rows.filter((r) => !r.isSold);
     const hubSold = rows.filter((r) => r.isSold);
     if (!sellerScan?.listings?.length) {
-      return rows;
+      // Still suppress sold rows whose listing id is still open in this sheet
+      const openKeys = new Set(hubOpen.map((r) => listingDedupeKey(r)));
+      const soldExtra = hubSold.filter(
+        (r) => !openKeys.has(listingDedupeKey(r)),
+      );
+      return [...hubOpen, ...soldExtra];
     }
     const fromScan = sellerScan.listings.map((l) =>
       bookListingToSale(l, {
@@ -1706,15 +2412,16 @@ function DetailSheet({
         sellerId: sellerId ?? null,
       }),
     );
-    const seen = new Set(fromScan.map((r) => String(r.id)));
+    const seen = new Set(fromScan.map((r) => listingDedupeKey(r)));
     for (const r of hubOpen) {
-      if (!seen.has(String(r.id))) {
-        seen.add(String(r.id));
+      const key = listingDedupeKey(r);
+      if (!seen.has(key)) {
+        seen.add(key);
         fromScan.push(r);
       }
     }
-    // Append sold (not in open book) after open
-    const soldExtra = hubSold.filter((r) => !seen.has(String(r.id)));
+    // Append sold only when that listing is not still open
+    const soldExtra = hubSold.filter((r) => !seen.has(listingDedupeKey(r)));
     return [...fromScan, ...soldExtra];
   }, [mode, rows, sellerScan, sellerName, sellerId, title]);
 
@@ -1761,8 +2468,34 @@ function DetailSheet({
     mode === "seller" ? sellerSoldRows.length : recentSold.length;
 
   const liveSubtitle =
-    mode === "item" && liveStats?.floorUsd
-      ? `Floor ${formatUsdShort(liveStats.floorUsd)}/u · ${formatUsdPer1k(liveStats.floorUsd)}/1k`
+    mode === "item" && (itemDepth?.floorUnit != null || liveStats?.floorUsd)
+      ? (() => {
+          // Same rule as list rows: high unit → $/1, dust bulk → $/1k
+          const floorU =
+            itemDepth?.floorUnit != null
+              ? itemDepth.floorUnit
+              : liveStats?.floorUsd != null
+                ? Number(liveStats.floorUsd)
+                : null;
+          let floorRate = "—";
+          if (floorU != null && Number.isFinite(floorU) && floorU > 0) {
+            if (floorU >= 0.01) {
+              floorRate = `${formatUsdMarket(floorU)}/1`;
+            } else {
+              floorRate = `${formatUsdMarket(floorU * 1000)}/1k`;
+            }
+          }
+          const qty =
+            itemDepth && itemDepth.totalQty > 0
+              ? formatQtyCompact(itemDepth.totalQty)
+              : null;
+          return [
+            `Floor ${floorRate}`,
+            qty ? `${qty} on book` : null,
+          ]
+            .filter(Boolean)
+            .join(" · ");
+        })()
       : mode === "seller" && sellerScan
         ? `${sellerOpenRows.length} open in book` +
           (sellerSoldRows.length
@@ -1814,7 +2547,12 @@ function DetailSheet({
         aria-label="Close"
         onClick={onClose}
       />
-      <div className="card-quiet relative z-10 flex max-h-[88dvh] w-full max-w-md flex-col rounded-t-3xl border-border/60 shadow-2xl sm:mr-4 sm:max-h-[90dvh] sm:rounded-3xl">
+      <div
+        className={cn(
+          "card-quiet relative z-10 flex max-h-[88dvh] w-full flex-col rounded-t-3xl border-border/60 shadow-2xl sm:mr-4 sm:max-h-[92dvh] sm:rounded-3xl",
+          mode === "item" ? "max-w-lg sm:max-w-xl" : "max-w-md",
+        )}
+      >
         <div className="flex items-start gap-3 border-b border-border/35 bg-surface-2/30 p-5">
           {mode === "item" && itemId ? (
             <ItemIcon itemId={itemId} name={displayName} size={64} clear />
@@ -1849,6 +2587,14 @@ function DetailSheet({
                     <span className="text-amber-200">{lockedCount} locked</span>
                   </>
                 ) : null}
+                {itemDepth && itemDepth.totalQty > 0 ? (
+                  <>
+                    {" · "}
+                    <span className="font-mono tabular-nums text-primary/90">
+                      {formatQtyCompact(itemDepth.totalQty)} qty
+                    </span>
+                  </>
+                ) : null}
                 {soldCount > 0 ? (
                   <>
                     {" · "}
@@ -1870,85 +2616,186 @@ function DetailSheet({
         <div className="flex-1 overflow-y-auto p-4">
           {mode === "item" && (
             <div className="mb-4 space-y-3">
-              {statsLoading && !liveStats && (
-                <p className="text-sm text-muted">Loading floor & 30d stats…</p>
+              {statsLoading && !liveStats && openListings.length === 0 && (
+                <p className="text-sm text-muted">Loading floor & book depth…</p>
               )}
               {statsError && !liveStats && (
                 <p className="text-sm text-loss">{statsError}</p>
               )}
-              {liveStats && (
+              {(liveStats || itemDepth) && (
                 <>
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    {(() => {
+                      // Adaptive floor rate (fixes gold resource $550/1k bug)
+                      const fu =
+                        itemDepth?.floorUnit ??
+                        (liveStats?.floorUsd != null
+                          ? Number(liveStats.floorUsd)
+                          : null);
+                      const use1 =
+                        fu != null && Number.isFinite(fu) && fu >= 0.01;
+                      const floorVal =
+                        fu == null || !Number.isFinite(fu)
+                          ? "—"
+                          : use1
+                            ? formatUsdMarket(fu)
+                            : formatUsdMarket(fu * 1000);
+                      const med =
+                        itemDepth?.medianUnit ??
+                        (liveStats?.medianUsd != null
+                          ? Number(liveStats.medianUsd)
+                          : null);
+                      const medUse1 =
+                        med != null && Number.isFinite(med) && med >= 0.01;
+                      const medVal =
+                        med == null || !Number.isFinite(med)
+                          ? "—"
+                          : medUse1
+                            ? formatUsdMarket(med)
+                            : formatUsdMarket(med * 1000);
+                      const hi = itemDepth?.highUnit ?? null;
+                      const hiUse1 =
+                        hi != null && Number.isFinite(hi) && hi >= 0.01;
+                      const hiVal =
+                        hi == null || !Number.isFinite(hi)
+                          ? "—"
+                          : hiUse1
+                            ? formatUsdMarket(hi)
+                            : formatUsdMarket(hi * 1000);
+                      return (
+                        <>
                     <StatChip
-                      label="Floor"
-                      value={
-                        liveStats.floorUsd
-                          ? formatUsdShort(liveStats.floorUsd)
-                          : "—"
-                      }
+                      label={use1 ? "Floor $/1" : "Floor $/1k"}
+                      value={floorVal}
                       hint={
-                        liveStats.floorUsd
-                          ? `${formatUsdPer1k(liveStats.floorUsd)}/1k`
+                        fu != null && Number.isFinite(fu)
+                          ? use1
+                            ? undefined
+                            : `${formatUsdMarket(fu)}/1`
                           : undefined
                       }
                     />
                     <StatChip
-                      label="Median"
-                      value={
-                        liveStats.medianUsd
-                          ? formatUsdShort(liveStats.medianUsd)
-                          : "—"
-                      }
+                      label={medUse1 ? "Median $/1" : "Median $/1k"}
+                      value={medVal}
                       hint={
-                        liveStats.medianUsd
-                          ? `${formatUsdPer1k(liveStats.medianUsd)}/1k`
+                        med != null && Number.isFinite(med) && !medUse1
+                          ? `${formatUsdMarket(med)}/1`
                           : undefined
                       }
                     />
                     <StatChip
-                      label="30d avg"
+                      label={hiUse1 ? "High $/1" : "High $/1k"}
+                      value={hiVal}
+                      hint={
+                        itemDepth?.spreadPct != null
+                          ? `spread +${itemDepth.spreadPct.toFixed(0)}%`
+                          : undefined
+                      }
+                    />
+                        </>
+                      );
+                    })()}
+                    <StatChip
+                      label="Qty on book"
                       value={
-                        liveStats.avg30dUsd
-                          ? formatUsdShort(liveStats.avg30dUsd)
+                        itemDepth && itemDepth.totalQty > 0
+                          ? formatQtyCompact(itemDepth.totalQty)
                           : "—"
                       }
                       hint={
-                        liveStats.avg30dUsd
-                          ? `${formatUsdPer1k(liveStats.avg30dUsd)}/1k`
+                        itemDepth
+                          ? `${formatQtyCompact(itemDepth.unlockedQty)} open` +
+                            (itemDepth.lockedQty > 0
+                              ? ` · ${formatQtyCompact(itemDepth.lockedQty)} lock`
+                              : "")
                           : undefined
                       }
                     />
                     <StatChip
-                      label="30d sales"
+                      label="Book value"
                       value={
-                        liveStats.sales30d != null
-                          ? String(liveStats.sales30d)
+                        itemDepth?.totalLotUsd != null
+                          ? formatUsdMarket(itemDepth.totalLotUsd)
                           : "—"
+                      }
+                      hint={
+                        itemDepth
+                          ? `${itemDepth.openUnlocked + itemDepth.openLocked} lots`
+                          : undefined
+                      }
+                    />
+                    <StatChip
+                      label={
+                        liveStats?.avg30dUsd != null &&
+                        Number(liveStats.avg30dUsd) >= 0.01
+                          ? "30d avg $/1"
+                          : "30d avg $/1k"
+                      }
+                      value={
+                        liveStats?.avg30dUsd
+                          ? Number(liveStats.avg30dUsd) >= 0.01
+                            ? formatUsdMarket(liveStats.avg30dUsd)
+                            : formatUsdPer1k(liveStats.avg30dUsd)
+                          : "—"
+                      }
+                      hint={
+                        liveStats?.sales30d != null
+                          ? `${liveStats.sales30d} sales`
+                          : undefined
                       }
                     />
                   </div>
-                  {liveStats.samples.length > 0 && (
+                  {itemDepth?.avgUnit != null && (
+                    <p className="text-[11px] text-muted">
+                      Book avg{" "}
+                      <span className="font-mono font-semibold tabular-nums text-sky-hi">
+                        {itemDepth.avgUnit >= 0.01
+                          ? `${formatUsdMarket(itemDepth.avgUnit)}/1`
+                          : `${formatUsdMarket(itemDepth.avgUnit * 1000)}/1k`}
+                      </span>
+                      {itemDepth.cheapest3AvgPer1k != null &&
+                      itemDepth.floorUnit != null ? (
+                        <>
+                          {" · "}
+                          cheapest 3{" "}
+                          <span className="font-mono tabular-nums text-primary/90">
+                            {itemDepth.floorUnit >= 0.01
+                              ? `${formatUsdMarket(itemDepth.cheapest3AvgPer1k / 1000)}/1`
+                              : `${formatUsdMarket(itemDepth.cheapest3AvgPer1k)}/1k`}
+                          </span>
+                        </>
+                      ) : null}
+                    </p>
+                  )}
+                  {liveStats && liveStats.samples.length > 0 && (
                     <div>
                       <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-muted">
-                        Recent samples
+                        Recent sale samples
                       </p>
                       <div className="flex flex-wrap gap-1.5">
-                        {liveStats.samples.slice(0, 8).map((s, i) => (
+                        {liveStats.samples.slice(0, 8).map((s, i) => {
+                          const u =
+                            s.unitUsd != null ? Number(s.unitUsd) : NaN;
+                          const sampleRate =
+                            !Number.isFinite(u) || u <= 0
+                              ? "—"
+                              : u >= 0.01
+                                ? `${formatUsdMarket(u)}/1`
+                                : `${formatUsdPer1kMarket(u)}/1k`;
+                          return (
                           <span
                             key={`${s.date}-${i}`}
                             className="rounded-lg bg-surface-2/80 px-2 py-1 font-mono text-[11px] tabular-nums text-muted"
                           >
                             {s.date.slice(5)}{" "}
-                            <span className="text-sky-hi">
-                              {s.unitUsd
-                                ? formatUsdShort(s.unitUsd)
-                                : "—"}
-                            </span>
+                            <span className="text-sky-hi">{sampleRate}</span>
                             {s.sales != null ? (
                               <span className="text-muted"> ·×{s.sales}</span>
                             ) : null}
                           </span>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   )}
@@ -1995,20 +2842,37 @@ function DetailSheet({
             </>
           ) : (
             <>
-              <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted">
-                Open listings · {openListings.length}
-                {statsLoading && liveStats ? " · refreshing…" : ""}
-              </p>
+              <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
+                <div>
+                  <p className="text-[11px] font-medium uppercase tracking-wider text-muted">
+                    Price ladder · cheap → expensive
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-muted">
+                    {openListings.length} lots
+                    {statsLoading && liveStats ? " · refreshing…" : ""}
+                    {itemDepth && itemDepth.unlockedQty > 0
+                      ? ` · ${formatQtyCompact(itemDepth.unlockedQty)} unlocked qty`
+                      : ""}
+                  </p>
+                </div>
+              </div>
               {itemEmptyNote && (
                 <div className="mb-2">
                   <CoverageNote text={itemEmptyNote} />
                 </div>
               )}
-              <div className="space-y-2">
+              {openListings.length > 0 && (
+                <div className="mb-1.5 grid grid-cols-[1.75rem_minmax(0,1fr)_auto] gap-2 px-2.5 text-[10px] font-semibold uppercase tracking-wider text-muted/70 sm:px-3">
+                  <span>#</span>
+                  <span>Qty · seller</span>
+                  <span className="text-right">$/1 or $/1k · total</span>
+                </div>
+              )}
+              <div className="space-y-1.5">
                 {openListings.length === 0 && statsLoading && (
                   <p className="text-sm text-muted">Loading listings…</p>
                 )}
-                {openListings.map((s) => (
+                {openListings.map((s, i) => (
                   <SheetListingRow
                     key={`${s.id}-open`}
                     s={s}
@@ -2017,6 +2881,8 @@ function DetailSheet({
                     showLock={showLock}
                     onOpenSeller={onOpenSeller}
                     onOpenItem={onOpenItem}
+                    rank={i + 1}
+                    depth
                   />
                 ))}
               </div>

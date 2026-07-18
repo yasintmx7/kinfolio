@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatUsdMarket,
   formatUsdPer1kMarket,
+  getListingRateDisplay,
   listingPriceLabels,
   normalizeListingPrice,
 } from "@/lib/market/listing-price";
@@ -95,5 +96,51 @@ describe("formatUsdMarket", () => {
   it("formats lot totals cleanly", () => {
     expect(formatUsdMarket(0.0528)).toBe("$0.0528");
     expect(formatUsdMarket(1.5)).toMatch(/\$1\.5/);
+  });
+});
+
+describe("getListingRateDisplay", () => {
+  it("qty 2 · lot $1.10 → $0.55/1 not $550/1k (gold resource case)", () => {
+    // Live bug: itemType gold, currency token, qty 2–3, lot ~$1.1
+    const d = getListingRateDisplay({
+      quantity: 2,
+      usdTotal: 1.1,
+      currency: "token",
+    });
+    expect(d.rateSuffix).toBe("/1");
+    expect(d.rateLabel).toMatch(/\$0\.55/);
+    expect(d.totalLine).toMatch(/1\.1/);
+    expect(d.rateLabel).not.toMatch(/550/);
+  });
+
+  it("gold resource qty 3 · $1.80 → $0.60/1 not $600/1k", () => {
+    const d = getListingRateDisplay({
+      quantity: 3,
+      usdTotal: 1.8,
+      currency: "token",
+    });
+    expect(d.rateSuffix).toBe("/1");
+    expect(d.unitUsd).toBeCloseTo(0.6, 8);
+    expect(d.rateLabel).not.toMatch(/600/);
+  });
+
+  it("unit ≥ $0.01 always uses /1 even if qty is large", () => {
+    const d = getListingRateDisplay({
+      quantity: 500,
+      usdTotal: 275, // unit $0.55
+      currency: "token",
+    });
+    expect(d.rateSuffix).toBe("/1");
+    expect(d.rateLabel).toMatch(/\$0\.55/);
+  });
+
+  it("bulk dust materials keep /1k", () => {
+    const d = getListingRateDisplay({
+      quantity: 2000,
+      usdTotal: 0.0528,
+      currency: "token",
+    });
+    expect(d.rateSuffix).toBe("/1k");
+    expect(d.totalLine).toMatch(/0\.0528|\$0\.0528/);
   });
 });

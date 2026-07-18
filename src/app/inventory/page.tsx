@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
@@ -8,8 +9,20 @@ import { usePortfolioContext } from "@/components/providers/portfolio-provider";
 import { useKinsPrice } from "@/hooks/use-kins-price";
 import { d } from "@/lib/accounting/decimal";
 import { estimateUnrealized, protectedCost } from "@/lib/accounting/engine";
-import { formatKins, formatUsd, signedClass } from "@/lib/formatting/money";
+import {
+  formatKins,
+  formatUsd,
+  formatUsdShort,
+  signedClass,
+} from "@/lib/formatting/money";
 import { ItemIcon } from "@/components/items/item-icon";
+import { STATIC_CATALOG } from "@/data/static-catalog";
+import { portfolioIdToMarketType } from "@/lib/kintara/item-type-map";
+import {
+  costVsFloor,
+  formatDeltaPct,
+} from "@/lib/market/cost-vs-floor";
+import { cn } from "@/lib/utils";
 
 type Filter =
   | "all"
@@ -23,6 +36,12 @@ type Filter =
   | "unpriced"
   | "earned";
 
+type FloorHit = {
+  id: string;
+  lowestUsdPerUnit: string | null;
+  listings?: number;
+};
+
 export default function InventoryPage() {
   const { summary, itemMap, priceMap, settings, setManualPrice, ready } =
     usePortfolioContext();
@@ -30,16 +49,59 @@ export default function InventoryPage() {
   const [filter, setFilter] = useState<Filter>("all");
   const [editing, setEditing] = useState<string | null>(null);
   const [priceDraft, setPriceDraft] = useState("");
+  const [floors, setFloors] = useState<FloorHit[]>([]);
 
   const fee = settings?.defaultSellFeePercent ?? "5";
   const kinsUsd = price?.priceUsd ?? settings?.manualKinsUsd ?? "";
   const favorites = settings?.favoriteItemIds ?? [];
+
+  // Live floors for cost-vs-market comparison
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/market/items")
+      .then((r) => r.json())
+      .then((body: { ok?: boolean; data?: { items?: FloorHit[] } }) => {
+        if (cancelled || !body?.ok || !Array.isArray(body.data?.items)) return;
+        setFloors(
+          body.data!.items!.map((i) => ({
+            id: i.id,
+            lowestUsdPerUnit: i.lowestUsdPerUnit ?? null,
+            listings: i.listings,
+          })),
+        );
+      })
+      .catch(() => {
+        /* floor optional */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const floorByKey = useMemo(() => {
+    const m = new Map<string, FloorHit>();
+    for (const f of floors) {
+      m.set(f.id, f);
+      m.set(f.id.replace(/_/g, "-"), f);
+      m.set(f.id.replace(/-/g, "_"), f);
+    }
+    return m;
+  }, [floors]);
 
   const rows = useMemo(() => {
     return summary.positions
       .map((pos) => {
         const item = itemMap.get(pos.itemId);
         const ref = priceMap.get(pos.itemId);
+        const marketType = portfolioIdToMarketType(pos.itemId, STATIC_CATALOG);
+        const floor =
+          floorByKey.get(marketType) ??
+          floorByKey.get(pos.itemId) ??
+          floorByKey.get(pos.itemId.replace(/-/g, "_"));
+        const vs = costVsFloor(
+          pos.averageUsdPerItem,
+          floor?.lowestUsdPerUnit ?? null,
+        );
         const est =
           ref && kinsUsd
             ? estimateUnrealized({
@@ -56,7 +118,7 @@ export default function InventoryPage() {
           d(fee),
           "exact_gross_up",
         ).toFixed();
-        return { pos, item, ref, est, breakEvenGross };
+        return { pos, item, ref, est, breakEvenGross, floor, vs, marketType };
       })
       .filter(({ pos, item, ref, est }) => {
         if (filter === "favorites") return favorites.includes(pos.itemId);
@@ -73,7 +135,16 @@ export default function InventoryPage() {
         return true;
       })
       .sort((a, b) => d(b.pos.usdCostBasis).cmp(d(a.pos.usdCostBasis)));
-  }, [summary.positions, itemMap, priceMap, kinsUsd, fee, filter, favorites]);
+  }, [
+    summary.positions,
+    itemMap,
+    priceMap,
+    kinsUsd,
+    fee,
+    filter,
+    favorites,
+    floorByKey,
+  ]);
 
   if (!ready) {
     return <div className="text-muted">Loading inventory…</div>;
@@ -125,7 +196,8 @@ export default function InventoryPage() {
       )}
 
       <div className="grid gap-3 lg:grid-cols-2">
-        {rows.map(({ pos, item, ref, est, breakEvenGross }) => (
+        {rows.map(
+          ({ pos, item, ref, est, breakEvenGross, floor, vs, marketType }) => (
           <Card key={pos.itemId} className="space-y-2">
             <div className="flex items-start justify-between gap-2">
               <div className="flex items-center gap-3">
@@ -144,10 +216,41 @@ export default function InventoryPage() {
                   <div className="text-xs capitalize text-muted">
                     {item?.category ?? "other"}
                   </div>
+                  {vs ? (
+                    <div
+                      className={cn(
+                        "mt-1 inline-flex rounded-md px-1.5 py-0.5 text-[11px] font-semibold tabular-nums",
+                        vs.status === "profit" &&
+                          "bg-emerald-500/15 text-emerald-300",
+                        vs.status === "loss" && "bg-red-500/15 text-red-300",
+                        vs.status === "flat" && "bg-raised text-muted",
+                      )}
+                    >
+                      Floor {formatUsdShort(vs.floorUsd)}/1 · vs cost{" "}
+                      {formatDeltaPct(vs.deltaPct)}
+                    </div>
+                  ) : floor?.lowestUsdPerUnit ? (
+                    <div className="mt-1 text-[11px] text-muted">
+                      Floor {formatUsdShort(floor.lowestUsdPerUnit)}/1 · no avg
+                      cost
+                    </div>
+                  ) : (
+                    <div className="mt-1 text-[11px] text-muted">
+                      No live floor
+                    </div>
+                  )}
                 </div>
               </div>
-              <div className="text-right font-mono text-sm tabular-nums">
-                qty {pos.quantity}
+              <div className="text-right">
+                <div className="font-mono text-sm tabular-nums">
+                  qty {pos.quantity}
+                </div>
+                <Link
+                  href={`/market?tab=floors&item=${encodeURIComponent(marketType)}`}
+                  className="mt-1 inline-block text-[11px] font-medium text-sky underline-offset-2 hover:underline"
+                >
+                  Market list →
+                </Link>
               </div>
             </div>
 
@@ -158,6 +261,27 @@ export default function InventoryPage() {
               <Metric label="KINS cost" value={formatKins(pos.kinsCostBasis)} />
               <Metric label="Avg USD" value={formatUsd(pos.averageUsdPerItem)} />
               <Metric label="Avg KINS" value={formatKins(pos.averageKinsPerItem)} />
+              <Metric
+                label="Live floor USD/1"
+                value={
+                  floor?.lowestUsdPerUnit
+                    ? formatUsd(floor.lowestUsdPerUnit)
+                    : "—"
+                }
+              />
+              <Metric
+                label="Floor vs cost"
+                value={vs ? formatDeltaPct(vs.deltaPct) : "—"}
+                className={
+                  vs
+                    ? vs.status === "profit"
+                      ? "text-emerald-300"
+                      : vs.status === "loss"
+                        ? "text-red-300"
+                        : ""
+                    : ""
+                }
+              />
               <Metric
                 label="Ref price (KINS)"
                 value={ref ? formatKins(ref) : "Not available"}
@@ -215,7 +339,8 @@ export default function InventoryPage() {
               </Button>
             )}
           </Card>
-        ))}
+          ),
+        )}
       </div>
     </div>
   );

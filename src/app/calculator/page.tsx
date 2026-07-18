@@ -6,20 +6,23 @@ import { Card, CardTitle, StatValue } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { useKinsPrice } from "@/hooks/use-kins-price";
+import { usePortfolioContext } from "@/components/providers/portfolio-provider";
 import { d } from "@/lib/accounting/decimal";
 import { protectedCost } from "@/lib/accounting/engine";
 import { formatKins, formatPercent, formatUsd, signedClass } from "@/lib/formatting/money";
 import type { FeeTargetMode } from "@/lib/accounting/types";
 
 /**
- * Standalone market calculator — no portfolio required.
+ * Market calculator + optional load-from-portfolio holdings.
  * Break-even, fee targets, buy→sell profit preview, KINS↔USD.
  */
 export default function CalculatorPage() {
   const { price, source, loading } = useKinsPrice();
+  const { ready, summary, itemMap, settings, transactions } = usePortfolioContext();
   const [kinsUsdManual, setKinsUsdManual] = useState("");
   const [fee, setFee] = useState("5");
   const [mode, setMode] = useState<FeeTargetMode>("exact_gross_up");
+  const [selectedHolding, setSelectedHolding] = useState("");
 
   const [buyKins, setBuyKins] = useState("");
   const [buyUsd, setBuyUsd] = useState("");
@@ -31,7 +34,33 @@ export default function CalculatorPage() {
   const [convertKins, setConvertKins] = useState("");
   const [convertUsd, setConvertUsd] = useState("");
 
-  const kinsUsd = price?.priceUsd || kinsUsdManual || "";
+  const kinsUsd = price?.priceUsd || kinsUsdManual || settings?.manualKinsUsd || "";
+
+  const holdings = useMemo(() => {
+    return summary.positions
+      .filter((p) => d(p.quantity).gt(0))
+      .map((p) => ({
+        ...p,
+        name: itemMap.get(p.itemId)?.name ?? p.itemId,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [summary.positions, itemMap]);
+
+  function loadHolding(itemId: string) {
+    setSelectedHolding(itemId);
+    if (!itemId) return;
+    const pos = summary.positions.find((p) => p.itemId === itemId);
+    if (!pos) return;
+    setQty(pos.quantity);
+    setBuyUsd(pos.usdCostBasis);
+    setBuyKins(pos.kinsCostBasis);
+    if (settings?.defaultSellFeePercent) {
+      setFee(settings.defaultSellFeePercent);
+    }
+    if (settings?.feeTargetMode) {
+      setMode(settings.feeTargetMode);
+    }
+  }
 
   const breakEven = useMemo(() => {
     const cost = d(buyUsd || "0");
@@ -101,13 +130,73 @@ export default function CalculatorPage() {
           Profit &amp; break-even
         </h1>
         <p className="mt-1.5 text-sm text-muted">
-          Quick math without saving a trade. For full tracking,{" "}
+          Quick math without saving a trade. See your holdings on{" "}
+          <Link href="/dashboard" className="text-sky underline underline-offset-2">
+            My portfolio
+          </Link>{" "}
+          /{" "}
+          <Link href="/inventory" className="text-sky underline underline-offset-2">
+            Inventory
+          </Link>
+          , or{" "}
           <Link href="/add" className="text-sky underline underline-offset-2">
             log a trade
           </Link>
           .
         </p>
       </div>
+
+      <Card className="space-y-3">
+        <CardTitle>My assets</CardTitle>
+        {!ready ? (
+          <p className="text-sm text-muted">Loading portfolio…</p>
+        ) : holdings.length === 0 ? (
+          <div className="space-y-2">
+            <p className="text-sm text-muted">
+              No holdings yet — the calculator was empty because portfolio trades
+              live in local storage and this page used to be standalone only.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Link href="/add">
+                <Button>Log a trade</Button>
+              </Link>
+              <Link href="/dashboard">
+                <Button variant="secondary">Open portfolio</Button>
+              </Link>
+            </div>
+            {transactions.length === 0 && (
+              <p className="text-xs text-muted">
+                Tip: paste a Kintara buy/sell alert on Log trade, or load the demo
+                portfolio from the dashboard.
+              </p>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <Label htmlFor="holding">Load from inventory</Label>
+            <Select
+              id="holding"
+              value={selectedHolding}
+              onChange={(e) => loadHolding(e.target.value)}
+            >
+              <option value="">Select a holding…</option>
+              {holdings.map((h) => (
+                <option key={h.itemId} value={h.itemId}>
+                  {h.name} · qty {h.quantity} · cost {formatUsd(h.usdCostBasis)}
+                </option>
+              ))}
+            </Select>
+            <p className="text-xs text-muted">
+              Picks fill qty + remaining cost basis so you can model a sell.
+              Full list:{" "}
+              <Link href="/inventory" className="text-sky underline underline-offset-2">
+                Inventory
+              </Link>
+              .
+            </p>
+          </div>
+        )}
+      </Card>
 
       <Card>
         <CardTitle>KINS price</CardTitle>
@@ -294,8 +383,14 @@ export default function CalculatorPage() {
         <Link href="/add">
           <Button>Log this as a trade</Button>
         </Link>
+        <Link href="/dashboard">
+          <Button variant="secondary">My portfolio</Button>
+        </Link>
+        <Link href="/inventory">
+          <Button variant="secondary">Inventory</Button>
+        </Link>
         <Link href="/market">
-          <Button variant="secondary">Open market tracker</Button>
+          <Button variant="ghost">Market tracker</Button>
         </Link>
       </div>
     </div>

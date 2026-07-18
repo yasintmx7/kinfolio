@@ -72,19 +72,22 @@ export function normalizeListingPrice(
   // Priority: official priceUsd (lot) > usdTotal (lot) > unitUsd×qty
   if (apiLotUsd != null) {
     lotUsd = apiLotUsd;
-    unitUsd = hasQty ? (explicitUnit ?? lotUsd / quantity) : explicitUnit;
   } else if (explicitLot != null) {
     lotUsd = explicitLot;
-    // Only divide when qty is real — never treat missing qty as 1
-    unitUsd = hasQty ? (explicitUnit ?? lotUsd / quantity) : explicitUnit;
   } else if (explicitUnit != null && hasQty) {
-    unitUsd = explicitUnit;
-    lotUsd = unitUsd * quantity;
-  } else if (explicitUnit != null) {
-    unitUsd = explicitUnit;
+    lotUsd = explicitUnit * quantity;
   }
 
-  // Guard: if unit ≈ lot while qty >> 1, unit was never divided (bad data)
+  // Unit is ALWAYS lot÷qty when we have a real lot + qty.
+  // Never trust a pre-multiplied “unit” that was actually /1k or lot.
+  if (hasQty && lotUsd != null) {
+    unitUsd = lotUsd / quantity;
+  } else if (explicitUnit != null) {
+    unitUsd = explicitUnit;
+    if (lotUsd == null && hasQty) lotUsd = unitUsd * quantity;
+  }
+
+  // Guard: unit ≈ lot while qty > 1 → still undivided
   if (
     hasQty &&
     quantity > 1 &&
@@ -159,7 +162,7 @@ export function listingPriceLabels(input: ListingPriceInput): {
   const per1kLabel =
     p.per1kUsd != null ? formatUsdMarket(p.per1kUsd) : null;
   const goldLabel =
-    p.priceGold != null && p.lotUsd != null
+    p.priceGold != null
       ? `${trimZeros(String(p.priceGold))}g`
       : null;
 
@@ -170,5 +173,101 @@ export function listingPriceLabels(input: ListingPriceInput): {
     lotUsd: p.lotUsd,
     unitUsd: p.unitUsd,
     per1kUsd: p.per1kUsd,
+  };
+}
+
+export type ListingRateDisplay = {
+  /** Main rate, e.g. "$0.55" */
+  rateLabel: string;
+  /** "/1" for unit, "/1k" for bulk materials, "" if lot-only */
+  rateSuffix: "/1" | "/1k" | "";
+  /** e.g. "total $1.10" */
+  totalLine: string | null;
+  goldLine: string | null;
+  isGold: boolean;
+  unitUsd: number | null;
+  lotUsd: number | null;
+  quantity: number;
+};
+
+/**
+ * Single source of truth for list/sheet price column.
+ *
+ * REAL BUG (live kintara.com):
+ *   itemType "gold", currency "token", qty 2–3, lot ~$1.10–$1.80
+ *   unit ≈ $0.55–$0.60
+ *   Old UI always did unit×1000 → "$550/1k" / "$600/1k" (wrong)
+ *   Correct: "$0.55/1" · total $1.10
+ *
+ * Rule:
+ *   - Show $/1 when unit is meaningful (≥ $0.01) OR qty < 100 OR gold pay
+ *   - Show $/1k only for bulk dust prices (wood/stone stacks, unit << $0.01)
+ */
+export function getListingRateDisplay(
+  input: ListingPriceInput,
+): ListingRateDisplay {
+  const p = normalizeListingPrice(input);
+  const isGoldPay = (p.currency ?? "token").toLowerCase() === "gold";
+  const goldLine =
+    p.priceGold != null ? `${trimZeros(String(p.priceGold))}g` : null;
+
+  // Recompute unit from lot (authoritative) so bad unitUsd never leaks to UI
+  const lotUsd = p.lotUsd;
+  let unitUsd = p.unitUsd;
+  if (p.quantity > 0 && lotUsd != null && lotUsd > 0) {
+    unitUsd = lotUsd / p.quantity;
+  }
+
+  if (unitUsd == null || unitUsd <= 0) {
+    const lotLabel =
+      lotUsd != null
+        ? formatUsdMarket(lotUsd)
+        : goldLine != null
+          ? goldLine
+          : "—";
+    return {
+      rateLabel: lotLabel,
+      rateSuffix: "",
+      totalLine: null,
+      goldLine: isGoldPay ? goldLine : null,
+      isGold: isGoldPay,
+      unitUsd,
+      lotUsd,
+      quantity: p.quantity,
+    };
+  }
+
+  // Critical: high unit prices must NEVER use /1k (gold resource, pets, etc.)
+  // unit $0.55 → /1k = $550 (the bug). unit $0.000026 → /1k = $0.026 (OK for bulk).
+  const usePerOne =
+    isGoldPay ||
+    p.quantity < 100 ||
+    unitUsd >= 0.01;
+
+  if (usePerOne) {
+    return {
+      rateLabel: formatUsdMarket(unitUsd),
+      rateSuffix: "/1",
+      totalLine:
+        lotUsd != null && p.quantity > 1
+          ? `total ${formatUsdMarket(lotUsd)}`
+          : null,
+      goldLine: isGoldPay ? goldLine : null,
+      isGold: isGoldPay,
+      unitUsd,
+      lotUsd,
+      quantity: p.quantity,
+    };
+  }
+
+  return {
+    rateLabel: formatUsdMarket(unitUsd * 1000),
+    rateSuffix: "/1k",
+    totalLine: lotUsd != null ? `total ${formatUsdMarket(lotUsd)}` : null,
+    goldLine: null,
+    isGold: isGoldPay,
+    unitUsd,
+    lotUsd,
+    quantity: p.quantity,
   };
 }

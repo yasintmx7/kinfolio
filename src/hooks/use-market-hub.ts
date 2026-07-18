@@ -2,10 +2,18 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  isSolanaAddress,
+  cleanSellerFields,
   officialListingId,
   sanitizePersonName,
 } from "@/lib/market/seller-label";
+import {
+  detectGoneListings,
+  mergeSoldFeeds,
+  pruneBookDeltaSold,
+  scrubSoldSellerFields,
+  toInstantSold,
+} from "@/lib/market/instant-sold";
+import { filterSoldStillOpen } from "@/lib/market/sold-filter";
 
 export type MarketFloorItem = {
   id: string;
@@ -18,6 +26,16 @@ export type MarketFloorItem = {
   lowestGoldPerUnit?: string | null;
   kinsListings?: number;
   goldListings?: number;
+};
+
+/** All-items board totals (kintaramarket-style). */
+export type MarketBoardStats = {
+  itemCount: number;
+  itemsWithListings: number;
+  totalListings: number;
+  totalQty: number;
+  tokenListings: number;
+  goldListings: number;
 };
 
 export type RecentSale = {
@@ -46,10 +64,16 @@ export type RecentSale = {
   reservedUntilMs?: number | null;
   itemDurability?: string | null;
   isSold?: boolean;
+  /** True when indexer has tx but not item/qty yet (~0–2 min lag common) */
+  itemPending?: boolean;
+  /** Instant path: left official open book between polls */
+  fromBookDelta?: boolean;
 };
 
 export type MarketHubData = {
   floors: MarketFloorItem[];
+  /** Aggregate totals for All-items board */
+  boardStats: MarketBoardStats | null;
   /** Live open listings (big list) */
   sales: RecentSale[];
   /** Real completed sales (activity card) */
@@ -80,6 +104,7 @@ export type MarketHubData = {
 
 const empty: MarketHubData = {
   floors: [],
+  boardStats: null,
   sales: [],
   sold: [],
   byItem: [],
@@ -321,61 +346,66 @@ function resolveLockerNames(
 }
 
 /**
- * Attach seller username / item meta from known open-book listings.
+ * Attach seller username / item meta from known (past or present) listings.
  * Never overwrite sale qty/price with live listing (partial fills stay accurate).
+ * Never copy reserved/locker state onto a sold row (open locks ≠ buyer of sale).
  */
 function enrichSold(
   sold: RecentSale[],
   known: Map<string, RecentSale>,
+  /** Live open book — used to drop false "sold while still listed" rows */
+  openListings: RecentSale[] = [],
 ): RecentSale[] {
-  return sold.map((row) => {
+  const candidates = filterSoldStillOpen(sold, openListings);
+  return candidates.map((row) => {
     const lid = officialListingId(row.listingId);
     const hit = lid ? known.get(lid) : undefined;
-    const wallet =
-      (row.sellerWallet && isSolanaAddress(row.sellerWallet)
-        ? row.sellerWallet
-        : null) ??
-      (isSolanaAddress(row.seller) ? String(row.seller) : null) ??
-      null;
 
     if (!hit) {
-      return {
+      return scrubSoldSellerFields({
         ...row,
         isSold: true,
         listingId: lid ?? undefined,
-        sellerName: sanitizePersonName(row.sellerName),
-        seller: null,
-        sellerWallet: wallet,
-      };
+        reserved: false,
+        reservedUntilMs: null,
+      }) as RecentSale;
     }
-    const bookName = sanitizePersonName(hit.sellerName ?? hit.seller);
-    return {
+    // Prefer sale-native item meta; only fill gaps from known listing snapshot
+    const itemName =
+      row.name && row.name !== "Sale" ? row.name : hit.name || row.name;
+    const itemType =
+      row.itemType && row.itemType !== "unknown"
+        ? row.itemType
+        : hit.itemType || row.itemType;
+    const people = cleanSellerFields({
+      sellerName: hit.sellerName ?? row.sellerName,
+      seller: hit.seller ?? row.seller,
+      sellerId: hit.sellerId ?? row.sellerId,
+      sellerWallet: row.sellerWallet ?? hit.sellerWallet,
+    });
+    return scrubSoldSellerFields({
       ...row,
       isSold: true,
       listingId: lid ?? undefined,
-      sellerName: bookName ?? sanitizePersonName(row.sellerName),
-      sellerId: hit.sellerId ?? row.sellerId,
-      seller: bookName,
-      sellerWallet: wallet ?? hit.sellerWallet ?? null,
-      buyerId: hit.buyerId ?? row.buyerId,
-      name:
-        row.name && row.name !== "Sale"
-          ? row.name
-          : hit.name || row.name,
-      itemType:
-        row.itemType && row.itemType !== "unknown"
-          ? row.itemType
-          : hit.itemType || row.itemType,
-    };
+      sellerName: people.sellerName,
+      sellerId: people.sellerId,
+      seller: people.seller,
+      sellerWallet: people.sellerWallet,
+      // Do NOT pull open-book reservedBy as the sale buyer
+      name: itemName,
+      itemType,
+      reserved: false,
+      reservedUntilMs: null,
+    }) as RecentSale;
   });
 }
 
 /**
- * Default poll: 5s for listings (locks / prices).
- * Overlapping fetches are skipped via listingsInFlight.
- * Floors stay slower (≥45s). Sold polls with listings (5s).
+ * Default poll: 3s for listings + sold (target: sold on Activity within ~10s).
+ * Instant sold = official book delta (listing left open book).
+ * Chain indexer upgrades those rows with tx when available.
  */
-export function useMarketHub(pollMs = 5_000) {
+export function useMarketHub(pollMs = 3_000) {
   const [data, setData] = useState<MarketHubData>(empty);
   const listingsInFlight = useRef(false);
   const soldInFlight = useRef(false);
@@ -384,8 +414,49 @@ export function useMarketHub(pollMs = 5_000) {
   const knownListingsRef = useRef<Map<string, RecentSale>>(new Map());
   /** sellerId → sellerName for locker reverse-lookup */
   const sellerIdNameRef = useRef<Map<string, string>>(new Map());
+  /** Previous open-book snapshot for instant sold detection */
+  const lastOpenSnapshotRef = useRef<RecentSale[]>([]);
+  /** Instant solds from official book disappearances (listingId → row) */
+  const bookDeltaSoldRef = useRef<Map<string, RecentSale>>(new Map());
+  /** Last chain sold payload (merged with book-delta on each update) */
+  const chainSoldRef = useRef<RecentSale[]>([]);
   const lastListingsFp = useRef("");
   const lastSoldFp = useRef("");
+
+  const buildMergedSold = useCallback(
+    (openBook: RecentSale[], chainRaw?: RecentSale[]) => {
+      if (chainRaw) {
+        chainSoldRef.current = chainRaw;
+      }
+      // Drop book-delta rows that reappeared on the open book
+      const openIds = new Set(openBook.map((r) => String(r.id)));
+      for (const [lid, row] of bookDeltaSoldRef.current) {
+        if (openIds.has(lid) || (row.listingId && openIds.has(String(row.listingId)))) {
+          bookDeltaSoldRef.current.delete(lid);
+        }
+      }
+      const bookRows = pruneBookDeltaSold(
+        [...bookDeltaSoldRef.current.values()],
+        20 * 60 * 1000,
+      );
+      bookDeltaSoldRef.current = new Map(
+        bookRows
+          .map((r) => {
+            const lid = officialListingId(r.listingId ?? r.id);
+            return lid ? ([lid, r] as const) : null;
+          })
+          .filter((x): x is readonly [string, RecentSale] => x != null),
+      );
+
+      const chainEnriched = resolveLockerNames(
+        enrichSold(chainSoldRef.current, knownListingsRef.current, openBook),
+        sellerIdNameRef.current,
+      );
+      const merged = mergeSoldFeeds(bookRows, chainEnriched, 60);
+      return resolveLockerNames(merged, sellerIdNameRef.current);
+    },
+    [],
+  );
 
   const reloadListings = useCallback(async (opts?: { silent?: boolean }) => {
     if (listingsInFlight.current) return;
@@ -432,6 +503,22 @@ export function useMarketHub(pollMs = 5_000) {
 
         if (feedOk) {
           lastListingsFp.current = fp;
+          // Instant sold: listing left official open book since last healthy poll
+          if (!sameList && lastOpenSnapshotRef.current.length > 0) {
+            const gone = detectGoneListings(
+              lastOpenSnapshotRef.current,
+              nextSales,
+            );
+            const now = Date.now();
+            for (const row of gone) {
+              const lid = officialListingId(row.listingId ?? row.id);
+              if (!lid) continue;
+              // Prefer richer known snapshot when available
+              const snap = knownListingsRef.current.get(lid) ?? row;
+              bookDeltaSoldRef.current.set(lid, toInstantSold(snap, now) as RecentSale);
+            }
+          }
+
           if (!sameList) {
             const map = new Map(knownListingsRef.current);
             for (const row of nextSales) {
@@ -445,16 +532,24 @@ export function useMarketHub(pollMs = 5_000) {
               knownListingsRef.current = map;
             }
           }
+
+          // Always refresh open snapshot on healthy feed (even if fingerprint same)
+          lastOpenSnapshotRef.current = nextSales;
         }
 
         const kinsUsd = cheap.kinsUsd ?? newest.kinsUsd ?? prev.kinsUsd;
         const rateSource =
           cheap.rateSource ?? newest.rateSource ?? prev.rateSource;
 
+        const sold = feedOk
+          ? buildMergedSold(nextSales)
+          : prev.sold;
+
         if (sameList && opts?.silent) {
           return {
             ...prev,
             sales: nextSales,
+            sold,
             kinsUsd,
             rateSource,
             loading: false,
@@ -463,13 +558,13 @@ export function useMarketHub(pollMs = 5_000) {
           };
         }
 
-        const sold = resolveLockerNames(
-          enrichSold(prev.sold, knownListingsRef.current),
-          sellerIdNameRef.current,
-        );
-
         let lastAt = prev.lastActivityAt;
         for (const r of nextSales) {
+          if (!lastAt || Date.parse(r.timestamp) > Date.parse(lastAt)) {
+            lastAt = r.timestamp;
+          }
+        }
+        for (const r of sold) {
           if (!lastAt || Date.parse(r.timestamp) > Date.parse(lastAt)) {
             lastAt = r.timestamp;
           }
@@ -483,7 +578,7 @@ export function useMarketHub(pollMs = 5_000) {
           kinsUsd,
           rateSource,
           salesNote: feedOk
-            ? "Live book = cheap ladder + newest listings (merged)."
+            ? "Sold: instant from official book + chain tx when ready."
             : prev.salesNote,
           activityCount: nextSales.length,
           lastActivityAt: lastAt,
@@ -507,7 +602,7 @@ export function useMarketHub(pollMs = 5_000) {
     } finally {
       listingsInFlight.current = false;
     }
-  }, []);
+  }, [buildMergedSold]);
 
   const reloadSold = useCallback(async () => {
     if (soldInFlight.current) return;
@@ -525,19 +620,19 @@ export function useMarketHub(pollMs = 5_000) {
       lastSoldFp.current = fp;
 
       setData((prev) => {
-        // Always re-enrich: open-book may have gained seller usernames
-        const sold = resolveLockerNames(
-          enrichSold(raw, knownListingsRef.current),
-          sellerIdNameRef.current,
-        );
+        const sold = buildMergedSold(prev.sales, raw);
         if (sameSales && prev.sold.length === sold.length) {
           let improved = false;
           for (let i = 0; i < sold.length; i++) {
             const a = sold[i];
             const b = prev.sold[i];
             if (
+              a?.id !== b?.id ||
+              a?.solscanUrl !== b?.solscanUrl ||
               (a?.sellerName && a.sellerName !== b?.sellerName) ||
-              (a?.sellerId && a.sellerId !== b?.sellerId)
+              (a?.sellerId && a.sellerId !== b?.sellerId) ||
+              a?.listingId !== b?.listingId ||
+              a?.name !== b?.name
             ) {
               improved = true;
               break;
@@ -549,7 +644,9 @@ export function useMarketHub(pollMs = 5_000) {
           ...prev,
           sold,
           lastActivityAt: sold[0]?.timestamp ?? prev.lastActivityAt,
-          salesNote: soldRes.data?.note ?? prev.salesNote,
+          salesNote:
+            soldRes.data?.note ??
+            "Sold: instant from official book + chain tx when ready.",
         };
       });
     } catch {
@@ -557,7 +654,7 @@ export function useMarketHub(pollMs = 5_000) {
     } finally {
       soldInFlight.current = false;
     }
-  }, []);
+  }, [buildMergedSold]);
 
   const reloadFloors = useCallback(async () => {
     if (floorsInFlight.current) return;
@@ -567,9 +664,11 @@ export function useMarketHub(pollMs = 5_000) {
         ok?: boolean;
         data?: {
           items?: MarketFloorItem[];
+          stats?: MarketBoardStats;
           kinsUsd?: string | null;
           rateSource?: string | null;
           note?: string;
+          provider?: string;
         };
         updatedAt?: string;
       };
@@ -577,9 +676,11 @@ export function useMarketHub(pollMs = 5_000) {
       setData((prev) => {
         if (!floorsRes?.ok) return prev;
         const floors = floorsRes.data?.items ?? prev.floors;
+        const boardStats = floorsRes.data?.stats ?? prev.boardStats;
         return {
           ...prev,
           floors,
+          boardStats,
           byItem: buildByItem(prev.sales, floors),
           kinsUsd: floorsRes.data?.kinsUsd ?? prev.kinsUsd,
           rateSource: floorsRes.data?.rateSource ?? prev.rateSource,

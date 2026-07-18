@@ -6,11 +6,15 @@ import { Suspense, useState } from "react";
 import {
   Calculator,
   Grid3X3,
+  History,
   Layers,
   MoreHorizontal,
+  Package,
+  PlusCircle,
   Settings,
   Star,
   Store,
+  Wallet,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -23,12 +27,22 @@ const NAV = [
     label: "Market",
     icon: Store,
   },
-  { href: "/items", tab: null, label: "Items", icon: Grid3X3 },
+  {
+    href: "/market?tab=floors",
+    tab: "floors",
+    label: "All items",
+    icon: Layers,
+  },
   { href: "/market?tab=watch", tab: "watch", label: "Watch", icon: Star },
-  { href: "/market?tab=floors", tab: "floors", label: "Floors", icon: Layers },
+  { href: "/items", tab: null, label: "Catalog", icon: Grid3X3 },
 ] as const;
 
+/** Portfolio + tools (hidden from main rail after market-first rebrand). */
 const EXTRA = [
+  { href: "/dashboard", label: "My portfolio", icon: Wallet },
+  { href: "/inventory", label: "Inventory", icon: Package },
+  { href: "/add", label: "Log trade", icon: PlusCircle },
+  { href: "/history", label: "History", icon: History },
   { href: "/calculator", label: "Calculator", icon: Calculator },
   { href: "/settings", label: "Settings", icon: Settings },
 ] as const;
@@ -46,7 +60,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
       : rawTab;
   const [moreOpen, setMoreOpen] = useState(false);
   const onMarket = pathname.startsWith("/market");
-  const onItems = pathname.startsWith("/items");
+  const onCatalog = pathname.startsWith("/items");
 
   return (
     <div className="min-h-dvh bg-transparent text-primary">
@@ -62,7 +76,9 @@ function ShellInner({ children }: { children: React.ReactNode }) {
           </p>
           {NAV.map((item) => {
             const active =
-              item.tab === null ? onItems : onMarket && tab === item.tab;
+              item.tab === null
+                ? onCatalog
+                : onMarket && tab === item.tab;
             const Icon = item.icon;
             return (
               <Link
@@ -91,7 +107,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
           })}
           <div className="my-3 mx-2 border-t border-border/35" />
           <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted/60">
-            Tools
+            Portfolio &amp; tools
           </p>
           {EXTRA.map((item) => {
             const active = pathname.startsWith(item.href);
@@ -140,7 +156,9 @@ function ShellInner({ children }: { children: React.ReactNode }) {
         <div className="grid grid-cols-5 px-0.5 py-1">
           {NAV.map((item) => {
             const active =
-              item.tab === null ? onItems : onMarket && tab === item.tab;
+              item.tab === null
+                ? onCatalog
+                : onMarket && tab === item.tab;
             const Icon = item.icon;
             return (
               <Link
@@ -197,15 +215,22 @@ function ShellInner({ children }: { children: React.ReactNode }) {
             aria-label="Close"
             onClick={() => setMoreOpen(false)}
           />
-          <div className="absolute inset-x-3 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] rounded-2xl border border-border/60 bg-surface/95 p-2 shadow-2xl backdrop-blur-xl">
+          <div className="absolute inset-x-3 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] max-h-[70dvh] overflow-y-auto rounded-2xl border border-border/60 bg-surface/95 p-2 shadow-2xl backdrop-blur-xl">
+            <p className="px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted/60">
+              Portfolio &amp; tools
+            </p>
             {EXTRA.map((item) => {
               const Icon = item.icon;
+              const active = pathname.startsWith(item.href);
               return (
                 <Link
                   key={item.href}
                   href={item.href}
                   onClick={() => setMoreOpen(false)}
-                  className="flex min-h-12 items-center gap-3 rounded-xl px-3 text-sm text-primary hover:bg-surface-2"
+                  className={cn(
+                    "flex min-h-12 items-center gap-3 rounded-xl px-3 text-sm hover:bg-surface-2",
+                    active ? "bg-sky/10 text-sky-hi" : "text-primary",
+                  )}
                 >
                   <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-raised/60">
                     <Icon className="h-4 w-4 text-sky-hi" />

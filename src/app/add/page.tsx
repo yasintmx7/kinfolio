@@ -83,9 +83,15 @@ export default function AddEntryPage() {
   const favorites = settings?.favoriteItemIds ?? [];
 
   useEffect(() => {
+    // Hydrate last/recent from local storage after catalog is ready
     const last = getLastItemId();
-    if (last && items.some((i) => i.id === last)) setItemId(last);
-    setRecentIds(getRecentItemIds());
+    const recent = getRecentItemIds();
+    // Defer setState so we don't cascade render inside the effect body
+    const t = window.setTimeout(() => {
+      if (last && items.some((i) => i.id === last)) setItemId(last);
+      setRecentIds(recent);
+    }, 0);
+    return () => window.clearTimeout(t);
   }, [items]);
 
   const parsed = useMemo(() => {
@@ -97,15 +103,18 @@ export default function AddEntryPage() {
 
   useEffect(() => {
     if (!parsed || manual) return;
-    if (parsed.direction === "buy") {
-      setTab("buy");
-      setKinsAmount(parsed.totalSentKins.toFixed());
-      setUsdAmount(parsed.totalSentUsd.toFixed());
-    } else if (parsed.direction === "sell") {
-      setTab("sell");
-      setKinsAmount(parsed.totalReceivedKins.toFixed());
-      setUsdAmount(parsed.totalReceivedUsd.toFixed());
-    }
+    const t = window.setTimeout(() => {
+      if (parsed.direction === "buy") {
+        setTab("buy");
+        setKinsAmount(parsed.totalSentKins.toFixed());
+        setUsdAmount(parsed.totalSentUsd.toFixed());
+      } else if (parsed.direction === "sell") {
+        setTab("sell");
+        setKinsAmount(parsed.totalReceivedKins.toFixed());
+        setUsdAmount(parsed.totalReceivedUsd.toFixed());
+      }
+    }, 0);
+    return () => window.clearTimeout(t);
   }, [parsed, manual]);
 
   const effectiveKins =

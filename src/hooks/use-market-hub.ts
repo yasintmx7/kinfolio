@@ -205,10 +205,14 @@ function mergeListingFeeds(
   return [...map.values()];
 }
 
-/** Carry lock flags from previous snapshot when a refresh omits reservedBy. */
+/**
+ * Carry lock flags when a KM-only pulse omits reservedBy.
+ * Full book refresh (trustUnlock) may clear locks that official reports open.
+ */
 function preserveLockState(
   prev: RecentSale[],
   next: RecentSale[],
+  opts?: { trustUnlock?: boolean },
 ): RecentSale[] {
   if (!prev.length || !next.length) return next;
   const prevById = new Map(prev.map((r) => [String(r.id), r]));
@@ -227,11 +231,20 @@ function preserveLockState(
           null,
       };
     }
-    // Refresh lost lock metadata — keep prior lock until it expires / sells
     const until = old.reservedUntilMs ?? null;
     if (until != null && until > 0 && until < Date.now()) {
       return row; // lock expired
     }
+    // Full official-enriched book said unlocked — trust it
+    if (opts?.trustUnlock) {
+      return {
+        ...row,
+        reserved: false,
+        buyerId: null,
+        reservedUntilMs: null,
+      };
+    }
+    // Pulse / incomplete feed: keep prior lock
     return {
       ...row,
       reserved: true,
@@ -535,7 +548,7 @@ export function useMarketHub(pollMs = 1_500) {
     (
       cheap: ReturnType<typeof actFromSettled>,
       newest: ReturnType<typeof actFromSettled>,
-      opts?: { silent?: boolean },
+      opts?: { silent?: boolean; trustUnlock?: boolean },
     ) => {
       const feedOk = cheap.ok || newest.ok;
 
@@ -553,8 +566,10 @@ export function useMarketHub(pollMs = 1_500) {
             )
           : prev.sales;
 
-        // Keep lock state across KM refreshes that omit reservedBy
-        nextSalesRaw = preserveLockState(prev.sales, nextSalesRaw);
+        // Keep lock state across KM-only pulses that omit reservedBy
+        nextSalesRaw = preserveLockState(prev.sales, nextSalesRaw, {
+          trustUnlock: Boolean(opts?.trustUnlock && cheap.ok),
+        });
 
         // Instant delist: drop anything already in sold / book-delta
         nextSalesRaw = removeSoldFromOpenBook(nextSalesRaw, [
@@ -702,16 +717,22 @@ export function useMarketHub(pollMs = 1_500) {
             kinsUsd: newest.kinsUsd,
             rateSource: newest.rateSource,
           };
-          feedOk = applyListingsFeed(keepCheap, newest, opts);
+          feedOk = applyListingsFeed(keepCheap, newest, {
+            ...opts,
+            trustUnlock: false,
+          });
         } else {
-          // Full pass — cheap book + newest
+          // Full pass — cheap book + newest (may clear stale locks)
           const [cheapSettled, newSettled] = await Promise.allSettled([
             fetchJson(CHEAP_FAST_URL, 16000),
             fetchJson(NEW_URL, 10000),
           ]);
           const cheap = actFromSettled(cheapSettled);
           newest = actFromSettled(newSettled);
-          feedOk = applyListingsFeed(cheap, newest, opts);
+          feedOk = applyListingsFeed(cheap, newest, {
+            ...opts,
+            trustUnlock: true,
+          });
         }
       } catch (e) {
         const msg =

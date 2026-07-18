@@ -123,7 +123,7 @@ export async function GET(request: Request) {
         sort: sort === "new" ? "new" : "cheap",
       });
       const sliced = feed
-        .filter((r) => (r.currency ?? "token") === currency || currency === "token")
+        .filter((r) => (r.currency ?? "token") === currency)
         .slice(
           Number.isFinite(offset) ? Math.max(offset, 0) : 0,
           (Number.isFinite(offset) ? Math.max(offset, 0) : 0) + want,

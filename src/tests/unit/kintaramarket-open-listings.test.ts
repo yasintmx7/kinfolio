@@ -83,4 +83,23 @@ describe("kintaramarket open listings → activity", () => {
     expect(kept).toHaveLength(20);
     expect(kept.some((r) => r.id === "lock-1" && r.reserved)).toBe(true);
   });
+
+  it("keeps some gold-currency lots when capping (not wiped by $ sort)", () => {
+    const many: MarketActivityRow[] = [];
+    for (let i = 0; i < 80; i++) {
+      many.push(makeRow(`t${i}`, "wood", String(0.0001 + i * 0.00001), false));
+    }
+    for (let i = 0; i < 20; i++) {
+      const g = makeRow(`g${i}`, "potion_strength", "0", false);
+      g.currency = "gold";
+      g.unitUsd = null;
+      g.usdTotal = null;
+      g.priceGold = String(i + 1);
+      many.push(g);
+    }
+    const kept = selectActivityRows(many, 40, "cheap");
+    expect(kept.length).toBe(40);
+    const goldN = kept.filter((r) => r.currency === "gold").length;
+    expect(goldN).toBeGreaterThanOrEqual(8);
+  });
 });

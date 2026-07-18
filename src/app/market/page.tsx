@@ -351,7 +351,8 @@ function MarketHubInner() {
   const tab = parseTab(rawTab);
 
   // 3s poll → sold on Activity typically within ~3–9s of leaving official book
-  const hub = useMarketHub(3_000);
+  // 1.5s pulse (new listings + sold); full book every ~4.5s
+  const hub = useMarketHub(1_500);
   const { price, reload: reloadPrice } = useKinsPrice(15_000);
   const { push } = useToast();
   const { summary: portfolioSummary, ready: portfolioReady } =

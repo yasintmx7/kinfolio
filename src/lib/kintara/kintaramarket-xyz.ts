@@ -261,9 +261,41 @@ function unitPriceKey(r: { unitUsd?: string | null }): number {
   return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
 }
 
+function isGoldCurrency(r: { currency?: string | null }): boolean {
+  return (r.currency ?? "token") === "gold";
+}
+
+function sortOpenPool(
+  rows: MarketActivityRow[],
+  sort: "cheap" | "new",
+): MarketActivityRow[] {
+  if (sort === "new") {
+    return [...rows].sort(
+      (a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp),
+    );
+  }
+  // Gold lots often have null unitUsd — sort by gold price, not Infinity
+  return [...rows].sort((a, b) => {
+    if (isGoldCurrency(a) && isGoldCurrency(b)) {
+      const ga = a.priceGold != null ? Number(a.priceGold) : Number.POSITIVE_INFINITY;
+      const gb = b.priceGold != null ? Number(b.priceGold) : Number.POSITIVE_INFINITY;
+      if (ga !== gb) return ga - gb;
+      return Date.parse(b.timestamp) - Date.parse(a.timestamp);
+    }
+    if (isGoldCurrency(a) !== isGoldCurrency(b)) {
+      // Prefer token when comparing mixed (token has $ unit)
+      return isGoldCurrency(a) ? 1 : -1;
+    }
+    const ua = unitPriceKey(a);
+    const ub = unitPriceKey(b);
+    if (ua !== ub) return ua - ub;
+    return Date.parse(b.timestamp) - Date.parse(a.timestamp);
+  });
+}
+
 /**
- * Cap rows without dropping reserved/locked lots.
- * Old path sorted open-first then sliced → all locks fell off the end.
+ * Cap rows without dropping reserved/locked or all-gold lots.
+ * Old path sorted open-first / $ only then sliced → locks + gold vanished.
  */
 export function selectActivityRows(
   rows: MarketActivityRow[],
@@ -277,24 +309,31 @@ export function selectActivityRows(
 
   const locked = rows.filter(rowIsLocked);
   const open = rows.filter((r) => !rowIsLocked(r));
+  const openToken = open.filter((r) => !isGoldCurrency(r));
+  const openGold = open.filter(isGoldCurrency);
 
-  // Keep every lock that fits; fill remainder with cheapest/newest open
-  const locksSorted =
-    sort === "new"
-      ? [...locked].sort(
-          (a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp),
-        )
-      : [...locked].sort((a, b) => unitPriceKey(a) - unitPriceKey(b));
-  const openSorted =
-    sort === "new"
-      ? [...open].sort(
-          (a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp),
-        )
-      : [...open].sort((a, b) => unitPriceKey(a) - unitPriceKey(b));
+  const locksSorted = sortOpenPool(locked, sort);
+  const tokenSorted = sortOpenPool(openToken, sort);
+  const goldSorted = sortOpenPool(openGold, sort);
 
+  // Always keep locks; reserve ~20% of remaining for gold currency lots
   const lockKeep = locksSorted.slice(0, limit);
-  const openKeep = openSorted.slice(0, Math.max(0, limit - lockKeep.length));
-  return sortActivityRows([...openKeep, ...lockKeep], sort);
+  const rest = Math.max(0, limit - lockKeep.length);
+  const goldBudget = Math.min(
+    goldSorted.length,
+    Math.max(rest > 0 && goldSorted.length > 0 ? 30 : 0, Math.floor(rest * 0.22)),
+  );
+  const goldKeep = goldSorted.slice(0, goldBudget);
+  const tokenKeep = tokenSorted.slice(0, Math.max(0, rest - goldKeep.length));
+  // If token under-fills, give space back to gold
+  const leftover = rest - tokenKeep.length - goldKeep.length;
+  const goldExtra =
+    leftover > 0 ? goldSorted.slice(goldKeep.length, goldKeep.length + leftover) : [];
+
+  return sortActivityRows(
+    [...tokenKeep, ...goldKeep, ...goldExtra, ...lockKeep],
+    sort,
+  );
 }
 
 export function sortActivityRows(
@@ -326,17 +365,20 @@ export function openListingsToActivity(
   const max = Math.min(Math.max(options?.limit ?? 1000, 1), 3000);
 
   const mapped: MarketActivityRow[] = rows.map((r) => {
+    const currency = r.currency ?? "token";
+    const isGold = currency === "gold";
+    // Never treat KM unitPrice as USD for pure gold-pay lots (priceUsd null)
     const priced = normalizeListingPrice({
       quantity: r.quantity,
       priceUsd: r.priceUsd,
-      unitUsd: r.unitPrice,
+      unitUsd: isGold && r.priceUsd == null ? null : r.unitPrice,
       priceGold: r.priceGold,
-      currency: r.currency ?? "token",
+      currency,
     });
     const qty = priced.quantity;
     const unitUsd = priced.unitUsd;
     const lotUsd = priced.lotUsd;
-    const isToken = (r.currency ?? "token") === "token";
+    const isToken = !isGold;
     const unitKins =
       kinsUsd != null && unitUsd != null && isToken
         ? usdToKins(unitUsd, kinsUsd)
@@ -480,16 +522,20 @@ export async function fetchItemListingsAsDtos(
 
   for (const r of rows) {
     const qty = Math.max(r.quantity || 1, 1);
-    // unitPrice is authoritative on kintaramarket; priceUsd is lot total
+    const currency = r.currency ?? "token";
+    const isGold = currency === "gold";
+    // unitPrice is USD-per-unit on token lots; do not use as USD for gold-pay
     const priced = normalizeListingPrice({
       quantity: qty,
       priceUsd: r.priceUsd,
-      unitUsd: r.unitPrice,
+      unitUsd: isGold && r.priceUsd == null ? null : r.unitPrice,
       usdTotal: r.priceUsd,
       priceGold: r.priceGold,
-      currency: r.currency ?? "token",
+      currency,
     });
-    const reserved = r.reservedBy != null;
+    const reserved =
+      r.reservedBy != null ||
+      (typeof r.reservedUntilMs === "number" && r.reservedUntilMs > Date.now());
     const buyerId =
       r.reservedBy == null
         ? null

@@ -250,7 +250,7 @@ export async function GET(request: Request) {
       {
         source: km.length > 0 ? "kintaramarket.xyz+kintrade" : "kintrade",
         updatedAt: new Date().toISOString(),
-        cacheControl: "public, s-maxage=4, stale-while-revalidate=10",
+        cacheControl: "public, s-maxage=1, stale-while-revalidate=3",
       },
     );
   } catch (e) {

@@ -245,3 +245,40 @@ export function pruneBookDeltaSold<T extends InstantSoldRow>(
     return now - t <= maxAgeMs;
   });
 }
+
+/** Collect official listing ids from a sold feed (chain / KM sales). */
+export function soldListingIdSet(
+  sold: { id: string; listingId?: string | null }[],
+): Set<string> {
+  const set = new Set<string>();
+  for (const row of sold) {
+    const a = officialListingId(row.listingId);
+    const b = officialListingId(row.id);
+    if (a) set.add(a);
+    if (b && !String(row.id).startsWith("book-sold-")) set.add(b);
+    // book-sold-{id}
+    const m = String(row.id).match(/^book-sold-(.+)$/);
+    if (m?.[1]) {
+      const c = officialListingId(m[1]);
+      if (c) set.add(c);
+    }
+  }
+  return set;
+}
+
+/**
+ * Drop open-book rows that already appear in the sold feed (instant delist).
+ * Returns the pruned open book.
+ */
+export function removeSoldFromOpenBook<T extends { id: string; listingId?: string | null }>(
+  open: T[],
+  sold: { id: string; listingId?: string | null }[],
+): T[] {
+  if (!open.length || !sold.length) return open;
+  const gone = soldListingIdSet(sold);
+  if (!gone.size) return open;
+  return open.filter((row) => {
+    const id = officialListingId(row.listingId ?? row.id);
+    return !id || !gone.has(id);
+  });
+}

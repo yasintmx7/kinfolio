@@ -189,7 +189,8 @@ export async function fetchMarketSales(options?: {
     rows.push(one.data);
   }
   rows.sort((a, b) => b.ts - a.ts);
-  setCache(cacheKey, rows, 4);
+  // Short TTL for near-instant Activity solds
+  setCache(cacheKey, rows, 2);
   return rows;
 }
 
@@ -222,7 +223,8 @@ export async function fetchOpenListings(options?: {
     if (!one.data.itemType || !(one.data.quantity > 0)) continue;
     rows.push(one.data);
   }
-  setCache(cacheKey, rows, 6);
+  // Short TTL so new listings / delists show within ~2s of a client poll
+  setCache(cacheKey, rows, 2);
   return rows;
 }
 

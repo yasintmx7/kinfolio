@@ -10,7 +10,9 @@ import {
   detectGoneListings,
   mergeSoldFeeds,
   pruneBookDeltaSold,
+  removeSoldFromOpenBook,
   scrubSoldSellerFields,
+  soldListingIdSet,
   toInstantSold,
 } from "@/lib/market/instant-sold";
 import { filterSoldStillOpen } from "@/lib/market/sold-filter";
@@ -119,20 +121,22 @@ const empty: MarketHubData = {
 };
 
 /**
- * Dual feed (official kintara.com pages of 100):
- *  - cheap book = price ladder + locks (token + gold)
- *  - new pages  = brand-new listings that may sit above cheap scan
- *
- * Progressive load: FAST paints the board quickly; DEEP expands in background.
- * A single 3000×18 request was timing out on Vercel and left Market empty.
+ * Progressive feeds:
+ *  - PULSE_NEW  = brand-new listings every ~1.5s (instant "just listed")
+ *  - PULSE_SOLD = recent sales every ~1.5s (instant Activity)
+ *  - CHEAP_FAST = full cheap book every few pulses (price ladder + delists)
+ *  - CHEAP_DEEP = rare deep expand
  */
 const CHEAP_FAST_URL =
-  "/api/market/activity?limit=1000&pages=8&gold=1&sort=cheap";
+  "/api/market/activity?limit=1000&pages=6&gold=1&sort=cheap";
 const CHEAP_DEEP_URL =
-  "/api/market/activity?limit=3000&pages=16&gold=1&sort=cheap";
-const NEW_URL = "/api/market/activity?limit=400&pages=4&gold=1&sort=new";
+  "/api/market/activity?limit=2500&pages=12&gold=1&sort=cheap";
+const NEW_URL = "/api/market/activity?limit=250&pages=3&gold=1&sort=new&km=1";
+const PULSE_NEW_URL =
+  "/api/market/activity?limit=150&pages=1&gold=1&sort=new&km=1";
 // kintaramarket /api/sales supports up to ~500 (hours of history)
 const SOLD_URL = "/api/market/sold?limit=300";
+const PULSE_SOLD_URL = "/api/market/sold?limit=100";
 
 function bestSellerName(
   a: string | null | undefined,
@@ -410,15 +414,15 @@ function enrichSold(
 }
 
 /**
- * Default poll: 3s for listings + sold (target: sold on Activity within ~10s).
- * Instant sold = official book delta (listing left open book).
- * Chain indexer upgrades those rows with tx when available.
+ * Default poll ~1.5s pulse (new listings + sold).
+ * Full cheap book every 3rd tick. Instant sold = book delta + sold-feed delist.
  */
-export function useMarketHub(pollMs = 3_000) {
+export function useMarketHub(pollMs = 1_500) {
   const [data, setData] = useState<MarketHubData>(empty);
   const listingsInFlight = useRef(false);
   const soldInFlight = useRef(false);
   const floorsInFlight = useRef(false);
+  const pulseTick = useRef(0);
   /** listingId → listing for seller name enrichment on sold */
   const knownListingsRef = useRef<Map<string, RecentSale>>(new Map());
   /** sellerId → sellerName for locker reverse-lookup */
@@ -483,12 +487,18 @@ export function useMarketHub(pollMs = 3_000) {
             ? prev.sales
             : [];
         const newRows = newest.ok ? newest.activity : [];
-        const nextSalesRaw = feedOk
+        let nextSalesRaw = feedOk
           ? mergeListingFeeds(
               cheapRows.length ? cheapRows : prev.sales,
               newRows,
             )
           : prev.sales;
+
+        // Instant delist: drop anything already in sold / book-delta
+        nextSalesRaw = removeSoldFromOpenBook(nextSalesRaw, [
+          ...prev.sold,
+          ...bookDeltaSoldRef.current.values(),
+        ]);
 
         if (feedOk) {
           buildSellerIdNameMap(nextSalesRaw, sellerIdNameRef.current);
@@ -603,7 +613,7 @@ export function useMarketHub(pollMs = 3_000) {
   const deepInFlight = useRef(false);
 
   const reloadListings = useCallback(
-    async (opts?: { silent?: boolean; deep?: boolean }) => {
+    async (opts?: { silent?: boolean; deep?: boolean; pulse?: boolean }) => {
       if (listingsInFlight.current) return;
       listingsInFlight.current = true;
       if (!opts?.silent) {
@@ -616,15 +626,31 @@ export function useMarketHub(pollMs = 3_000) {
         rateSource: null,
       };
       let feedOk = false;
+      const pulseOnly = Boolean(opts?.pulse && opts?.silent);
       try {
-        // 1) Fast pass — paint Market ASAP (fits Vercel cold starts)
-        const [cheapSettled, newSettled] = await Promise.allSettled([
-          fetchJson(CHEAP_FAST_URL, 18000),
-          fetchJson(NEW_URL, 12000),
-        ]);
-        const cheap = actFromSettled(cheapSettled);
-        newest = actFromSettled(newSettled);
-        feedOk = applyListingsFeed(cheap, newest, opts);
+        if (pulseOnly) {
+          // Instant path: only newest listings (merge into existing book)
+          const newSettled = await Promise.allSettled([
+            fetchJson(PULSE_NEW_URL, 8000),
+          ]);
+          newest = actFromSettled(newSettled[0]);
+          const keepCheap: ReturnType<typeof actFromSettled> = {
+            ok: false,
+            activity: [],
+            kinsUsd: newest.kinsUsd,
+            rateSource: newest.rateSource,
+          };
+          feedOk = applyListingsFeed(keepCheap, newest, opts);
+        } else {
+          // Full pass — cheap book + newest
+          const [cheapSettled, newSettled] = await Promise.allSettled([
+            fetchJson(CHEAP_FAST_URL, 16000),
+            fetchJson(NEW_URL, 10000),
+          ]);
+          const cheap = actFromSettled(cheapSettled);
+          newest = actFromSettled(newSettled);
+          feedOk = applyListingsFeed(cheap, newest, opts);
+        }
       } catch (e) {
         const msg =
           e instanceof Error ? e.message : "Network error loading market";
@@ -638,15 +664,15 @@ export function useMarketHub(pollMs = 3_000) {
         listingsInFlight.current = false;
       }
 
-      // 2) Deep expand after unlock so 3s polls aren't blocked
+      // Deep expand only on initial / manual reload
       const wantDeep =
         opts?.deep === true ||
-        (opts?.deep !== false && !opts?.silent && feedOk);
+        (opts?.deep !== false && !opts?.silent && !opts?.pulse && feedOk);
       if (!wantDeep || deepInFlight.current) return;
       deepInFlight.current = true;
       try {
         const deepSettled = await Promise.allSettled([
-          fetchJson(CHEAP_DEEP_URL, 45000),
+          fetchJson(CHEAP_DEEP_URL, 40000),
         ]);
         const deep = actFromSettled(deepSettled[0]);
         if (deep.ok) {
@@ -663,57 +689,97 @@ export function useMarketHub(pollMs = 3_000) {
     [applyListingsFeed],
   );
 
-  const reloadSold = useCallback(async () => {
-    if (soldInFlight.current) return;
-    soldInFlight.current = true;
-    try {
-      const soldRes = (await fetchJson(SOLD_URL, 12000)) as {
-        ok?: boolean;
-        data?: { sold?: RecentSale[]; note?: string };
-      };
-      if (!soldRes?.ok || !Array.isArray(soldRes.data?.sold)) return;
-
-      const raw = soldRes.data!.sold!;
-      const fp = listFingerprint(raw);
-      const sameSales = fp === lastSoldFp.current;
-      lastSoldFp.current = fp;
-
-      setData((prev) => {
-        const sold = buildMergedSold(prev.sales, raw);
-        if (sameSales && prev.sold.length === sold.length) {
-          let improved = false;
-          for (let i = 0; i < sold.length; i++) {
-            const a = sold[i];
-            const b = prev.sold[i];
-            if (
-              a?.id !== b?.id ||
-              a?.solscanUrl !== b?.solscanUrl ||
-              (a?.sellerName && a.sellerName !== b?.sellerName) ||
-              (a?.sellerId && a.sellerId !== b?.sellerId) ||
-              a?.listingId !== b?.listingId ||
-              a?.name !== b?.name
-            ) {
-              improved = true;
-              break;
-            }
-          }
-          if (!improved) return prev;
-        }
-        return {
-          ...prev,
-          sold,
-          lastActivityAt: sold[0]?.timestamp ?? prev.lastActivityAt,
-          salesNote:
-            soldRes.data?.note ??
-            "Sold: instant from official book + chain tx when ready.",
+  const reloadSold = useCallback(
+    async (opts?: { pulse?: boolean }) => {
+      if (soldInFlight.current) return;
+      soldInFlight.current = true;
+      try {
+        const url = opts?.pulse ? PULSE_SOLD_URL : SOLD_URL;
+        const soldRes = (await fetchJson(url, 10000)) as {
+          ok?: boolean;
+          data?: { sold?: RecentSale[]; note?: string };
         };
-      });
-    } catch {
-      // keep previous sold
-    } finally {
-      soldInFlight.current = false;
-    }
-  }, [buildMergedSold]);
+        if (!soldRes?.ok || !Array.isArray(soldRes.data?.sold)) return;
+
+        const raw = soldRes.data!.sold!;
+        const fp = listFingerprint(raw);
+        const sameSales = fp === lastSoldFp.current;
+        lastSoldFp.current = fp;
+
+        // Instant sold: any open/known listing that appears in sold feed
+        const soldIds = soldListingIdSet(raw);
+        const now = Date.now();
+        for (const lid of soldIds) {
+          if (bookDeltaSoldRef.current.has(lid)) continue;
+          const snap =
+            knownListingsRef.current.get(lid) ??
+            lastOpenSnapshotRef.current.find(
+              (r) =>
+                officialListingId(r.listingId ?? r.id) === lid ||
+                String(r.id) === lid,
+            );
+          if (snap) {
+            bookDeltaSoldRef.current.set(
+              lid,
+              toInstantSold(snap, now) as RecentSale,
+            );
+          }
+        }
+
+        setData((prev) => {
+          // Drop sold ids from open book immediately
+          const prunedOpen = removeSoldFromOpenBook(prev.sales, [
+            ...raw,
+            ...bookDeltaSoldRef.current.values(),
+          ]);
+          if (prunedOpen.length !== prev.sales.length) {
+            lastOpenSnapshotRef.current = prunedOpen;
+          }
+
+          const sold = buildMergedSold(prunedOpen, raw);
+          if (
+            sameSales &&
+            prev.sold.length === sold.length &&
+            prunedOpen.length === prev.sales.length
+          ) {
+            let improved = false;
+            for (let i = 0; i < sold.length; i++) {
+              const a = sold[i];
+              const b = prev.sold[i];
+              if (
+                a?.id !== b?.id ||
+                a?.solscanUrl !== b?.solscanUrl ||
+                (a?.sellerName && a.sellerName !== b?.sellerName) ||
+                (a?.sellerId && a.sellerId !== b?.sellerId) ||
+                a?.listingId !== b?.listingId ||
+                a?.name !== b?.name
+              ) {
+                improved = true;
+                break;
+              }
+            }
+            if (!improved) return prev;
+          }
+          return {
+            ...prev,
+            sales: prunedOpen,
+            sold,
+            byItem: buildByItem(prunedOpen, prev.floors),
+            activityCount: prunedOpen.length,
+            lastActivityAt: sold[0]?.timestamp ?? prev.lastActivityAt,
+            salesNote:
+              soldRes.data?.note ??
+              "Sold: instant book drop + sales feed (≤2s).",
+          };
+        });
+      } catch {
+        // keep previous sold
+      } finally {
+        soldInFlight.current = false;
+      }
+    },
+    [buildMergedSold],
+  );
 
   const reloadFloors = useCallback(async () => {
     if (floorsInFlight.current) return;
@@ -770,20 +836,26 @@ export function useMarketHub(pollMs = 3_000) {
 
   useEffect(() => {
     void reload({ floors: true });
-    const listingsId = setInterval(
-      () => void reloadListings({ silent: true }),
-      pollMs,
-    );
-    // Sold: same cadence as listings so Activity stays live
-    const soldId = setInterval(() => void reloadSold(), pollMs);
-    // Floors: expensive aggregate — keep ≥45s even if listings are 5s
+
+    // Pulse loop: every tick = newest listings + sold; every 3rd = full cheap book
+    const pulseId = setInterval(() => {
+      pulseTick.current += 1;
+      const fullBook = pulseTick.current % 3 === 0;
+      void reloadListings({
+        silent: true,
+        pulse: !fullBook,
+        deep: false,
+      });
+      void reloadSold({ pulse: !fullBook });
+    }, pollMs);
+
+    // Floors: expensive aggregate — keep ≥45s
     const floorsId = setInterval(
       () => void reloadFloors(),
-      Math.max(pollMs * 9, 45_000),
+      Math.max(pollMs * 20, 45_000),
     );
     return () => {
-      clearInterval(listingsId);
-      clearInterval(soldId);
+      clearInterval(pulseId);
       clearInterval(floorsId);
     };
   }, [reload, reloadListings, reloadSold, reloadFloors, pollMs]);

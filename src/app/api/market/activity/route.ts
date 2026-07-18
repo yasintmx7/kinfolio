@@ -81,6 +81,11 @@ export async function GET(request: Request) {
   const pages = Number(sp.get("pages") ?? "4");
   const includeGold = sp.get("gold") === "1" || sp.get("gold") === "true";
   const sort = sp.get("sort") === "new" ? "new" : "cheap";
+  /** km=1 — skip official (fast pulse for new listings) */
+  const kmOnly =
+    sp.get("km") === "1" ||
+    sp.get("km") === "true" ||
+    sp.get("fast") === "1";
   const want = Number.isFinite(limit)
     ? Math.min(Math.max(limit, 1), 3000)
     : 1000;
@@ -105,20 +110,22 @@ export async function GET(request: Request) {
       rows = [];
     }
 
-    // 2) Soft official enrich — small page budget to avoid 429; never wipe KM data
+    // 2) Soft official enrich — skip on km-only pulse for ≤1s latency
     let official: MarketActivityRow[] = [];
-    try {
-      official = await fetchOfficialRecentActivity({
-        limit: Math.min(want, 400),
-        pages: Number.isFinite(pages)
-          ? Math.min(Math.max(pages, 1), 6)
-          : 4,
-        kinsUsd,
-        includeGold,
-        sort,
-      });
-    } catch {
-      official = [];
+    if (!kmOnly) {
+      try {
+        official = await fetchOfficialRecentActivity({
+          limit: Math.min(want, 400),
+          pages: Number.isFinite(pages)
+            ? Math.min(Math.max(pages, 1), 6)
+            : 4,
+          kinsUsd,
+          includeGold,
+          sort,
+        });
+      } catch {
+        official = [];
+      }
     }
 
     if (official.length > 0) {
@@ -174,7 +181,7 @@ export async function GET(request: Request) {
       {
         source,
         updatedAt: new Date().toISOString(),
-        cacheControl: "public, s-maxage=4, stale-while-revalidate=10",
+        cacheControl: "public, s-maxage=1, stale-while-revalidate=3",
       },
     );
   } catch (e) {

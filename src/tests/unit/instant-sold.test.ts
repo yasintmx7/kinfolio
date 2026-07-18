@@ -3,6 +3,8 @@ import {
   detectGoneListings,
   mergeSoldFeeds,
   pruneBookDeltaSold,
+  removeSoldFromOpenBook,
+  soldListingIdSet,
   toInstantSold,
 } from "@/lib/market/instant-sold";
 
@@ -33,6 +35,24 @@ describe("detectGoneListings", () => {
     const prev = big(400);
     const next = big(180); // < 55% retention
     expect(detectGoneListings(prev, next)).toEqual([]);
+  });
+});
+
+describe("removeSoldFromOpenBook", () => {
+  it("drops open rows whose listing id appears in sold feed", () => {
+    const open = [
+      { id: "10", listingId: "10" },
+      { id: "20", listingId: "20" },
+      { id: "30", listingId: "30" },
+    ];
+    const sold = [
+      { id: "sale-a", listingId: "20" },
+      { id: "book-sold-30" },
+    ];
+    const next = removeSoldFromOpenBook(open, sold);
+    expect(next.map((r) => r.id)).toEqual(["10"]);
+    expect(soldListingIdSet(sold).has("20")).toBe(true);
+    expect(soldListingIdSet(sold).has("30")).toBe(true);
   });
 });
 

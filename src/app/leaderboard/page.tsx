@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshCw, Search, Trophy } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight, RefreshCw, Search, Trophy } from "lucide-react";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -57,15 +57,46 @@ const CATEGORY_TABS: { id: Category; label: string; hint: string }[] = [
   { id: "mob_24h", label: "24h mob", hint: "Last 24h mob kills" },
 ];
 
+/** Official API page size — 30 ranks per request, then Load more. */
+const PAGE_SIZE = 30;
+const AUTO_REFRESH_MS = 45_000;
+
 function formatScore(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return "—";
   return Math.round(n).toLocaleString();
 }
 
+function entryKey(e: Entry): string {
+  return `${e.userId ?? ""}:${e.username.toLowerCase()}:${e.rank}`;
+}
+
+function mergeUnique(prev: Entry[], next: Entry[]): Entry[] {
+  const seen = new Set(prev.map(entryKey));
+  const out = [...prev];
+  for (const row of next) {
+    const k = entryKey(row);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(row);
+  }
+  return out;
+}
+
+async function fetchBoardPage(
+  category: Category,
+  offset: number,
+  limit: number,
+): Promise<BoardResponse> {
+  const url = `/api/leaderboard?category=${encodeURIComponent(category)}&offset=${offset}&limit=${limit}`;
+  const res = await fetch(url, { cache: "no-store" });
+  return (await res.json()) as BoardResponse;
+}
+
 export default function LeaderboardPage() {
   const [category, setCategory] = useState<Category>("kills");
   const [entries, setEntries] = useState<Entry[]>([]);
-  const [offset, setOffset] = useState(0);
+  /** How many API pages (×30) have been loaded for the board. */
+  const [pagesLoaded, setPagesLoaded] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [total, setTotal] = useState<number | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -81,60 +112,139 @@ export default function LeaderboardPage() {
   const [searching, setSearching] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  const limit = 30;
-  /** Auto-refresh interval — matches ~45s server cache on board. */
-  const AUTO_REFRESH_MS = 45_000;
+  const pagesLoadedRef = useRef(0);
+  const activeSearchRef = useRef("");
+  useEffect(() => {
+    pagesLoadedRef.current = pagesLoaded;
+  }, [pagesLoaded]);
+  useEffect(() => {
+    activeSearchRef.current = activeSearch;
+  }, [activeSearch]);
 
-  const loadBoard = useCallback(
-    async (opts?: {
-      append?: boolean;
-      nextOffset?: number;
-      silent?: boolean;
-    }) => {
-      const append = Boolean(opts?.append);
+  const applyMeta = useCallback((body: BoardResponse) => {
+    if (!body.data) return;
+    setTotal(body.data.total ?? body.data.count ?? null);
+    setNote(body.data.note ?? null);
+    setUpdatedAt(body.updatedAt ?? null);
+    setUpstreamCategory(body.data.upstreamCategory ?? null);
+  }, []);
+
+  /** Load first page (30) or replace board. */
+  const loadFirstPage = useCallback(
+    async (opts?: { silent?: boolean }) => {
       const silent = Boolean(opts?.silent);
-      const off = opts?.nextOffset ?? 0;
-      if (append) setLoadingMore(true);
-      else if (silent) setRefreshing(true);
+      if (silent) setRefreshing(true);
       else {
         setLoading(true);
         setError(null);
         setErrorCode(null);
       }
       try {
-        // On silent refresh keep currently loaded window (first page only if not append)
-        const url = `/api/leaderboard?category=${encodeURIComponent(category)}&offset=${off}&limit=${limit}`;
-        const res = await fetch(url, { cache: "no-store" });
-        const body = (await res.json()) as BoardResponse;
+        const body = await fetchBoardPage(category, 0, PAGE_SIZE);
         if (!body.ok || !body.data) {
           setError(body.error?.message ?? "Failed to load leaderboard");
           setErrorCode(body.error?.code ?? "LEADERBOARD_ERROR");
-          if (!append && !silent) setEntries([]);
+          if (!silent) {
+            setEntries([]);
+            setPagesLoaded(0);
+            setHasMore(false);
+          }
           return;
         }
         const rows = body.data.entries ?? [];
-        setEntries((prev) => (append ? [...prev, ...rows] : rows));
-        setOffset(off);
-        setHasMore(Boolean(body.data.hasMore));
-        setTotal(body.data.total ?? null);
-        setNote(body.data.note ?? null);
-        setUpdatedAt(body.updatedAt ?? null);
-        setUpstreamCategory(body.data.upstreamCategory ?? null);
-        if (!silent) setActiveSearch("");
+        setEntries(rows);
+        setPagesLoaded(1);
+        setHasMore(
+          Boolean(body.data.hasMore) || rows.length >= PAGE_SIZE,
+        );
+        applyMeta(body);
+        setActiveSearch("");
         setError(null);
         setErrorCode(null);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Network error");
         setErrorCode("NETWORK");
-        if (!append && !silent) setEntries([]);
+        if (!silent) {
+          setEntries([]);
+          setPagesLoaded(0);
+          setHasMore(false);
+        }
       } finally {
         setLoading(false);
-        setLoadingMore(false);
         setRefreshing(false);
       }
     },
-    [category],
+    [category, applyMeta],
   );
+
+  /** Load next 30 and append. */
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !hasMore || activeSearch) return;
+    setLoadingMore(true);
+    setError(null);
+    try {
+      const nextOffset = pagesLoaded * PAGE_SIZE;
+      const body = await fetchBoardPage(category, nextOffset, PAGE_SIZE);
+      if (!body.ok || !body.data) {
+        setError(body.error?.message ?? "Failed to load more");
+        setErrorCode(body.error?.code ?? "LEADERBOARD_ERROR");
+        return;
+      }
+      const rows = body.data.entries ?? [];
+      setEntries((prev) => mergeUnique(prev, rows));
+      setPagesLoaded((p) => p + 1);
+      setHasMore(Boolean(body.data.hasMore) && rows.length >= PAGE_SIZE);
+      applyMeta(body);
+      setError(null);
+      setErrorCode(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Network error");
+      setErrorCode("NETWORK");
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [category, hasMore, loadingMore, pagesLoaded, activeSearch, applyMeta]);
+
+  /** Silent refresh of all pages already loaded (does not shrink list). */
+  const refreshLoadedPages = useCallback(async () => {
+    const pages = Math.max(1, pagesLoadedRef.current);
+    setRefreshing(true);
+    try {
+      let all: Entry[] = [];
+      let more = false;
+      let lastBody: BoardResponse | null = null;
+      for (let p = 0; p < pages; p++) {
+        const body = await fetchBoardPage(category, p * PAGE_SIZE, PAGE_SIZE);
+        lastBody = body;
+        if (!body.ok || !body.data) {
+          if (p === 0) {
+            setError(body.error?.message ?? "Failed to refresh");
+            setErrorCode(body.error?.code ?? "LEADERBOARD_ERROR");
+          }
+          break;
+        }
+        const rows = body.data.entries ?? [];
+        all = mergeUnique(all, rows);
+        more = Boolean(body.data.hasMore) && rows.length >= PAGE_SIZE;
+        if (rows.length < PAGE_SIZE) {
+          more = false;
+          break;
+        }
+      }
+      if (all.length) {
+        setEntries(all);
+        setPagesLoaded(Math.max(1, Math.ceil(all.length / PAGE_SIZE)));
+        setHasMore(more);
+        if (lastBody) applyMeta(lastBody);
+        setError(null);
+        setErrorCode(null);
+      }
+    } catch {
+      // keep existing rows on background refresh failure
+    } finally {
+      setRefreshing(false);
+    }
+  }, [category, applyMeta]);
 
   const runSearch = useCallback(
     async (opts?: { query?: string; silent?: boolean }) => {
@@ -142,7 +252,7 @@ export default function LeaderboardPage() {
       const silent = Boolean(opts?.silent);
       if (!q) {
         setActiveSearch("");
-        void loadBoard({ silent });
+        void loadFirstPage({ silent });
         return;
       }
       if (!silent) {
@@ -154,7 +264,7 @@ export default function LeaderboardPage() {
         setRefreshing(true);
       }
       try {
-        const url = `/api/leaderboard?category=${encodeURIComponent(category)}&q=${encodeURIComponent(q)}&limit=${limit}`;
+        const url = `/api/leaderboard?category=${encodeURIComponent(category)}&q=${encodeURIComponent(q)}&limit=${PAGE_SIZE}`;
         const res = await fetch(url, { cache: "no-store" });
         const body = (await res.json()) as BoardResponse;
         if (!body.ok || !body.data) {
@@ -165,11 +275,11 @@ export default function LeaderboardPage() {
         }
         setEntries(body.data.entries ?? []);
         setHasMore(false);
+        setPagesLoaded(1);
         setTotal(body.data.count ?? body.data.entries?.length ?? 0);
         setNote(body.data.note ?? null);
         setUpdatedAt(body.updatedAt ?? null);
         setActiveSearch(q);
-        setOffset(0);
         setError(null);
         setErrorCode(null);
       } catch (e) {
@@ -182,25 +292,25 @@ export default function LeaderboardPage() {
         setRefreshing(false);
       }
     },
-    [category, searchInput, loadBoard],
+    [category, searchInput, loadFirstPage],
   );
 
   useEffect(() => {
     setActiveSearch("");
     setSearchInput("");
-    void loadBoard();
-  }, [category]); // eslint-disable-line react-hooks/exhaustive-deps -- reload on category only
+    setPagesLoaded(0);
+    void loadFirstPage();
+  }, [category]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-refresh every 45s (board or active search). Pauses when tab is hidden.
   useEffect(() => {
     const tick = () => {
       if (typeof document !== "undefined" && document.visibilityState === "hidden") {
         return;
       }
-      if (activeSearch) {
-        void runSearch({ query: activeSearch, silent: true });
+      if (activeSearchRef.current) {
+        void runSearch({ query: activeSearchRef.current, silent: true });
       } else {
-        void loadBoard({ silent: true, nextOffset: 0 });
+        void refreshLoadedPages();
       }
     };
     const id = window.setInterval(tick, AUTO_REFRESH_MS);
@@ -212,7 +322,7 @@ export default function LeaderboardPage() {
       window.clearInterval(id);
       document.removeEventListener("visibilitychange", onVis);
     };
-  }, [activeSearch, loadBoard, runSearch]);
+  }, [runSearch, refreshLoadedPages]);
 
   const catMeta = useMemo(
     () => CATEGORY_TABS.find((c) => c.id === category) ?? CATEGORY_TABS[0],
@@ -220,6 +330,9 @@ export default function LeaderboardPage() {
   );
 
   const unauthorized = errorCode === "LEADERBOARD_UNAUTHORIZED";
+  const pageLabel = Math.max(1, pagesLoaded);
+  const rangeStart = entries.length ? 1 : 0;
+  const rangeEnd = entries.length;
 
   return (
     <div className="space-y-4">
@@ -233,8 +346,7 @@ export default function LeaderboardPage() {
             Leaderboard
           </h1>
           <p className="mt-1 text-sm text-muted">
-            PvP &amp; mob kills from official{" "}
-            <span className="font-mono text-xs">kintara.com/api/leaderboard</span>
+            {PAGE_SIZE} per page · Load more for the next {PAGE_SIZE}
             {upstreamCategory ? (
               <>
                 {" "}
@@ -253,7 +365,7 @@ export default function LeaderboardPage() {
             onClick={() =>
               activeSearch
                 ? void runSearch({ query: activeSearch })
-                : void loadBoard()
+                : void loadFirstPage()
             }
             disabled={loading || searching}
           >
@@ -295,7 +407,6 @@ export default function LeaderboardPage() {
         <CardTitle>Search player</CardTitle>
         <p className="text-xs text-muted">
           Find total PvP / mob kills by username, player id, or guild tag.
-          Search scans multiple leaderboard pages.
         </p>
         <form
           className="flex flex-col gap-2 sm:flex-row"
@@ -325,7 +436,7 @@ export default function LeaderboardPage() {
                 onClick={() => {
                   setSearchInput("");
                   setActiveSearch("");
-                  void loadBoard();
+                  void loadFirstPage();
                 }}
               >
                 Clear
@@ -348,42 +459,12 @@ export default function LeaderboardPage() {
             Why no data: Kintara leaderboard is private (HTTP 401)
           </p>
           <p className="text-xs text-muted leading-relaxed">
-            Official{" "}
-            <code className="font-mono text-[11px]">
-              kintara.com/api/leaderboard?category=kills
+            Set{" "}
+            <code className="font-mono text-[11px] text-sky-hi">
+              KINTARA_SESSION_COOKIE
             </code>{" "}
-            only works when logged into the game. Market listings are public;
-            kills leaderboard is not. Kinfolio never puts your login in the
-            browser — only an optional server env cookie.
-          </p>
-          <ol className="list-decimal space-y-1 pl-4 text-xs text-muted leading-relaxed">
-            <li>Log into https://kintara.com in Chrome</li>
-            <li>
-              F12 → <strong>Application</strong> → Cookies →{" "}
-              <code className="font-mono">kintara.com</code>
-            </li>
-            <li>
-              Copy the full Cookie string (or the main session cookie value)
-            </li>
-            <li>
-              Vercel → Project → Settings → Environment Variables → add:
-              <br />
-              <code className="font-mono text-[11px] text-sky-hi">
-                KINTARA_SESSION_COOKIE
-              </code>{" "}
-              = pasted cookies
-              <br />
-              or{" "}
-              <code className="font-mono text-[11px] text-sky-hi">
-                KINTARA_SESSION
-              </code>{" "}
-              = session token only
-            </li>
-            <li>Redeploy, then refresh this page</li>
-          </ol>
-          <p className="text-[11px] text-muted">
-            Cookies expire — if data stops loading later, paste a fresh cookie.
-            Never commit cookies to git.
+            in Vercel (from a logged-in kintara.com browser), redeploy, then
+            ranks load here — {PAGE_SIZE} at a time with Load more.
           </p>
         </Card>
       )}
@@ -394,9 +475,7 @@ export default function LeaderboardPage() {
         </Card>
       )}
 
-      {note && !error && (
-        <p className="text-xs text-muted">{note}</p>
-      )}
+      {note && !error && <p className="text-xs text-muted">{note}</p>}
 
       <Card className="overflow-hidden p-0">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/40 px-4 py-3">
@@ -405,15 +484,46 @@ export default function LeaderboardPage() {
             <p className="font-mono text-[11px] text-muted">
               {loading
                 ? "Loading…"
-                : `${entries.length} shown${
-                    total != null ? ` · total ~${total}` : ""
-                  }`}
+                : activeSearch
+                  ? `${entries.length} match${entries.length === 1 ? "" : "es"}`
+                  : entries.length
+                    ? `Showing ${rangeStart}–${rangeEnd}${
+                        total != null ? ` of ~${total}` : ""
+                      } · page ${pageLabel} (${PAGE_SIZE}/page)`
+                    : "No rows"}
               {updatedAt
-                ? ` · updated ${new Date(updatedAt).toLocaleTimeString()}`
+                ? ` · ${new Date(updatedAt).toLocaleTimeString()}`
                 : ""}
-              {refreshing ? " · refreshing…" : " · auto 45s"}
+              {refreshing ? " · refreshing…" : ""}
             </p>
           </div>
+          {!activeSearch && !unauthorized && entries.length > 0 && (
+            <div className="flex items-center gap-1.5">
+              <Button
+                variant="ghost"
+                className="min-h-9 px-2"
+                disabled={pagesLoaded <= 1 || loading || loadingMore}
+                title="Back to first 30"
+                onClick={() => void loadFirstPage()}
+              >
+                <ChevronLeft className="h-4 w-4" />
+                First
+              </Button>
+              <span className="px-1 font-mono text-xs tabular-nums text-muted">
+                {pageLabel}
+              </span>
+              <Button
+                variant="ghost"
+                className="min-h-9 px-2"
+                disabled={!hasMore || loadingMore || loading}
+                title={`Load next ${PAGE_SIZE}`}
+                onClick={() => void loadMore()}
+              >
+                Next
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
         </div>
 
         {loading && entries.length === 0 ? (
@@ -449,7 +559,7 @@ export default function LeaderboardPage() {
               <tbody className="divide-y divide-border/25">
                 {entries.map((e) => (
                   <tr
-                    key={`${e.rank}-${e.userId ?? e.username}`}
+                    key={entryKey(e)}
                     className="hover:bg-sky/5"
                   >
                     <td className="px-3 py-2.5 font-mono tabular-nums text-muted">
@@ -485,21 +595,25 @@ export default function LeaderboardPage() {
           </div>
         )}
 
-        {!activeSearch && hasMore && !unauthorized && (
-          <div className="border-t border-border/40 p-3">
+        {!activeSearch && !unauthorized && entries.length > 0 && (
+          <div className="flex flex-col gap-2 border-t border-border/40 p-3 sm:flex-row sm:items-center">
             <Button
               variant="secondary"
-              className="w-full"
-              disabled={loadingMore}
-              onClick={() =>
-                void loadBoard({
-                  append: true,
-                  nextOffset: offset + limit,
-                })
-              }
+              className="w-full flex-1"
+              disabled={!hasMore || loadingMore || loading}
+              onClick={() => void loadMore()}
             >
-              {loadingMore ? "Loading…" : "Load more"}
+              {loadingMore
+                ? "Loading…"
+                : hasMore
+                  ? `Load more (+${PAGE_SIZE})`
+                  : "End of list"}
             </Button>
+            <p className="text-center font-mono text-[11px] text-muted sm:text-right">
+              {hasMore
+                ? `Next ranks ${rangeEnd + 1}–${rangeEnd + PAGE_SIZE}`
+                : `${entries.length} loaded`}
+            </p>
           </div>
         )}
       </Card>

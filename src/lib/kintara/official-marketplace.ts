@@ -275,7 +275,10 @@ export function filterBookBySeller(
       if (id && r.sellerId != null && String(r.sellerId) === id) return true;
       if (name) {
         const n = (r.sellerName ?? "").trim().toLowerCase();
-        if (n && n === name) return true;
+        // Partial match — search often uses a prefix of the username
+        if (n && (n === name || n.includes(name) || name.includes(n))) {
+          return true;
+        }
       }
       // wallet-ish id matching name field is rare on official listings
       if (id && !/^\d+$/.test(id) && (r.sellerName ?? "").trim() === id) {
@@ -567,7 +570,7 @@ export async function fetchOfficialRecentActivity(options?: {
     : ["token"];
 
   for (const currency of currencies) {
-    // Parallel 2 only — 4× pages was 429'ing kintara.com from Vercel IPs
+    // Parallel 2 — enough pages for locks (often not on first cheap page)
     const PARALLEL = 2;
     let endOffset: number | null = null;
     for (let start = 0; start < pages; start += PARALLEL) {

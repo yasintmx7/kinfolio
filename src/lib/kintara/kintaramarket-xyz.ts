@@ -228,6 +228,95 @@ export async function fetchOpenListings(options?: {
   return rows;
 }
 
+/** Case-insensitive partial match for seller / item search. */
+export function openListingMatchesQuery(
+  row: OpenMarketListing,
+  query: string,
+): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  const qId = q.replace(/^#/, "");
+  const seller = (row.sellerName ?? "").trim().toLowerCase();
+  const item = row.itemType.toLowerCase();
+  const itemSpaced = item.replace(/_/g, " ");
+  const itemDashed = item.replace(/_/g, "-");
+  const id = String(row.id);
+  return (
+    seller.includes(q) ||
+    seller === qId ||
+    item.includes(q) ||
+    itemSpaced.includes(q) ||
+    itemDashed.includes(q) ||
+    id.includes(qId) ||
+    (q === "lock" && row.reservedBy != null) ||
+    (q === "locked" && row.reservedBy != null) ||
+    (q === "reserved" && row.reservedBy != null)
+  );
+}
+
+/**
+ * Search open listings by seller name / item (full KM dump, not just cheap hub).
+ * Prefer exact seller matches first, then partial.
+ */
+export async function searchOpenListings(
+  query: string,
+  options?: { limit?: number; kinsUsd?: number },
+): Promise<MarketActivityRow[]> {
+  const q = query.trim();
+  if (!q) return [];
+  const cap = Math.min(Math.max(options?.limit ?? 200, 1), 500);
+  const rows = await fetchOpenListings({ limit: 3000 });
+  const qLower = q.toLowerCase();
+  const qId = qLower.replace(/^#/, "");
+
+  const matched = rows.filter((r) => openListingMatchesQuery(r, q));
+  // Rank: exact seller > seller starts-with > seller includes > item match
+  matched.sort((a, b) => {
+    const sa = (a.sellerName ?? "").toLowerCase();
+    const sb = (b.sellerName ?? "").toLowerCase();
+    const score = (s: string) => {
+      if (s === qLower || s === qId) return 0;
+      if (s.startsWith(qLower)) return 1;
+      if (s.includes(qLower)) return 2;
+      return 3;
+    };
+    const d = score(sa) - score(sb);
+    if (d !== 0) return d;
+    const ua =
+      a.unitPrice ??
+      (a.priceUsd != null && a.quantity > 0 ? a.priceUsd / a.quantity : Infinity);
+    const ub =
+      b.unitPrice ??
+      (b.priceUsd != null && b.quantity > 0 ? b.priceUsd / b.quantity : Infinity);
+    return (ua ?? Infinity) - (ub ?? Infinity);
+  });
+
+  return openListingsToActivity(matched.slice(0, cap), {
+    kinsUsd: options?.kinsUsd,
+    sort: "cheap",
+    limit: cap,
+  });
+}
+
+/** Filter open book by seller name (partial) or exact id string. */
+export async function fetchListingsForSellerName(
+  sellerName: string,
+  options?: { kinsUsd?: number },
+): Promise<MarketActivityRow[]> {
+  const name = sellerName.trim().toLowerCase();
+  if (!name) return [];
+  const rows = await fetchOpenListings({ limit: 3000 });
+  const hit = rows.filter((r) => {
+    const s = (r.sellerName ?? "").trim().toLowerCase();
+    return s === name || s.includes(name) || name.includes(s);
+  });
+  return openListingsToActivity(hit, {
+    kinsUsd: options?.kinsUsd,
+    sort: "cheap",
+    limit: 500,
+  });
+}
+
 function reservedBuyerId(v: unknown): string | null {
   if (v == null) return null;
   if (typeof v === "number" && Number.isFinite(v)) return String(v);

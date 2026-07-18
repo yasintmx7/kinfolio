@@ -4,14 +4,19 @@ import {
   fetchOfficialMarketBook,
   filterBookBySeller,
   toOfficialListingDto,
+  type OfficialListingDto,
 } from "@/lib/kintara/official-marketplace";
+import { fetchListingsForSellerName } from "@/lib/kintara/kintaramarket-xyz";
+import { resolveKinsUsd } from "@/lib/prices/resolve-kins-usd";
+import { sanitizePersonName } from "@/lib/market/seller-label";
 
 export const runtime = "nodejs";
+export const maxDuration = 30;
 
 /**
- * Seller inventory from shared cheap book scan.
- * Official API has no seller filter — reuses the same cached book as item detail.
- * Query: sellerId (numeric preferred), sellerName (optional).
+ * Seller inventory.
+ * Primary: kintaramarket open book (seller name match).
+ * Enrich/fallback: official cheap book scan by sellerId/name.
  */
 export async function GET(request: Request) {
   const sp = new URL(request.url).searchParams;
@@ -31,33 +36,108 @@ export async function GET(request: Request) {
   }
 
   try {
-    const book = await fetchOfficialMarketBook({ pages: 10 });
-    const listings = filterBookBySeller(book.listings, {
-      sellerId,
-      sellerName,
-    });
-    const open = listings.filter((l) => !l.isReserved);
-    const coverageNote = bookCoverageNote(book, listings.length, "seller");
+    const rate = await resolveKinsUsd();
+    const byId = new Map<string, OfficialListingDto>();
+    let sources: string[] = [];
 
-    return ok(
-      {
+    // 1) KM open book by seller name (covers more of the live market)
+    if (sellerName) {
+      try {
+        const km = await fetchListingsForSellerName(sellerName, {
+          kinsUsd: rate?.kinsUsd,
+        });
+        for (const r of km) {
+          const name = sanitizePersonName(r.sellerName);
+          byId.set(r.id, {
+            id: r.id,
+            itemType: r.itemType,
+            name: r.name,
+            quantity: r.quantity,
+            unitUsd: r.unitUsd,
+            usdTotal: r.usdTotal,
+            priceGold: r.priceGold,
+            currency: r.currency,
+            sellerName: name,
+            sellerId: r.sellerId,
+            reserved: r.reserved,
+            reservedUntilMs: r.reservedUntilMs,
+            buyerId: r.buyerId,
+            timestamp: r.timestamp,
+          });
+        }
+        if (km.length) sources.push("kintaramarket.xyz");
+      } catch {
+        // fall through to official
+      }
+    }
+
+    // 2) Official book (sellerId match + name)
+    try {
+      const book = await fetchOfficialMarketBook({ pages: 12 });
+      const listings = filterBookBySeller(book.listings, {
         sellerId,
         sellerName,
-        openCount: open.length,
-        lockedCount: listings.length - open.length,
-        listings: listings.map(toOfficialListingDto),
-        bookSize: book.size,
-        bookComplete: book.complete,
-        coverageNote,
-        note: coverageNote,
-        configured: true,
-      },
-      {
-        source: "kintara.com",
-        updatedAt: new Date().toISOString(),
-        cacheControl: "public, s-maxage=20, stale-while-revalidate=40",
-      },
-    );
+      });
+      for (const l of listings) {
+        const dto = toOfficialListingDto(l);
+        const prev = byId.get(dto.id);
+        byId.set(dto.id, prev ? { ...prev, ...dto } : dto);
+      }
+      if (listings.length) sources.push("kintara.com");
+      const all = [...byId.values()];
+      const open = all.filter((l) => !l.reserved);
+      const coverageNote = bookCoverageNote(book, all.length, "seller");
+      return ok(
+        {
+          sellerId,
+          sellerName,
+          openCount: open.length,
+          lockedCount: all.length - open.length,
+          listings: all,
+          bookSize: Math.max(book.size, all.length),
+          bookComplete: book.complete,
+          coverageNote,
+          note:
+            all.length > 0
+              ? `Found ${all.length} listing(s) (${sources.join(" + ") || "merged"}).`
+              : coverageNote,
+          configured: true,
+          sources,
+        },
+        {
+          source: sources.join("+") || "kintara.com",
+          updatedAt: new Date().toISOString(),
+          cacheControl: "public, s-maxage=15, stale-while-revalidate=40",
+        },
+      );
+    } catch {
+      // Official failed — return KM-only if we have it
+      const all = [...byId.values()];
+      if (all.length) {
+        const open = all.filter((l) => !l.reserved);
+        return ok(
+          {
+            sellerId,
+            sellerName,
+            openCount: open.length,
+            lockedCount: all.length - open.length,
+            listings: all,
+            bookSize: all.length,
+            bookComplete: false,
+            coverageNote: null,
+            note: `Found ${all.length} listing(s) from kintaramarket open book.`,
+            configured: true,
+            sources,
+          },
+          {
+            source: "kintaramarket.xyz",
+            updatedAt: new Date().toISOString(),
+            cacheControl: "public, s-maxage=15, stale-while-revalidate=40",
+          },
+        );
+      }
+      throw new Error("Seller inventory unavailable");
+    }
   } catch (e) {
     return fail(
       "SELLER_LISTINGS_ERROR",

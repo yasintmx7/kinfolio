@@ -370,10 +370,60 @@ function MarketHubInner() {
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
   const [browseSort, setBrowseSort] = useState<BrowseSort>("listings");
   const [filtersOpen, setFiltersOpen] = useState(false);
+  /** Extra listings from full-book username/item search (KM open book). */
+  const [searchHits, setSearchHits] = useState<RecentSale[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchNote, setSearchNote] = useState<string | null>(null);
 
   useEffect(() => {
     setWatch(getWatchlist());
   }, []);
+
+  // Full open-book search when typing a query (hub only has ~cheap subset)
+  useEffect(() => {
+    const query = q.trim();
+    if (tab !== "market" || query.length < 2) {
+      setSearchHits([]);
+      setSearchNote(null);
+      setSearchLoading(false);
+      return;
+    }
+    let cancelled = false;
+    const t = window.setTimeout(() => {
+      setSearchLoading(true);
+      fetch(`/api/market/search?q=${encodeURIComponent(query)}&limit=200`, {
+        cache: "no-store",
+      })
+        .then(async (res) => {
+          const body = (await res.json()) as {
+            ok?: boolean;
+            data?: { listings?: RecentSale[]; note?: string; count?: number };
+          };
+          if (!res.ok || !body.ok) {
+            throw new Error("search failed");
+          }
+          return body.data;
+        })
+        .then((data) => {
+          if (cancelled) return;
+          setSearchHits(data?.listings ?? []);
+          setSearchNote(data?.note ?? null);
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setSearchHits([]);
+            setSearchNote(null);
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setSearchLoading(false);
+        });
+    }, 280);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [q, tab]);
 
   // Normalize legacy tabs → market (dual view)
   useEffect(() => {
@@ -469,7 +519,35 @@ function MarketHubInner() {
   };
 
   const listingRows = useMemo(() => {
-    let list = [...hub.sales];
+    // Merge live hub book + full-book search hits (seller/item may be outside cheap feed)
+    const byId = new Map<string, RecentSale>();
+    for (const row of hub.sales) {
+      byId.set(String(row.id), row);
+    }
+    if (q.trim().length >= 2) {
+      for (const row of searchHits) {
+        const id = String(row.id);
+        const prev = byId.get(id);
+        if (!prev) {
+          byId.set(id, row);
+          continue;
+        }
+        // Prefer row with seller name / lock detail
+        byId.set(id, {
+          ...prev,
+          ...row,
+          sellerName: row.sellerName ?? prev.sellerName,
+          seller: row.seller ?? prev.seller,
+          sellerId: row.sellerId ?? prev.sellerId,
+          reserved: Boolean(prev.reserved || row.reserved),
+          reservedUntilMs:
+            Math.max(prev.reservedUntilMs ?? 0, row.reservedUntilMs ?? 0) ||
+            null,
+          buyerId: row.buyerId ?? prev.buyerId,
+        });
+      }
+    }
+    let list = [...byId.values()];
 
     if (currencyFilter === "token") {
       list = list.filter((s) => (s.currency ?? "token") === "token");
@@ -522,7 +600,15 @@ function MarketHubInner() {
       return Date.parse(b.timestamp) - Date.parse(a.timestamp);
     });
     return list;
-  }, [hub.sales, q, currencyFilter, sortFilter, hideLocked, categoryFilter]);
+  }, [
+    hub.sales,
+    searchHits,
+    q,
+    currencyFilter,
+    sortFilter,
+    hideLocked,
+    categoryFilter,
+  ]);
 
   const filterCounts = useMemo(() => {
     const base = hub.sales;
@@ -878,6 +964,17 @@ function MarketHubInner() {
             }
             className="field min-h-10 flex-1"
           />
+          {tab === "market" && q.trim().length >= 2 && (
+            <p className="px-1 text-[11px] text-muted sm:order-last sm:basis-full">
+              {searchLoading
+                ? "Searching full open book for seller/item…"
+                : searchNote
+                  ? searchNote
+                  : listingRows.length
+                    ? `${listingRows.length} match${listingRows.length === 1 ? "" : "es"} (live book + full search)`
+                    : "No matches in live book or open listings"}
+            </p>
+          )}
           {(tab === "floors" || tab === "watch") && (
             <div className="flex flex-wrap items-center gap-1.5">
               {(

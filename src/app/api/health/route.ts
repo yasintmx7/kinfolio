@@ -16,6 +16,7 @@ export async function GET() {
         marketplaceOfficial: true,
         worldEconomy: true,
         wikiIcons: true,
+        leaderboard: true,
       },
       policy: {
         readOnly: true,

@@ -14,6 +14,7 @@ import {
   Settings,
   Star,
   Store,
+  Trophy,
   Wallet,
   X,
 } from "lucide-react";
@@ -34,7 +35,7 @@ const NAV = [
     icon: Layers,
   },
   { href: "/market?tab=watch", tab: "watch", label: "Watch", icon: Star },
-  { href: "/items", tab: null, label: "Catalog", icon: Grid3X3 },
+  { href: "/leaderboard", tab: "leaderboard", label: "Kills", icon: Trophy },
 ] as const;
 
 /** Portfolio + tools (hidden from main rail after market-first rebrand). */
@@ -43,6 +44,7 @@ const EXTRA = [
   { href: "/inventory", label: "Inventory", icon: Package },
   { href: "/add", label: "Import trades", icon: PlusCircle },
   { href: "/history", label: "History", icon: History },
+  { href: "/items", label: "Catalog", icon: Grid3X3 },
   { href: "/calculator", label: "Calculator", icon: Calculator },
   { href: "/settings", label: "Settings", icon: Settings },
 ] as const;
@@ -60,7 +62,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
       : rawTab;
   const [moreOpen, setMoreOpen] = useState(false);
   const onMarket = pathname.startsWith("/market");
-  const onCatalog = pathname.startsWith("/items");
+  const onLeaderboard = pathname.startsWith("/leaderboard");
 
   return (
     <div className="min-h-dvh bg-transparent text-primary">
@@ -76,8 +78,8 @@ function ShellInner({ children }: { children: React.ReactNode }) {
           </p>
           {NAV.map((item) => {
             const active =
-              item.tab === null
-                ? onCatalog
+              item.tab === "leaderboard"
+                ? onLeaderboard
                 : onMarket && tab === item.tab;
             const Icon = item.icon;
             return (
@@ -156,8 +158,8 @@ function ShellInner({ children }: { children: React.ReactNode }) {
         <div className="grid grid-cols-5 px-0.5 py-1">
           {NAV.map((item) => {
             const active =
-              item.tab === null
-                ? onCatalog
+              item.tab === "leaderboard"
+                ? onLeaderboard
                 : onMarket && tab === item.tab;
             const Icon = item.icon;
             return (

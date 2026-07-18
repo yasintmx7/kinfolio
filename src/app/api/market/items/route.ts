@@ -10,6 +10,7 @@ import { buildOfficialFloorBoard } from "@/lib/kintara/official-marketplace";
 import { resolveKinsUsd } from "@/lib/prices/resolve-kins-usd";
 
 export const runtime = "nodejs";
+export const maxDuration = 30;
 
 /**
  * All-items board — same shape as kintaramarket.xyz /api/market.

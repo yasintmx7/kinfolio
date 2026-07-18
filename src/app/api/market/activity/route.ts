@@ -6,25 +6,27 @@ import { STATIC_CATALOG } from "@/data/static-catalog";
 import { sanitizePersonName } from "@/lib/market/seller-label";
 
 export const runtime = "nodejs";
+/** Allow larger book scans on Vercel (default hobby is often 10s). */
+export const maxDuration = 60;
 
 /**
  * Live marketplace feed — official listings.
- * Query: limit (default 3000), pages (default 18 × 100 parallel per currency), gold=1.
- * Client polls ~3s with in-flight guard + short CDN cache.
+ * Query: limit (default 1200), pages (default 10 × 100 parallel per currency), gold=1.
+ * Client uses a fast pass then optional deep fill.
  */
 export async function GET(request: Request) {
   const sp = new URL(request.url).searchParams;
-  const limit = Number(sp.get("limit") ?? "3000");
-  const pages = Number(sp.get("pages") ?? "18");
+  const limit = Number(sp.get("limit") ?? "1200");
+  const pages = Number(sp.get("pages") ?? "10");
   const includeGold = sp.get("gold") === "1" || sp.get("gold") === "true";
   const sort = sp.get("sort") === "cheap" ? "cheap" : "new";
 
   try {
     const rate = await resolveKinsUsd();
     const rows = await fetchOfficialRecentActivity({
-      // Soft cap: enough for full-ish book without blowing serverless time
-      limit: Number.isFinite(limit) ? Math.min(Math.max(limit, 1), 4000) : 3000,
-      pages: Number.isFinite(pages) ? Math.min(Math.max(pages, 1), 25) : 18,
+      // Soft cap: full-ish book; client prefers progressive load
+      limit: Number.isFinite(limit) ? Math.min(Math.max(limit, 1), 4000) : 1200,
+      pages: Number.isFinite(pages) ? Math.min(Math.max(pages, 1), 25) : 10,
       kinsUsd: rate?.kinsUsd,
       includeGold,
       sort,

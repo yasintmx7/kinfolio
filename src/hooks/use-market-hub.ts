@@ -120,16 +120,17 @@ const empty: MarketHubData = {
 
 /**
  * Dual feed (official kintara.com pages of 100):
- *  - cheap book = full price ladder + locks (token + gold)
+ *  - cheap book = price ladder + locks (token + gold)
  *  - new pages  = brand-new listings that may sit above cheap scan
- * Client merges by listing id so "New" sort and search always see latest.
  *
- * Raised from ~1200: market is often 2.5k–3.5k open lots. Cap ~3000 keeps
- * 3s poll workable while covering far more of the book.
+ * Progressive load: FAST paints the board quickly; DEEP expands in background.
+ * A single 3000×18 request was timing out on Vercel and left Market empty.
  */
-const CHEAP_URL =
-  "/api/market/activity?limit=3000&pages=18&gold=1&sort=cheap";
-const NEW_URL = "/api/market/activity?limit=800&pages=6&gold=1&sort=new";
+const CHEAP_FAST_URL =
+  "/api/market/activity?limit=1000&pages=8&gold=1&sort=cheap";
+const CHEAP_DEEP_URL =
+  "/api/market/activity?limit=3000&pages=16&gold=1&sort=cheap";
+const NEW_URL = "/api/market/activity?limit=400&pages=4&gold=1&sort=new";
 // kintaramarket /api/sales supports up to ~500 (hours of history)
 const SOLD_URL = "/api/market/sold?limit=300";
 
@@ -257,10 +258,18 @@ async function fetchJson(url: string, timeoutMs = 20000): Promise<unknown> {
   try {
     const res = await fetch(url, {
       cache: "no-store",
+      credentials: "same-origin",
       signal: controller.signal,
     });
+    // Followed redirect to Vercel/login HTML, or gateway timeout page
+    const ctype = res.headers.get("content-type") ?? "";
     if (!res.ok) {
       throw new Error(`HTTP ${res.status} for ${url}`);
+    }
+    if (!ctype.includes("application/json")) {
+      throw new Error(
+        `Expected JSON from ${url} (got ${ctype || "unknown"}). If the site is behind Vercel login protection, disable it for Production or API routes will stay empty.`,
+      );
     }
     return await res.json();
   } finally {
@@ -459,21 +468,12 @@ export function useMarketHub(pollMs = 3_000) {
     [],
   );
 
-  const reloadListings = useCallback(async (opts?: { silent?: boolean }) => {
-    if (listingsInFlight.current) return;
-    listingsInFlight.current = true;
-    if (!opts?.silent) {
-      setData((s) => ({ ...s, refreshing: true }));
-    }
-    try {
-      // Promise.allSettled: one feed failing must not drop the other
-      const [cheapSettled, newSettled] = await Promise.allSettled([
-        // Larger book needs a bit more headroom on cold serverless
-        fetchJson(CHEAP_URL, 28000),
-        fetchJson(NEW_URL, 15000),
-      ]);
-      const cheap = actFromSettled(cheapSettled);
-      const newest = actFromSettled(newSettled);
+  const applyListingsFeed = useCallback(
+    (
+      cheap: ReturnType<typeof actFromSettled>,
+      newest: ReturnType<typeof actFromSettled>,
+      opts?: { silent?: boolean },
+    ) => {
       const feedOk = cheap.ok || newest.ok;
 
       setData((prev) => {
@@ -515,9 +515,11 @@ export function useMarketHub(pollMs = 3_000) {
             for (const row of gone) {
               const lid = officialListingId(row.listingId ?? row.id);
               if (!lid) continue;
-              // Prefer richer known snapshot when available
               const snap = knownListingsRef.current.get(lid) ?? row;
-              bookDeltaSoldRef.current.set(lid, toInstantSold(snap, now) as RecentSale);
+              bookDeltaSoldRef.current.set(
+                lid,
+                toInstantSold(snap, now) as RecentSale,
+              );
             }
           }
 
@@ -535,7 +537,6 @@ export function useMarketHub(pollMs = 3_000) {
             }
           }
 
-          // Always refresh open snapshot on healthy feed (even if fingerprint same)
           lastOpenSnapshotRef.current = nextSales;
         }
 
@@ -543,9 +544,7 @@ export function useMarketHub(pollMs = 3_000) {
         const rateSource =
           cheap.rateSource ?? newest.rateSource ?? prev.rateSource;
 
-        const sold = feedOk
-          ? buildMergedSold(nextSales)
-          : prev.sold;
+        const sold = feedOk ? buildMergedSold(nextSales) : prev.sold;
 
         if (sameList && opts?.silent) {
           return {
@@ -556,7 +555,7 @@ export function useMarketHub(pollMs = 3_000) {
             rateSource,
             loading: false,
             refreshing: false,
-            error: null,
+            error: feedOk ? null : prev.error,
           };
         }
 
@@ -587,24 +586,82 @@ export function useMarketHub(pollMs = 3_000) {
           configured: Boolean(feedOk || prev.configured),
           error:
             !feedOk && prev.sales.length === 0
-              ? "Market data unavailable"
-              : null,
+              ? "Market data unavailable — check connection or Vercel login protection on API routes."
+              : feedOk
+                ? null
+                : prev.error,
           loading: false,
           refreshing: false,
         };
       });
-    } catch {
-      setData((s) => ({
-        ...s,
-        loading: false,
-        refreshing: false,
-        error:
-          s.sales.length === 0 ? "Network error loading market" : s.error,
-      }));
-    } finally {
-      listingsInFlight.current = false;
-    }
-  }, [buildMergedSold]);
+
+      return feedOk;
+    },
+    [buildMergedSold],
+  );
+
+  const deepInFlight = useRef(false);
+
+  const reloadListings = useCallback(
+    async (opts?: { silent?: boolean; deep?: boolean }) => {
+      if (listingsInFlight.current) return;
+      listingsInFlight.current = true;
+      if (!opts?.silent) {
+        setData((s) => ({ ...s, refreshing: true }));
+      }
+      let newest: ReturnType<typeof actFromSettled> = {
+        ok: false,
+        activity: [],
+        kinsUsd: null,
+        rateSource: null,
+      };
+      let feedOk = false;
+      try {
+        // 1) Fast pass — paint Market ASAP (fits Vercel cold starts)
+        const [cheapSettled, newSettled] = await Promise.allSettled([
+          fetchJson(CHEAP_FAST_URL, 18000),
+          fetchJson(NEW_URL, 12000),
+        ]);
+        const cheap = actFromSettled(cheapSettled);
+        newest = actFromSettled(newSettled);
+        feedOk = applyListingsFeed(cheap, newest, opts);
+      } catch (e) {
+        const msg =
+          e instanceof Error ? e.message : "Network error loading market";
+        setData((s) => ({
+          ...s,
+          loading: false,
+          refreshing: false,
+          error: s.sales.length === 0 ? msg : s.error,
+        }));
+      } finally {
+        listingsInFlight.current = false;
+      }
+
+      // 2) Deep expand after unlock so 3s polls aren't blocked
+      const wantDeep =
+        opts?.deep === true ||
+        (opts?.deep !== false && !opts?.silent && feedOk);
+      if (!wantDeep || deepInFlight.current) return;
+      deepInFlight.current = true;
+      try {
+        const deepSettled = await Promise.allSettled([
+          fetchJson(CHEAP_DEEP_URL, 45000),
+        ]);
+        const deep = actFromSettled(deepSettled[0]);
+        if (deep.ok) {
+          applyListingsFeed(deep, newest.ok ? newest : deep, {
+            silent: true,
+          });
+        }
+      } catch {
+        // keep fast feed
+      } finally {
+        deepInFlight.current = false;
+      }
+    },
+    [applyListingsFeed],
+  );
 
   const reloadSold = useCallback(async () => {
     if (soldInFlight.current) return;

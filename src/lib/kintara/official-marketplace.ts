@@ -537,7 +537,7 @@ export type OfficialActivityRow = {
 export async function fetchOfficialRecentActivity(options?: {
   /** Soft max rows (default pages × 100 × currencies). */
   limit?: number;
-  /** Max pages per currency (default 18, hard max 25). */
+  /** Max pages per currency (default 10, hard max 25). */
   pages?: number;
   kinsUsd?: number;
   /** Include gold listings too */
@@ -546,7 +546,7 @@ export async function fetchOfficialRecentActivity(options?: {
   sort?: "new" | "cheap";
 }): Promise<OfficialActivityRow[]> {
   const pageSize = 100;
-  const pages = Math.min(Math.max(options?.pages ?? 18, 1), 25);
+  const pages = Math.min(Math.max(options?.pages ?? 10, 1), 25);
   // Full-ish book: often ~1.5k–3k open lots across token + gold
   const maxRows = Math.min(
     Math.max(options?.limit ?? pages * pageSize * 2, 1),

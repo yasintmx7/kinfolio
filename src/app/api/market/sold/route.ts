@@ -11,6 +11,7 @@ import {
 } from "@/lib/market/seller-label";
 
 export const runtime = "nodejs";
+export const maxDuration = 30;
 
 type SoldRow = {
   id: string;

@@ -503,7 +503,6 @@ export default function LeaderboardPage() {
                 variant="ghost"
                 className="min-h-9 px-2"
                 disabled={pagesLoaded <= 1 || loading || loadingMore}
-                title="Back to first 30"
                 onClick={() => void loadFirstPage()}
               >
                 <ChevronLeft className="h-4 w-4" />
@@ -516,7 +515,6 @@ export default function LeaderboardPage() {
                 variant="ghost"
                 className="min-h-9 px-2"
                 disabled={!hasMore || loadingMore || loading}
-                title={`Load next ${PAGE_SIZE}`}
                 onClick={() => void loadMore()}
               >
                 Next

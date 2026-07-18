@@ -79,27 +79,37 @@ export default function LeaderboardPage() {
   const [searchInput, setSearchInput] = useState("");
   const [activeSearch, setActiveSearch] = useState("");
   const [searching, setSearching] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const limit = 30;
+  /** Auto-refresh interval — matches ~45s server cache on board. */
+  const AUTO_REFRESH_MS = 45_000;
 
   const loadBoard = useCallback(
-    async (opts?: { append?: boolean; nextOffset?: number }) => {
+    async (opts?: {
+      append?: boolean;
+      nextOffset?: number;
+      silent?: boolean;
+    }) => {
       const append = Boolean(opts?.append);
+      const silent = Boolean(opts?.silent);
       const off = opts?.nextOffset ?? 0;
       if (append) setLoadingMore(true);
+      else if (silent) setRefreshing(true);
       else {
         setLoading(true);
         setError(null);
         setErrorCode(null);
       }
       try {
+        // On silent refresh keep currently loaded window (first page only if not append)
         const url = `/api/leaderboard?category=${encodeURIComponent(category)}&offset=${off}&limit=${limit}`;
         const res = await fetch(url, { cache: "no-store" });
         const body = (await res.json()) as BoardResponse;
         if (!body.ok || !body.data) {
           setError(body.error?.message ?? "Failed to load leaderboard");
           setErrorCode(body.error?.code ?? "LEADERBOARD_ERROR");
-          if (!append) setEntries([]);
+          if (!append && !silent) setEntries([]);
           return;
         }
         const rows = body.data.entries ?? [];
@@ -110,66 +120,99 @@ export default function LeaderboardPage() {
         setNote(body.data.note ?? null);
         setUpdatedAt(body.updatedAt ?? null);
         setUpstreamCategory(body.data.upstreamCategory ?? null);
-        setActiveSearch("");
+        if (!silent) setActiveSearch("");
         setError(null);
         setErrorCode(null);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Network error");
         setErrorCode("NETWORK");
-        if (!append) setEntries([]);
+        if (!append && !silent) setEntries([]);
       } finally {
         setLoading(false);
         setLoadingMore(false);
+        setRefreshing(false);
       }
     },
     [category],
   );
 
-  const runSearch = useCallback(async () => {
-    const q = searchInput.trim();
-    if (!q) {
-      setActiveSearch("");
-      void loadBoard();
-      return;
-    }
-    setSearching(true);
-    setLoading(true);
-    setError(null);
-    setErrorCode(null);
-    try {
-      const url = `/api/leaderboard?category=${encodeURIComponent(category)}&q=${encodeURIComponent(q)}&limit=${limit}`;
-      const res = await fetch(url, { cache: "no-store" });
-      const body = (await res.json()) as BoardResponse;
-      if (!body.ok || !body.data) {
-        setError(body.error?.message ?? "Search failed");
-        setErrorCode(body.error?.code ?? "LEADERBOARD_ERROR");
-        setEntries([]);
+  const runSearch = useCallback(
+    async (opts?: { query?: string; silent?: boolean }) => {
+      const q = (opts?.query ?? searchInput).trim();
+      const silent = Boolean(opts?.silent);
+      if (!q) {
+        setActiveSearch("");
+        void loadBoard({ silent });
         return;
       }
-      setEntries(body.data.entries ?? []);
-      setHasMore(false);
-      setTotal(body.data.count ?? body.data.entries?.length ?? 0);
-      setNote(body.data.note ?? null);
-      setUpdatedAt(body.updatedAt ?? null);
-      setActiveSearch(q);
-      setOffset(0);
-      setError(null);
-      setErrorCode(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Network error");
-      setErrorCode("NETWORK");
-      setEntries([]);
-    } finally {
-      setSearching(false);
-      setLoading(false);
-    }
-  }, [category, searchInput, loadBoard]);
+      if (!silent) {
+        setSearching(true);
+        setLoading(true);
+        setError(null);
+        setErrorCode(null);
+      } else {
+        setRefreshing(true);
+      }
+      try {
+        const url = `/api/leaderboard?category=${encodeURIComponent(category)}&q=${encodeURIComponent(q)}&limit=${limit}`;
+        const res = await fetch(url, { cache: "no-store" });
+        const body = (await res.json()) as BoardResponse;
+        if (!body.ok || !body.data) {
+          setError(body.error?.message ?? "Search failed");
+          setErrorCode(body.error?.code ?? "LEADERBOARD_ERROR");
+          if (!silent) setEntries([]);
+          return;
+        }
+        setEntries(body.data.entries ?? []);
+        setHasMore(false);
+        setTotal(body.data.count ?? body.data.entries?.length ?? 0);
+        setNote(body.data.note ?? null);
+        setUpdatedAt(body.updatedAt ?? null);
+        setActiveSearch(q);
+        setOffset(0);
+        setError(null);
+        setErrorCode(null);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Network error");
+        setErrorCode("NETWORK");
+        if (!silent) setEntries([]);
+      } finally {
+        setSearching(false);
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [category, searchInput, loadBoard],
+  );
 
   useEffect(() => {
     setActiveSearch("");
     setSearchInput("");
     void loadBoard();
   }, [category]); // eslint-disable-line react-hooks/exhaustive-deps -- reload on category only
+
+  // Auto-refresh every 45s (board or active search). Pauses when tab is hidden.
+  useEffect(() => {
+    const tick = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        return;
+      }
+      if (activeSearch) {
+        void runSearch({ query: activeSearch, silent: true });
+      } else {
+        void loadBoard({ silent: true, nextOffset: 0 });
+      }
+    };
+    const id = window.setInterval(tick, AUTO_REFRESH_MS);
+    const onVis = () => {
+      if (document.visibilityState === "visible") tick();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [activeSearch, loadBoard, runSearch]);
 
   const catMeta = useMemo(
     () => CATEGORY_TABS.find((c) => c.id === category) ?? CATEGORY_TABS[0],
@@ -203,19 +246,30 @@ export default function LeaderboardPage() {
             ) : null}
           </p>
         </div>
-        <Button
-          variant="secondary"
-          className="min-h-10"
-          onClick={() =>
-            activeSearch ? void runSearch() : void loadBoard()
-          }
-          disabled={loading || searching}
-        >
-          <RefreshCw
-            className={cn("h-4 w-4", (loading || searching) && "animate-spin")}
-          />
-          Refresh
-        </Button>
+        <div className="flex flex-col items-end gap-1">
+          <Button
+            variant="secondary"
+            className="min-h-10"
+            onClick={() =>
+              activeSearch
+                ? void runSearch({ query: activeSearch })
+                : void loadBoard()
+            }
+            disabled={loading || searching}
+          >
+            <RefreshCw
+              className={cn(
+                "h-4 w-4",
+                (loading || searching || refreshing) && "animate-spin",
+              )}
+            />
+            Refresh
+          </Button>
+          <p className="text-[10px] text-muted">
+            Auto every 45s
+            {refreshing ? " · updating…" : ""}
+          </p>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -328,6 +382,7 @@ export default function LeaderboardPage() {
               {updatedAt
                 ? ` · updated ${new Date(updatedAt).toLocaleTimeString()}`
                 : ""}
+              {refreshing ? " · refreshing…" : " · auto 45s"}
             </p>
           </div>
         </div>

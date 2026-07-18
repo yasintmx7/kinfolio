@@ -570,14 +570,24 @@ export default function LeaderboardPage() {
                       {e.rank}
                     </td>
                     <td className="px-3 py-2.5">
-                      <div className="font-medium text-primary">
+                      <a
+                        href={`/market?tab=market&q=${encodeURIComponent(e.username)}&sellerName=${encodeURIComponent(e.username)}${e.userId ? `&seller=${encodeURIComponent(e.userId)}` : ""}`}
+                        className="font-medium text-primary hover:text-sky-hi hover:underline"
+                      >
                         {e.username}
-                      </div>
+                      </a>
                       <div className="font-mono text-[11px] text-muted">
-                        {e.userId ? `#${e.userId}` : ""}
+                        {e.userId ? <span>#{e.userId}</span> : null}
                         {e.guild ? (
                           <span className="ml-1 text-sky-hi">[{e.guild}]</span>
                         ) : null}
+                        {" · "}
+                        <a
+                          href={`/sellers/${encodeURIComponent(e.username)}`}
+                          className="text-sky-hi/80 hover:underline"
+                        >
+                          profile
+                        </a>
                       </div>
                     </td>
                     <td className="px-3 py-2.5 text-right font-mono tabular-nums font-semibold text-sky-hi">

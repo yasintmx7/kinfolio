@@ -40,9 +40,10 @@ export default function SettingsPage() {
 
   async function checkApis() {
     try {
-      const [health, price] = await Promise.all([
+      const [health, price, lb] = await Promise.all([
         fetch("/api/health").then((r) => r.json()),
         fetch("/api/price/kins").then((r) => r.json()),
+        fetch("/api/leaderboard?category=pvp&limit=3").then((r) => r.json()),
       ]);
       setApiStatus(
         JSON.stringify(
@@ -56,6 +57,15 @@ export default function SettingsPage() {
                   priceUsd: price.data?.priceUsd,
                 }
               : price.error,
+            leaderboard: lb.ok
+              ? {
+                  source: lb.source,
+                  count: lb.data?.count,
+                  total: lb.data?.total,
+                  sample: lb.data?.entries?.[0]?.username,
+                  authConfigured: lb.data?.authConfigured,
+                }
+              : lb.error,
           },
           null,
           2,
@@ -105,6 +115,21 @@ export default function SettingsPage() {
           Preferences stay in this browser. Export regularly.
         </p>
       </div>
+
+      <Card className="space-y-2">
+        <CardTitle>Data caps (read-only market)</CardTitle>
+        <ul className="list-disc space-y-1 pl-5 text-xs text-muted">
+          <li>Live open book is partial (~1–1.2k lots), not every listing.</li>
+          <li>Sold activity covers recent hours, not full history.</li>
+          <li>
+            Kill leaderboard uses public kintaramarket.xyz/api/lb (PvP + mob).
+          </li>
+          <li>Filters &amp; watchlists stay in this browser only.</li>
+        </ul>
+        <p className="text-[11px] text-muted">
+          Run API check below to confirm market + leaderboard health.
+        </p>
+      </Card>
 
       <Card className="space-y-3">
         <CardTitle>Accounting</CardTitle>

@@ -167,6 +167,9 @@ export default function DashboardPage() {
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Link href="/market">
+            <Button variant="secondary">Market</Button>
+          </Link>
           <Link href="/calculator">
             <Button variant="secondary">Calculator</Button>
           </Link>

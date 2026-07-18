@@ -12,6 +12,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronDown, Lock, RefreshCw, SlidersHorizontal, Star, X } from "lucide-react";
 import { ItemIcon } from "@/components/items/item-icon";
 import { SellerAvatar } from "@/components/sellers/seller-avatar";
+import { Card, CardTitle } from "@/components/ui/card";
 import {
   useMarketHub,
   type MarketBoardStats,
@@ -44,6 +45,12 @@ import {
   type CostVsFloor,
 } from "@/lib/market/cost-vs-floor";
 import { getWatchlist, toggleWatch } from "@/lib/market/watchlist";
+import {
+  getWatchedSellers,
+  toggleSellerWatch,
+  type WatchedSeller,
+} from "@/lib/market/seller-watch";
+import { getMarketPrefs, setMarketPrefs } from "@/lib/market/market-prefs";
 import { STATIC_CATALOG } from "@/data/static-catalog";
 import {
   humanizeItemType,
@@ -372,32 +379,76 @@ function MarketHubInner() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   /** Extra listings from full-book username/item search (KM open book). */
   const [searchHits, setSearchHits] = useState<RecentSale[]>([]);
+  const [searchSellers, setSearchSellers] = useState<
+    { sellerName: string; count: number }[]
+  >([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchNote, setSearchNote] = useState<string | null>(null);
+  const [watchedSellers, setWatchedSellersState] = useState<WatchedSeller[]>(
+    [],
+  );
+  const [prefsReady, setPrefsReady] = useState(false);
 
   useEffect(() => {
     setWatch(getWatchlist());
+    setWatchedSellersState(getWatchedSellers());
+    const prefs = getMarketPrefs();
+    if (prefs.currencyFilter) setCurrencyFilter(prefs.currencyFilter);
+    if (prefs.sortFilter) setSortFilter(prefs.sortFilter);
+    if (typeof prefs.hideLocked === "boolean") setHideLocked(prefs.hideLocked);
+    if (prefs.categoryFilter) {
+      setCategoryFilter(prefs.categoryFilter as CategoryFilter);
+    }
+    if (prefs.browseSort) setBrowseSort(prefs.browseSort);
+    setPrefsReady(true);
   }, []);
+
+  // Persist filters after hydrate
+  useEffect(() => {
+    if (!prefsReady) return;
+    setMarketPrefs({
+      currencyFilter,
+      sortFilter,
+      hideLocked,
+      categoryFilter,
+      browseSort,
+    });
+  }, [
+    prefsReady,
+    currencyFilter,
+    sortFilter,
+    hideLocked,
+    categoryFilter,
+    browseSort,
+  ]);
 
   // Full open-book search when typing a query (hub only has ~cheap subset)
   useEffect(() => {
     const query = q.trim();
     if (tab !== "market" || query.length < 2) {
       setSearchHits([]);
+      setSearchSellers([]);
       setSearchNote(null);
       setSearchLoading(false);
       return;
     }
     let cancelled = false;
+    const controller = new AbortController();
     const t = window.setTimeout(() => {
       setSearchLoading(true);
       fetch(`/api/market/search?q=${encodeURIComponent(query)}&limit=200`, {
         cache: "no-store",
+        signal: controller.signal,
       })
         .then(async (res) => {
           const body = (await res.json()) as {
             ok?: boolean;
-            data?: { listings?: RecentSale[]; note?: string; count?: number };
+            data?: {
+              listings?: RecentSale[];
+              sellers?: { sellerName: string; count: number }[];
+              note?: string;
+              count?: number;
+            };
           };
           if (!res.ok || !body.ok) {
             throw new Error("search failed");
@@ -407,13 +458,15 @@ function MarketHubInner() {
         .then((data) => {
           if (cancelled) return;
           setSearchHits(data?.listings ?? []);
+          setSearchSellers(data?.sellers ?? []);
           setSearchNote(data?.note ?? null);
         })
-        .catch(() => {
-          if (!cancelled) {
-            setSearchHits([]);
-            setSearchNote(null);
-          }
+        .catch((err: unknown) => {
+          if (cancelled) return;
+          if (err instanceof DOMException && err.name === "AbortError") return;
+          setSearchHits([]);
+          setSearchSellers([]);
+          setSearchNote(null);
         })
         .finally(() => {
           if (!cancelled) setSearchLoading(false);
@@ -421,6 +474,7 @@ function MarketHubInner() {
     }, 280);
     return () => {
       cancelled = true;
+      controller.abort();
       window.clearTimeout(t);
     };
   }, [q, tab]);
@@ -440,11 +494,13 @@ function MarketHubInner() {
     }
   }, [rawTab, router, searchParams]);
 
-  // Shareable deep links: ?item=gold · ?seller= · ?sellerName=
+  // Shareable deep links: ?item=gold · ?seller= · ?sellerName= · ?q=
   useEffect(() => {
     const item = searchParams.get("item");
     const seller = searchParams.get("seller");
     const sellerName = searchParams.get("sellerName");
+    const qParam = searchParams.get("q");
+    if (qParam != null && qParam !== "") setQ(qParam);
     if (item) {
       setItemFocus(item);
       setSellerFocus(null);
@@ -738,8 +794,9 @@ function MarketHubInner() {
     // Sold rows often only have wallet
     if (id && wallet && wallet === id) return true;
     if (id && sellerField && sellerField === id) return true;
-    if (name) {
+    if (name && !name.startsWith("#")) {
       const n = (s.sellerName ?? s.seller ?? "").trim().toLowerCase();
+      // Exact name for focused seller sheet (not reverse substring)
       if (n && n === name) return true;
       if (wallet && shortWallet(wallet)?.toLowerCase() === name) return true;
     }
@@ -836,18 +893,29 @@ function MarketHubInner() {
     });
     if (display === "Seller" && !id) return;
     setItemFocus(null);
-    const sellerName =
-      name ?? (row.sellerId != null ? `#${row.sellerId}` : null);
+    // Real name only for sellerName query — never #id or wallet (breaks KM name lookup)
     setSellerFocus({
       sellerId: id,
-      // Real name or #id only — never store a wallet string as the name
-      sellerName,
+      sellerName: name,
     });
     replaceMarketQuery({
       tab: tab || "market",
       item: null,
       seller: id,
-      sellerName: sellerName,
+      sellerName: name,
+    });
+  }
+
+  function openSellerByName(name: string, sellerId?: string | null) {
+    const n = sanitizePersonName(name) ?? name.trim();
+    if (!n) return;
+    setItemFocus(null);
+    setSellerFocus({ sellerId: sellerId ?? null, sellerName: n });
+    replaceMarketQuery({
+      tab: "market",
+      item: null,
+      seller: sellerId ?? null,
+      sellerName: n,
     });
   }
 
@@ -867,6 +935,15 @@ function MarketHubInner() {
     push(next.includes(id) ? "Watching" : "Removed", "ok");
   }
 
+  function onWatchSeller(name: string, sellerId?: string | null) {
+    const n = sanitizePersonName(name) ?? name.trim();
+    if (!n) return;
+    const next = toggleSellerWatch(n, sellerId);
+    setWatchedSellersState(next);
+    const on = next.some((s) => s.name.toLowerCase() === n.toLowerCase());
+    push(on ? `Watching ${n}` : `Unwatched ${n}`, "ok");
+  }
+
   const advancedActive = categoryFilter !== "all" || sortFilter === "qty";
 
   const pageTitle =
@@ -878,6 +955,12 @@ function MarketHubInner() {
 
   return (
     <div className="space-y-3">
+      <p className="px-0.5 text-[11px] leading-relaxed text-muted/80">
+        Live book is a partial open market (~1–1.2k lots, not every listing).
+        Sold history covers recent hours. Username search also scans the full
+        kintaramarket open dump.
+      </p>
+
       {/* Compact pro toolbar */}
       <header className="card-quiet flex flex-wrap items-center gap-2.5 rounded-2xl px-3 py-2.5 sm:gap-3 sm:px-4">
         <div className="flex min-w-0 items-center gap-2">
@@ -965,15 +1048,51 @@ function MarketHubInner() {
             className="field min-h-10 flex-1"
           />
           {tab === "market" && q.trim().length >= 2 && (
-            <p className="px-1 text-[11px] text-muted sm:order-last sm:basis-full">
-              {searchLoading
-                ? "Searching full open book for seller/item…"
-                : searchNote
-                  ? searchNote
-                  : listingRows.length
-                    ? `${listingRows.length} match${listingRows.length === 1 ? "" : "es"} (live book + full search)`
-                    : "No matches in live book or open listings"}
-            </p>
+            <div className="space-y-2 px-1 sm:order-last sm:basis-full">
+              <p className="text-[11px] text-muted">
+                {searchLoading
+                  ? "Searching full open book for seller/item…"
+                  : searchNote
+                    ? searchNote
+                    : listingRows.length
+                      ? `${listingRows.length} match${listingRows.length === 1 ? "" : "es"} (live book + full search)`
+                      : "No matches in live book or open listings"}
+              </p>
+              {searchSellers.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {searchSellers.slice(0, 12).map((s) => (
+                    <div
+                      key={s.sellerName}
+                      className="inline-flex items-center gap-1 rounded-xl border border-border/50 bg-surface-2/80 pl-2 pr-1 py-1"
+                    >
+                      <button
+                        type="button"
+                        className="text-xs font-medium text-sky-hi hover:underline"
+                        onClick={() => openSellerByName(s.sellerName)}
+                      >
+                        {s.sellerName}
+                        <span className="ml-1 font-mono text-[10px] text-muted">
+                          ×{s.count}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-lg px-1.5 py-0.5 text-[10px] text-muted hover:bg-sky/15 hover:text-sky-hi"
+                        onClick={() => onWatchSeller(s.sellerName)}
+                      >
+                        ★
+                      </button>
+                      <a
+                        href={`/sellers/${encodeURIComponent(s.sellerName)}`}
+                        className="rounded-lg px-1.5 py-0.5 text-[10px] text-muted hover:bg-sky/15 hover:text-sky-hi"
+                      >
+                        Profile
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
           {(tab === "floors" || tab === "watch") && (
             <div className="flex flex-wrap items-center gap-1.5">
@@ -1207,6 +1326,31 @@ function MarketHubInner() {
         </section>
       )}
 
+      {tab === "watch" && watchedSellers.length > 0 && (
+        <Card className="space-y-2">
+          <CardTitle>Watched sellers</CardTitle>
+          <ul className="flex flex-wrap gap-2">
+            {watchedSellers.map((s) => (
+              <li key={s.name} className="inline-flex items-center gap-1">
+                <a
+                  href={`/sellers/${encodeURIComponent(s.name)}`}
+                  className="rounded-lg bg-raised px-2.5 py-1.5 text-xs font-medium text-sky-hi hover:bg-sky/15"
+                >
+                  {s.name}
+                </a>
+                <button
+                  type="button"
+                  className="rounded-lg px-1.5 py-1 text-[10px] text-muted hover:text-loss"
+                  onClick={() => onWatchSeller(s.name, s.sellerId)}
+                >
+                  ✕
+                </button>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+
       {(tab === "floors" || tab === "watch") && (
         <ItemBrowseBoard
           rows={browseItems}
@@ -1219,7 +1363,9 @@ function MarketHubInner() {
           onWatch={onWatch}
           empty={
             tab === "watch"
-              ? "No watched items yet. Star an item from Market or All items."
+              ? watchedSellers.length
+                ? "No watched items yet. Star items from Market, or open a watched seller."
+                : "No watched items yet. Star an item from Market or All items."
               : "No items match. Try clearing search or category."
           }
         />

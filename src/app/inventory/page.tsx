@@ -245,12 +245,20 @@ export default function InventoryPage() {
                 <div className="font-mono text-sm tabular-nums">
                   qty {pos.quantity}
                 </div>
-                <Link
-                  href={`/market?tab=floors&item=${encodeURIComponent(marketType)}`}
-                  className="mt-1 inline-block text-[11px] font-medium text-sky underline-offset-2 hover:underline"
-                >
-                  Market list →
-                </Link>
+                <div className="mt-1 flex flex-col items-end gap-0.5">
+                  <Link
+                    href={`/market?tab=market&item=${encodeURIComponent(marketType)}`}
+                    className="text-[11px] font-medium text-sky underline-offset-2 hover:underline"
+                  >
+                    Live book →
+                  </Link>
+                  <Link
+                    href={`/market?tab=floors&item=${encodeURIComponent(marketType)}`}
+                    className="text-[11px] font-medium text-muted underline-offset-2 hover:text-sky hover:underline"
+                  >
+                    All floors →
+                  </Link>
+                </div>
               </div>
             </div>
 

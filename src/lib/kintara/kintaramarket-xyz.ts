@@ -298,17 +298,26 @@ export async function searchOpenListings(
   });
 }
 
-/** Filter open book by seller name (partial) or exact id string. */
+/**
+ * Filter open book by seller name for a focused profile.
+ * Exact match preferred; one-way prefix only when query is short (typeahead).
+ * Never use reverse includes (would pull "Alex" into "Alexander").
+ */
 export async function fetchListingsForSellerName(
   sellerName: string,
-  options?: { kinsUsd?: number },
+  options?: { kinsUsd?: number; partial?: boolean },
 ): Promise<MarketActivityRow[]> {
   const name = sellerName.trim().toLowerCase();
-  if (!name) return [];
+  if (!name || name.startsWith("#")) return [];
   const rows = await fetchOpenListings({ limit: 3000 });
+  const partial = Boolean(options?.partial);
   const hit = rows.filter((r) => {
     const s = (r.sellerName ?? "").trim().toLowerCase();
-    return s === name || s.includes(name) || name.includes(s);
+    if (!s) return false;
+    if (s === name) return true;
+    // Typeahead only: listing name starts with / contains query — not reverse
+    if (partial && name.length >= 2 && s.includes(name)) return true;
+    return false;
   });
   return openListingsToActivity(hit, {
     kinsUsd: options?.kinsUsd,

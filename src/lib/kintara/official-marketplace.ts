@@ -273,12 +273,10 @@ export function filterBookBySeller(
   return book
     .filter((r) => {
       if (id && r.sellerId != null && String(r.sellerId) === id) return true;
-      if (name) {
+      if (name && !name.startsWith("#")) {
         const n = (r.sellerName ?? "").trim().toLowerCase();
-        // Partial match — search often uses a prefix of the username
-        if (n && (n === name || n.includes(name) || name.includes(n))) {
-          return true;
-        }
+        // Exact only for seller inventory (search/typeahead uses openListingMatchesQuery)
+        if (n && n === name) return true;
       }
       // wallet-ish id matching name field is rare on official listings
       if (id && !/^\d+$/.test(id) && (r.sellerName ?? "").trim() === id) {

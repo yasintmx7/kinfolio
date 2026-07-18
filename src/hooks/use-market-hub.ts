@@ -127,10 +127,12 @@ const empty: MarketHubData = {
  *  - CHEAP_FAST = full cheap book every few pulses (price ladder + delists)
  *  - CHEAP_DEEP = rare deep expand
  */
+// Full book includes official enrich (locks live on kintara.com reservedBy)
 const CHEAP_FAST_URL =
-  "/api/market/activity?limit=1000&pages=6&gold=1&sort=cheap";
+  "/api/market/activity?limit=1200&pages=8&gold=1&sort=cheap";
 const CHEAP_DEEP_URL =
   "/api/market/activity?limit=2500&pages=12&gold=1&sort=cheap";
+// Pulse stays km-only for speed; lock flags preserved client-side
 const NEW_URL = "/api/market/activity?limit=250&pages=3&gold=1&sort=new&km=1";
 const PULSE_NEW_URL =
   "/api/market/activity?limit=150&pages=1&gold=1&sort=new&km=1";
@@ -143,6 +145,22 @@ function bestSellerName(
   b: string | null | undefined,
 ): string | null {
   return sanitizePersonName(a) ?? sanitizePersonName(b);
+}
+
+function rowLooksLocked(r: {
+  reserved?: boolean;
+  reservedUntilMs?: number | null;
+  buyerId?: string | null;
+}): boolean {
+  if (r.reserved) return true;
+  if (r.buyerId != null && String(r.buyerId).trim() !== "") return true;
+  if (
+    typeof r.reservedUntilMs === "number" &&
+    r.reservedUntilMs > Date.now()
+  ) {
+    return true;
+  }
+  return false;
 }
 
 function mergeListingFeeds(
@@ -165,7 +183,12 @@ function mergeListingFeeds(
     const nextTs = Date.parse(row.timestamp) || 0;
     const base = nextTs >= prevTs ? { ...prev, ...row } : { ...row, ...prev };
     const name = bestSellerName(row.sellerName, prev.sellerName);
-    const reserved = Boolean(prev.reserved || row.reserved);
+    const reserved = Boolean(
+      prev.reserved ||
+        row.reserved ||
+        rowLooksLocked(prev) ||
+        rowLooksLocked(row),
+    );
     const reservedUntilMs =
       Math.max(prev.reservedUntilMs ?? 0, row.reservedUntilMs ?? 0) || null;
     map.set(id, {
@@ -180,6 +203,42 @@ function mergeListingFeeds(
     });
   }
   return [...map.values()];
+}
+
+/** Carry lock flags from previous snapshot when a refresh omits reservedBy. */
+function preserveLockState(
+  prev: RecentSale[],
+  next: RecentSale[],
+): RecentSale[] {
+  if (!prev.length || !next.length) return next;
+  const prevById = new Map(prev.map((r) => [String(r.id), r]));
+  return next.map((row) => {
+    const old = prevById.get(String(row.id));
+    if (!old || !rowLooksLocked(old)) return row;
+    if (rowLooksLocked(row)) {
+      return {
+        ...row,
+        reserved: true,
+        buyerId: row.buyerId ?? old.buyerId ?? null,
+        reservedUntilMs:
+          Math.max(row.reservedUntilMs ?? 0, old.reservedUntilMs ?? 0) ||
+          row.reservedUntilMs ||
+          old.reservedUntilMs ||
+          null,
+      };
+    }
+    // Refresh lost lock metadata — keep prior lock until it expires / sells
+    const until = old.reservedUntilMs ?? null;
+    if (until != null && until > 0 && until < Date.now()) {
+      return row; // lock expired
+    }
+    return {
+      ...row,
+      reserved: true,
+      buyerId: old.buyerId ?? row.buyerId ?? null,
+      reservedUntilMs: until,
+    };
+  });
 }
 
 function actFromSettled(
@@ -493,6 +552,9 @@ export function useMarketHub(pollMs = 1_500) {
               newRows,
             )
           : prev.sales;
+
+        // Keep lock state across KM refreshes that omit reservedBy
+        nextSalesRaw = preserveLockState(prev.sales, nextSalesRaw);
 
         // Instant delist: drop anything already in sold / book-delta
         nextSalesRaw = removeSoldFromOpenBook(nextSalesRaw, [

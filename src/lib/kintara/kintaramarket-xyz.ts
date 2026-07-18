@@ -240,6 +240,82 @@ function reservedBuyerId(v: unknown): string | null {
   return null;
 }
 
+function rowIsLocked(r: {
+  reserved?: boolean;
+  reservedUntilMs?: number | null;
+  buyerId?: string | null;
+}): boolean {
+  if (r.reserved) return true;
+  if (r.buyerId != null && String(r.buyerId).trim() !== "") return true;
+  if (
+    typeof r.reservedUntilMs === "number" &&
+    r.reservedUntilMs > Date.now()
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function unitPriceKey(r: { unitUsd?: string | null }): number {
+  const n = r.unitUsd != null ? Number(r.unitUsd) : NaN;
+  return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
+}
+
+/**
+ * Cap rows without dropping reserved/locked lots.
+ * Old path sorted open-first then sliced → all locks fell off the end.
+ */
+export function selectActivityRows(
+  rows: MarketActivityRow[],
+  max: number,
+  sort: "cheap" | "new" = "cheap",
+): MarketActivityRow[] {
+  const limit = Math.min(Math.max(max, 1), 4000);
+  if (rows.length <= limit) {
+    return sortActivityRows(rows, sort);
+  }
+
+  const locked = rows.filter(rowIsLocked);
+  const open = rows.filter((r) => !rowIsLocked(r));
+
+  // Keep every lock that fits; fill remainder with cheapest/newest open
+  const locksSorted =
+    sort === "new"
+      ? [...locked].sort(
+          (a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp),
+        )
+      : [...locked].sort((a, b) => unitPriceKey(a) - unitPriceKey(b));
+  const openSorted =
+    sort === "new"
+      ? [...open].sort(
+          (a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp),
+        )
+      : [...open].sort((a, b) => unitPriceKey(a) - unitPriceKey(b));
+
+  const lockKeep = locksSorted.slice(0, limit);
+  const openKeep = openSorted.slice(0, Math.max(0, limit - lockKeep.length));
+  return sortActivityRows([...openKeep, ...lockKeep], sort);
+}
+
+export function sortActivityRows(
+  rows: MarketActivityRow[],
+  sort: "cheap" | "new" = "cheap",
+): MarketActivityRow[] {
+  return [...rows].sort((a, b) => {
+    if (sort === "new") {
+      return Date.parse(b.timestamp) - Date.parse(a.timestamp);
+    }
+    // cheap: open first (locks still present), then unit $
+    const la = rowIsLocked(a) ? 1 : 0;
+    const lb = rowIsLocked(b) ? 1 : 0;
+    if (la !== lb) return la - lb;
+    const ua = unitPriceKey(a);
+    const ub = unitPriceKey(b);
+    if (ua !== ub) return ua - ub;
+    return Date.parse(b.timestamp) - Date.parse(a.timestamp);
+  });
+}
+
 /** Map kintaramarket open listings → market hub activity rows. */
 export function openListingsToActivity(
   rows: OpenMarketListing[],
@@ -272,8 +348,10 @@ export function openListingsToActivity(
           ? d(unitKins).mul(qty).toFixed()
           : null;
     const tsMs = r.lastSeen ?? r.firstSeen ?? Date.now();
+    const buyerId = reservedBuyerId(r.reservedBy);
     const reserved =
       r.reservedBy != null ||
+      buyerId != null ||
       (typeof r.reservedUntilMs === "number" && r.reservedUntilMs > Date.now());
 
     return {
@@ -291,7 +369,7 @@ export function openListingsToActivity(
       timestamp: new Date(tsMs).toISOString(),
       sellerName: sanitizePersonName(r.sellerName),
       sellerId: null,
-      buyerId: reservedBuyerId(r.reservedBy),
+      buyerId,
       buyerName: null,
       reserved,
       reservedUntilMs:
@@ -300,21 +378,7 @@ export function openListingsToActivity(
     };
   });
 
-  mapped.sort((a, b) => {
-    if (sort === "new") {
-      return Date.parse(b.timestamp) - Date.parse(a.timestamp);
-    }
-    // cheap: open first, then unit $
-    const ra = a.reserved ? 1 : 0;
-    const rb = b.reserved ? 1 : 0;
-    if (ra !== rb) return ra - rb;
-    const ua = a.unitUsd != null ? Number(a.unitUsd) : Number.POSITIVE_INFINITY;
-    const ub = b.unitUsd != null ? Number(b.unitUsd) : Number.POSITIVE_INFINITY;
-    if (Number.isFinite(ua) && Number.isFinite(ub) && ua !== ub) return ua - ub;
-    return Date.parse(b.timestamp) - Date.parse(a.timestamp);
-  });
-
-  return mapped.slice(0, max);
+  return selectActivityRows(mapped, max, sort);
 }
 
 export async function fetchMarketActivityFeed(options?: {

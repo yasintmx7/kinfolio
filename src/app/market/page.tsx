@@ -149,6 +149,7 @@ function parseTab(raw: string | null): Tab {
 
 function isLocked(r: RecentSale): boolean {
   if (r.reserved) return true;
+  if (r.buyerId != null && String(r.buyerId).trim() !== "") return true;
   if (r.reservedUntilMs != null && r.reservedUntilMs > Date.now()) return true;
   return false;
 }

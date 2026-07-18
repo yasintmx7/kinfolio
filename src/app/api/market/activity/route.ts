@@ -2,6 +2,7 @@ import { fail, ok } from "@/lib/api/response";
 import { fetchOfficialRecentActivity } from "@/lib/kintara/official-marketplace";
 import {
   fetchMarketActivityFeed,
+  selectActivityRows,
   type MarketActivityRow,
 } from "@/lib/kintara/kintaramarket-xyz";
 import { resolveKinsUsd } from "@/lib/prices/resolve-kins-usd";
@@ -35,6 +36,7 @@ function toClientRow(r: MarketActivityRow): ActivityOut {
 /**
  * Merge official rows into KM rows by listing id.
  * Prefer official for sellerId / fresher lock state when present.
+ * Never drop a lock flag once either side has it.
  */
 function mergeById(
   primary: MarketActivityRow[],
@@ -51,17 +53,19 @@ function mergeById(
       map.set(id, row);
       continue;
     }
+    const reserved = Boolean(row.reserved || prev.reserved || row.buyerId || prev.buyerId);
+    const reservedUntilMs =
+      Math.max(row.reservedUntilMs ?? 0, prev.reservedUntilMs ?? 0) || null;
     map.set(id, {
       ...prev,
       ...row,
-      // Keep best-known people fields
       sellerName: row.sellerName ?? prev.sellerName,
       sellerId: row.sellerId ?? prev.sellerId,
       buyerId: row.buyerId ?? prev.buyerId,
       buyerName: row.buyerName ?? prev.buyerName,
-      reserved: Boolean(row.reserved || prev.reserved),
+      reserved,
       reservedUntilMs:
-        Math.max(row.reservedUntilMs ?? 0, prev.reservedUntilMs ?? 0) || null,
+        reservedUntilMs && reservedUntilMs > 0 ? reservedUntilMs : null,
     });
   }
   return [...map.values()];
@@ -147,24 +151,8 @@ export async function GET(request: Request) {
         "No listings returned (kintaramarket empty and kintara.com rate-limited or down).";
     }
 
-    // Re-sort after merge
-    rows.sort((a, b) => {
-      if (sort === "new") {
-        return Date.parse(b.timestamp) - Date.parse(a.timestamp);
-      }
-      const ra = a.reserved ? 1 : 0;
-      const rb = b.reserved ? 1 : 0;
-      if (ra !== rb) return ra - rb;
-      const ua =
-        a.unitUsd != null ? Number(a.unitUsd) : Number.POSITIVE_INFINITY;
-      const ub =
-        b.unitUsd != null ? Number(b.unitUsd) : Number.POSITIVE_INFINITY;
-      if (Number.isFinite(ua) && Number.isFinite(ub) && ua !== ub) {
-        return ua - ub;
-      }
-      return Date.parse(b.timestamp) - Date.parse(a.timestamp);
-    });
-    rows = rows.slice(0, want);
+    // Cap without dropping reserved/locked (open-first slice was wiping locks)
+    rows = selectActivityRows(rows, want, sort);
 
     return ok(
       {

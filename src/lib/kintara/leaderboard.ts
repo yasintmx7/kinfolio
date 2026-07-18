@@ -143,19 +143,6 @@ export function categoryFallbacks(primary: string): string[] {
   return map[primary] ?? [primary];
 }
 
-const kmRowSchema = z.object({
-  id: z.union([z.number(), z.string()]),
-  name: z.string(),
-  value: z.number(),
-  d: z.number().optional(),
-});
-
-const kmPayloadSchema = z.object({
-  ts: z.number().optional(),
-  prevTs: z.number().optional(),
-  rows: z.array(kmRowSchema),
-});
-
 type KmBoard = {
   ts: number | null;
   prevTs: number | null;
@@ -165,13 +152,40 @@ type KmBoard = {
   >;
 };
 
+function coerceNum(v: unknown): number | null {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string" && v.trim() && Number.isFinite(Number(v))) {
+    return Number(v);
+  }
+  return null;
+}
+
+/** Parse one KM row; skip bad rows instead of failing the whole board. */
+function parseKmRow(
+  raw: unknown,
+): { id: string; name: string; value: number; d: number } | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const id = o.id != null ? String(o.id).trim() : "";
+  const name =
+    typeof o.name === "string"
+      ? o.name.trim()
+      : typeof o.username === "string"
+        ? o.username.trim()
+        : "";
+  const value = coerceNum(o.value);
+  if (!id || !name || value == null) return null;
+  const d = coerceNum(o.d) ?? 0;
+  return { id, name, value, d };
+}
+
 async function fetchKmLb(kind: "pvp" | "mob"): Promise<KmBoard> {
-  const cacheKey = `km:lb:${kind}:v1`;
+  const cacheKey = `km:lb:${kind}:v2`;
   const cached = getCached<KmBoard>(cacheKey);
   if (cached && !cached.stale) return cached.value;
 
   const res = await fetchWithTimeout(`${KM_BASE}/api/lb/${kind}`, {
-    timeoutMs: 15000,
+    timeoutMs: 20000,
     headers: {
       Accept: "application/json",
       "User-Agent":
@@ -182,28 +196,35 @@ async function fetchKmLb(kind: "pvp" | "mob"): Promise<KmBoard> {
     throw new Error(`kintaramarket lb/${kind} failed: ${res.status}`);
   }
   const json: unknown = await res.json();
-  const parsed = kmPayloadSchema.safeParse(json);
-  if (!parsed.success) {
-    throw new Error(`Unexpected kintaramarket lb/${kind} shape`);
+  if (!json || typeof json !== "object") {
+    throw new Error(`Unexpected kintaramarket lb/${kind} shape (not object)`);
+  }
+  const root = json as Record<string, unknown>;
+  const rowsRaw = Array.isArray(root.rows)
+    ? root.rows
+    : Array.isArray(json)
+      ? json
+      : null;
+  if (!rowsRaw) {
+    throw new Error(`Unexpected kintaramarket lb/${kind} shape (no rows)`);
   }
 
   const byId = new Map<
     string,
     { id: string; name: string; value: number; d: number }
   >();
-  for (const r of parsed.data.rows) {
-    const id = String(r.id);
-    byId.set(id, {
-      id,
-      name: r.name.trim(),
-      value: r.value,
-      d: r.d ?? 0,
-    });
+  for (const raw of rowsRaw) {
+    const r = parseKmRow(raw);
+    if (!r) continue;
+    byId.set(r.id, r);
+  }
+  if (byId.size === 0) {
+    throw new Error(`kintaramarket lb/${kind} returned 0 valid rows`);
   }
 
   const board: KmBoard = {
-    ts: parsed.data.ts ?? null,
-    prevTs: parsed.data.prevTs ?? null,
+    ts: coerceNum(root.ts),
+    prevTs: coerceNum(root.prevTs),
     byId,
   };
   setCache(cacheKey, board, 60);
@@ -449,8 +470,20 @@ export async function fetchMarketLeaderboard(options: {
     mobSettled.status === "fulfilled" ? mobSettled.value : null;
 
   if (!pvp && !mob) {
+    const parts: string[] = [];
+    if (needPvp && pvpSettled.status === "rejected") {
+      parts.push(
+        `lb/pvp: ${pvpSettled.reason instanceof Error ? pvpSettled.reason.message : String(pvpSettled.reason)}`,
+      );
+    }
+    if (needMob && mobSettled.status === "rejected") {
+      parts.push(
+        `lb/mob: ${mobSettled.reason instanceof Error ? mobSettled.reason.message : String(mobSettled.reason)}`,
+      );
+    }
+    const detail = parts.join(" · ") || "unknown error";
     const err = new Error(
-      "kintaramarket leaderboard unavailable (lb/pvp and lb/mob failed)",
+      `kintaramarket leaderboard unavailable (${detail})`,
     ) as Error & { lb?: LeaderboardFetchError };
     err.lb = {
       code: "UPSTREAM",

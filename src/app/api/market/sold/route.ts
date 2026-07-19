@@ -6,9 +6,14 @@ import { marketTypeToPortfolioId } from "@/lib/kintara/item-type-map";
 import { STATIC_CATALOG } from "@/data/static-catalog";
 import { normalizeListingPrice } from "@/lib/market/listing-price";
 import {
+  isSolanaAddress,
   officialListingId,
   sanitizePersonName,
 } from "@/lib/market/seller-label";
+import {
+  findKinTradeMatch,
+  type KinTradeMatchRow,
+} from "@/lib/market/sold-buyer-match";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -42,13 +47,19 @@ type SoldRow = {
   portfolioItemId: string | null;
 };
 
+function walletOrNull(v: string | null | undefined): string | null {
+  if (v == null) return null;
+  const t = v.trim();
+  if (!t) return null;
+  return isSolanaAddress(t) ? t : null;
+}
+
 /**
  * Sold / Activity feed — longer history.
  *
- * Primary: kintaramarket.xyz/api/sales?limit=N  (up to ~500, hours of sales,
- * always has itemType/qty/sellerName).
- * Enrich: kintrade signatures for Solscan links when we can match a sale.
- * Fallback: kintrade-only if kintaramarket is down (~50 max).
+ * Primary: kintaramarket.xyz/api/sales?limit=N  (seller name, item, qty, $).
+ * Enrich: kintrade for buyer wallet, listingId, Solscan.
+ * Note: neither feed reliably exposes buyer username / game id.
  */
 export async function GET(request: Request) {
   const sp = new URL(request.url).searchParams;
@@ -63,28 +74,10 @@ export async function GET(request: Request) {
       fetchRecentSales({ limit: 200, requireItem: false }),
     ]);
 
-    const km =
-      kmSettled.status === "fulfilled" ? kmSettled.value : [];
-    const kt =
-      ktSettled.status === "fulfilled" ? ktSettled.value : [];
+    const km = kmSettled.status === "fulfilled" ? kmSettled.value : [];
+    const kt = ktSettled.status === "fulfilled" ? ktSettled.value : [];
 
-    // Index kintrade by rough key for solscan attach
-    const ktBySig: {
-      ts: number;
-      itemType: string;
-      qty: string;
-      usd: string | null;
-      signature?: string;
-      buyer?: string;
-      seller?: string;
-      listingId?: string;
-      hasItem: boolean;
-      name: string;
-      unitUsd: string | null;
-      kinsTotal: string;
-      unitKins: string;
-      id: string;
-    }[] = kt.map((s) => ({
+    const ktBySig: KinTradeMatchRow[] = kt.map((s) => ({
       ts: Date.parse(s.timestamp),
       itemType: s.itemType,
       qty: s.quantity,
@@ -101,44 +94,6 @@ export async function GET(request: Request) {
       id: s.id,
     }));
 
-    function findTx(
-      tsMs: number,
-      itemType: string,
-      qty: number,
-      lotUsd: number | null,
-    ): (typeof ktBySig)[0] | null {
-      let best: (typeof ktBySig)[0] | null = null;
-      let bestDt = 20_000; // 20s window
-      for (const row of ktBySig) {
-        if (!row.signature) continue;
-        const dt = Math.abs(row.ts - tsMs);
-        if (dt > bestDt) continue;
-        if (row.hasItem) {
-          // Full kintrade row: require item + qty match
-          if (row.itemType !== itemType) continue;
-          if (Number(row.qty) !== qty) continue;
-          if (
-            lotUsd != null &&
-            row.usd != null &&
-            Math.abs(Number(row.usd) - lotUsd) > Math.max(0.02, lotUsd * 0.15)
-          ) {
-            continue;
-          }
-        } else {
-          // Incomplete kintrade (no item yet): only tight USD + time, avoid wrong tx
-          if (lotUsd == null || row.usd == null) continue;
-          if (
-            Math.abs(Number(row.usd) - lotUsd) > Math.max(0.01, lotUsd * 0.05)
-          ) {
-            continue;
-          }
-        }
-        best = row;
-        bestDt = dt;
-      }
-      return best;
-    }
-
     const sold: SoldRow[] = [];
 
     if (km.length > 0) {
@@ -150,8 +105,16 @@ export async function GET(request: Request) {
           currency: s.currency ?? "token",
         });
         const tsMs = s.ts;
-        const match = findTx(tsMs, s.itemType, qty, priced.lotUsd);
+        const match = findKinTradeMatch(
+          ktBySig,
+          tsMs,
+          s.itemType,
+          qty,
+          priced.lotUsd,
+        );
         const sellerName = sanitizePersonName(s.sellerName);
+        const buyerWallet = walletOrNull(match?.buyer);
+        const sellerWallet = walletOrNull(match?.seller);
 
         sold.push({
           id: match?.id ?? `km-sale-${s.ts}-${s.itemType}-${qty}`,
@@ -177,10 +140,11 @@ export async function GET(request: Request) {
           seller: sellerName,
           sellerName,
           sellerId: null,
+          // Public sales feeds do not include buyer username/id — wallet when matched
           buyerId: null,
           buyerName: null,
-          buyerWallet: match?.buyer ?? null,
-          sellerWallet: match?.seller ?? null,
+          buyerWallet,
+          sellerWallet,
           reserved: false,
           reservedUntilMs: null,
           itemDurability: null,
@@ -221,8 +185,8 @@ export async function GET(request: Request) {
           sellerId: null,
           buyerId: null,
           buyerName: null,
-          buyerWallet: s.buyer ?? null,
-          sellerWallet: s.seller ?? null,
+          buyerWallet: walletOrNull(s.buyer),
+          sellerWallet: walletOrNull(s.seller),
           reserved: false,
           reservedUntilMs: null,
           itemDurability: null,
@@ -237,6 +201,7 @@ export async function GET(request: Request) {
     }
 
     const sliced = sold.slice(0, want);
+    const withBuyer = sliced.filter((r) => r.buyerWallet || r.buyerId).length;
 
     return ok(
       {
@@ -244,19 +209,19 @@ export async function GET(request: Request) {
         count: sliced.length,
         note:
           km.length > 0
-            ? `Sold history up to ${want} (kintaramarket). Older than ~few hours may drop. Tx links when matched.`
-            : "Fallback: kintrade only (~50 recent). kintaramarket sales unavailable.",
+            ? `Sold history up to ${want} (kintaramarket). Buyer wallet/tx when matched (${withBuyer}/${sliced.length}). Name/#id when listing was locked before sale.`
+            : "Fallback: kintrade only (~50 recent). Buyer shown as wallet when present.",
       },
       {
-        source: km.length > 0 ? "kintaramarket.xyz+kintrade" : "kintrade",
+        source: km.length > 0 ? "kintaramarket+kintrade" : "kintrade",
         updatedAt: new Date().toISOString(),
-        cacheControl: "public, s-maxage=1, stale-while-revalidate=3",
+        cacheControl: "public, s-maxage=3, stale-while-revalidate=8",
       },
     );
   } catch (e) {
     return fail(
-      "SOLD_ERROR",
-      e instanceof Error ? e.message : "Failed to load sold activity",
+      "MARKET_SOLD_ERROR",
+      e instanceof Error ? e.message : "Failed to load sold feed",
       { status: 502, retryable: true },
     );
   }

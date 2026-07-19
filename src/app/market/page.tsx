@@ -207,16 +207,42 @@ function shortWallet(w: string | null | undefined): string | null {
   return shortWalletShared(w);
 }
 
-/** Best buyer label: locker name → #id → short wallet (never full address) */
+/**
+ * Who bought: username · #gameId · short wallet (never full address).
+ * Sources: last locker on listing, then chain buyer wallet.
+ */
 function buyerLabel(r: RecentSale): string | null {
-  const locker = lockerLabel(r);
-  if (locker) return locker;
-  if (r.buyerId != null && String(r.buyerId).trim()) {
-    return `#${String(r.buyerId).trim()}`;
-  }
-  if (isSolanaAddress(r.buyerName)) return shortWallet(r.buyerName);
-  if (sanitizePersonName(r.buyerName)) return sanitizePersonName(r.buyerName);
-  return shortWallet(r.buyerWallet);
+  const name = sanitizePersonName(r.buyerName);
+  const id =
+    r.buyerId != null && String(r.buyerId).trim() !== ""
+      ? String(r.buyerId).trim()
+      : null;
+  const wallet =
+    shortWallet(r.buyerWallet) ??
+    (isSolanaAddress(r.buyerName) ? shortWallet(r.buyerName) : null);
+
+  if (name && id) return `${name} · #${id}`;
+  if (name) return name;
+  if (id) return `#${id}`;
+  return wallet;
+}
+
+/** Structured buyer bits for richer sold UI */
+function buyerParts(r: RecentSale): {
+  name: string | null;
+  id: string | null;
+  wallet: string | null;
+  label: string | null;
+} {
+  const name = sanitizePersonName(r.buyerName);
+  const id =
+    r.buyerId != null && String(r.buyerId).trim() !== ""
+      ? String(r.buyerId).trim()
+      : null;
+  const wallet =
+    shortWallet(r.buyerWallet) ??
+    (isSolanaAddress(r.buyerName) ? shortWallet(r.buyerName) : null);
+  return { name, id, wallet, label: buyerLabel(r) };
 }
 
 function sellerDisplay(r: RecentSale): string {
@@ -1592,7 +1618,7 @@ function SoldActivityCard({
     <div className="max-h-[min(52dvh,32rem)] divide-y divide-border/20 overflow-y-auto lg:max-h-[calc(100dvh-12rem)]">
       {rows.map((r) => {
         const seller = sellerDisplay(r);
-        const buyer = buyerLabel(r);
+        const buyer = buyerParts(r);
         const pending = isItemPending(r);
         const age = formatSoldAge(r.timestamp);
         const canOpenItem = !pending && r.itemType && r.itemType !== "unknown";
@@ -1638,28 +1664,55 @@ function SoldActivityCard({
                   </span>
                 </div>
               )}
-              <button
-                type="button"
-                onClick={() => onOpenSeller(r)}
-                className="mt-0.5 flex max-w-full items-center gap-1.5 text-left text-[12px] font-medium text-sky-hi underline decoration-sky/40 underline-offset-2 hover:bg-sky/10"
-              >
-                <SellerAvatar
-                  sellerId={r.sellerId ?? r.sellerWallet}
-                  sellerName={seller}
-                  size={18}
-                />
-                <span className="truncate text-[11px] font-medium">{seller}</span>
-              </button>
+              <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => onOpenSeller(r)}
+                  className="inline-flex max-w-full items-center gap-1 font-medium text-sky-hi underline decoration-sky/40 underline-offset-2 hover:bg-sky/10"
+                >
+                  <SellerAvatar
+                    sellerId={r.sellerId ?? r.sellerWallet}
+                    sellerName={seller}
+                    size={16}
+                  />
+                  <span className="truncate">
+                    sold by {seller}
+                    {r.sellerId && !seller.startsWith("#")
+                      ? ` · #${r.sellerId}`
+                      : ""}
+                  </span>
+                </button>
+                {buyer.label ? (
+                  <span
+                    className="inline-flex max-w-full items-center gap-1 text-forest-hi"
+                    title={
+                      buyer.id
+                        ? `Buyer id #${buyer.id}`
+                        : buyer.wallet
+                          ? `Buyer wallet ${r.buyerWallet ?? ""}`
+                          : undefined
+                    }
+                  >
+                    <SellerAvatar
+                      sellerId={buyer.id ?? r.buyerWallet}
+                      sellerName={buyer.name ?? buyer.label}
+                      size={16}
+                    />
+                    <span className="truncate font-medium">
+                      bought by{" "}
+                      <span className="font-mono tabular-nums">
+                        {buyer.label}
+                      </span>
+                    </span>
+                  </span>
+                ) : (
+                  <span className="text-muted/80">buyer unknown</span>
+                )}
+              </div>
               <div className="mt-0.5 text-[10px] text-muted">
-                sold · {new Date(r.timestamp).toLocaleTimeString()}
+                {new Date(r.timestamp).toLocaleTimeString()}
                 {age ? (
                   <span className="text-sky-hi/90"> · {age}</span>
-                ) : null}
-                {buyer ? (
-                  <span className="text-sky-hi">
-                    {" · buyer "}
-                    <span className="font-mono">{buyer}</span>
-                  </span>
                 ) : null}
                 {r.solscanUrl ? (
                   <>
@@ -2492,10 +2545,12 @@ function SheetListingRow({
             Sold
             {buyerLabel(s) ? (
               <span className="font-medium text-sky-hi">
-                {" · buyer "}
+                {" · bought by "}
                 {buyerLabel(s)}
               </span>
-            ) : null}
+            ) : (
+              <span className="font-medium text-muted"> · buyer unknown</span>
+            )}
           </div>
         )}
         {locked && !sold && (

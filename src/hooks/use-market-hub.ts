@@ -433,7 +433,8 @@ function resolveLockerNames(
 /**
  * Attach seller username / item meta from known (past or present) listings.
  * Never overwrite sale qty/price with live listing (partial fills stay accurate).
- * Never copy reserved/locker state onto a sold row (open locks ≠ buyer of sale).
+ * Buyer: keep sale-native fields; fill gaps from last known locker (best "who bought"
+ * signal APIs give — KM sales have no buyer name/id, only kintrade wallet later).
  */
 function enrichSold(
   sold: RecentSale[],
@@ -443,8 +444,10 @@ function enrichSold(
 ): RecentSale[] {
   const candidates = filterSoldStillOpen(sold, openListings);
   return candidates.map((row) => {
-    const lid = officialListingId(row.listingId);
-    const hit = lid ? known.get(lid) : undefined;
+    const lid = officialListingId(row.listingId) ?? officialListingId(row.id);
+    const hit = lid
+      ? known.get(lid) ?? known.get(String(lid))
+      : undefined;
 
     if (!hit) {
       return scrubSoldSellerFields({
@@ -468,6 +471,12 @@ function enrichSold(
       sellerId: hit.sellerId ?? row.sellerId,
       sellerWallet: row.sellerWallet ?? hit.sellerWallet,
     });
+    // Last locker on the listing ≈ buyer (public APIs rarely expose buyer username)
+    const buyerId = row.buyerId ?? hit.buyerId ?? null;
+    const buyerName =
+      sanitizePersonName(row.buyerName) ??
+      sanitizePersonName(hit.buyerName) ??
+      null;
     return scrubSoldSellerFields({
       ...row,
       isSold: true,
@@ -476,7 +485,9 @@ function enrichSold(
       sellerId: people.sellerId,
       seller: people.seller,
       sellerWallet: people.sellerWallet,
-      // Do NOT pull open-book reservedBy as the sale buyer
+      buyerId,
+      buyerName,
+      buyerWallet: row.buyerWallet ?? hit.buyerWallet ?? null,
       name: itemName,
       itemType,
       reserved: false,
@@ -613,8 +624,20 @@ export function useMarketHub(pollMs = 1_500) {
           if (!sameList) {
             const map = new Map(knownListingsRef.current);
             for (const row of nextSales) {
-              map.set(String(row.id), row);
-              if (row.listingId) map.set(String(row.listingId), row);
+              // Keep last locker identity so sold enrichment can show "who bought"
+              const prevSnap =
+                map.get(String(row.id)) ??
+                (row.listingId ? map.get(String(row.listingId)) : undefined);
+              const snap: RecentSale = {
+                ...row,
+                buyerId: row.buyerId ?? prevSnap?.buyerId ?? null,
+                buyerName:
+                  sanitizePersonName(row.buyerName) ??
+                  sanitizePersonName(prevSnap?.buyerName) ??
+                  null,
+              };
+              map.set(String(row.id), snap);
+              if (row.listingId) map.set(String(row.listingId), snap);
             }
             if (map.size > 4000) {
               const entries = [...map.entries()].slice(-3000);
@@ -834,6 +857,9 @@ export function useMarketHub(pollMs = 1_500) {
                 a?.solscanUrl !== b?.solscanUrl ||
                 (a?.sellerName && a.sellerName !== b?.sellerName) ||
                 (a?.sellerId && a.sellerId !== b?.sellerId) ||
+                (a?.buyerId && a.buyerId !== b?.buyerId) ||
+                (a?.buyerName && a.buyerName !== b?.buyerName) ||
+                (a?.buyerWallet && a.buyerWallet !== b?.buyerWallet) ||
                 a?.listingId !== b?.listingId ||
                 a?.name !== b?.name
               ) {

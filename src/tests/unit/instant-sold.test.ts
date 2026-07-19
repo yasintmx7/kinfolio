@@ -71,6 +71,8 @@ describe("toInstantSold + mergeSoldFeeds", () => {
       solscanUrl: null,
       sellerName: "Alice",
       sellerId: "12",
+      buyerId: "55",
+      buyerName: "BuyerBob",
       isSold: false,
     });
     expect(sold.isSold).toBe(true);
@@ -78,6 +80,53 @@ describe("toInstantSold + mergeSoldFeeds", () => {
     expect(sold.listingId).toBe("991");
     expect(sold.name).toBe("Coal");
     expect(sold.sellerName).toBe("Alice");
+    // Last locker becomes buyer on sold row
+    expect(sold.buyerId).toBe("55");
+    expect(sold.buyerName).toBe("BuyerBob");
+  });
+
+  it("merge keeps book locker as buyer when chain has only wallet", () => {
+    const book = [
+      toInstantSold({
+        id: "200",
+        listingId: "200",
+        name: "Gold",
+        itemType: "gold",
+        quantity: "10",
+        unitKins: "0",
+        usdTotal: "1",
+        timestamp: "2026-01-01T00:00:10.000Z",
+        solscanUrl: null,
+        sellerName: "SellerSam",
+        buyerId: "77",
+        buyerName: "BuyerBea",
+      }),
+    ];
+    const chain = [
+      {
+        id: "sale-doc",
+        listingId: "200",
+        name: "Gold",
+        itemType: "gold",
+        quantity: "10",
+        unitKins: "0",
+        unitUsd: null,
+        usdTotal: "1",
+        timestamp: "2026-01-01T00:00:20.000Z",
+        solscanUrl: "https://solscan.io/tx/xyz",
+        sellerName: null,
+        buyerId: null,
+        buyerName: null,
+        buyerWallet: "7fauE6LpwpmMPjeqbcuJY6RM6WyJwEQrKPBiYxHMV3GH",
+        isSold: true as const,
+      },
+    ];
+    const merged = mergeSoldFeeds(book, chain, 10);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]?.buyerId).toBe("77");
+    expect(merged[0]?.buyerName).toBe("BuyerBea");
+    expect(merged[0]?.buyerWallet).toContain("7fau");
+    expect(merged[0]?.solscanUrl).toContain("solscan");
   });
 
   it("never stores full wallet as sellerName (instant sold)", () => {

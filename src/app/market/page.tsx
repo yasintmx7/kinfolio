@@ -9,7 +9,6 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useVirtualScroll } from "@/hooks/use-virtual-scroll";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ChevronDown,
@@ -1955,6 +1954,10 @@ const ListingRow = memo(function ListingRow({
         "list-row-cv grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 px-2.5 py-2.5 sm:gap-3 sm:px-3.5 sm:py-3",
         locked && mode === "listings" ? "row-locked" : "row-hover",
       )}
+      style={{
+        contentVisibility: "auto",
+        containIntrinsicSize: compact ? "auto 60px" : "auto 68px",
+      }}
     >
       <button
         type="button"
@@ -2070,12 +2073,6 @@ const ListingRow = memo(function ListingRow({
   );
 });
 
-/**
- * Threshold above which virtual scrolling kicks in.
- * Short lists render fully — no overhead for <80 rows.
- */
-const VIRTUAL_THRESHOLD = 80;
-
 function ListingList({
   rows,
   mode,
@@ -2095,17 +2092,6 @@ function ListingList({
   compact?: boolean;
   tall?: boolean;
 }) {
-  // Estimated row height: compact rows are slightly shorter (no extra locker line).
-  // Measured at py-2.5 (~10px) * 2 + 48px icon = ~68px normal, ~60px compact.
-  const rowHeightPx = compact ? 60 : 68;
-
-  const { containerRef, virtualRows, topSpacerPx, bottomSpacerPx } =
-    useVirtualScroll({
-      rowCount: rows.length,
-      rowHeightPx,
-      overscan: 6,
-    });
-
   if (!rows.length) {
     return (
       <div className="empty-state">
@@ -2114,60 +2100,30 @@ function ListingList({
     );
   }
 
-  const containerClass = cn(
-    "divide-y divide-border/20 overflow-x-hidden overflow-y-auto overscroll-contain",
-    tall
-      ? "max-h-[min(62dvh,36rem)] min-h-[12rem] lg:max-h-[calc(100dvh-13rem)]"
-      : compact
-        ? "max-h-[min(48dvh,28rem)] lg:max-h-[calc(100dvh-16rem)]"
-        : "max-h-[min(58dvh,32rem)] lg:max-h-[calc(100dvh-15rem)]",
-  );
-
-  // Small lists: render everything, no virtual overhead
-  if (rows.length <= VIRTUAL_THRESHOLD) {
-    return (
-      <div className={containerClass}>
-        {rows.map((r, idx) => (
-          <ListingRow
-            key={`${r.id}-${r.itemType}-${r.listingId ?? ""}-${idx}`}
-            r={r}
-            mode={mode}
-            onOpenItem={onOpenItem}
-            onOpenSeller={onOpenSeller}
-            onWatch={onWatch}
-            watching={isInWatchlist(watch, r.itemType, [r.portfolioItemId])}
-            compact={compact}
-          />
-        ))}
-      </div>
-    );
-  }
-
-  // Large lists: virtual window — only render visible rows + overscan buffer.
-  // topSpacerPx / bottomSpacerPx keep the scrollbar proportional.
   return (
-    <div ref={containerRef} className={containerClass}>
-      {topSpacerPx > 0 && (
-        <div style={{ height: topSpacerPx }} aria-hidden />
+    <div
+      className={cn(
+        "divide-y divide-border/20 overflow-x-hidden overflow-y-auto overscroll-contain",
+        // Mobile: leave room for sticky search + bottom nav; avoid nested clip bugs
+        tall
+          ? "max-h-[min(62dvh,36rem)] min-h-[12rem] lg:max-h-[calc(100dvh-13rem)]"
+          : compact
+            ? "max-h-[min(48dvh,28rem)] lg:max-h-[calc(100dvh-16rem)]"
+            : "max-h-[min(58dvh,32rem)] lg:max-h-[calc(100dvh-15rem)]",
       )}
-      {virtualRows.map(({ index }) => {
-        const r = rows[index];
-        return (
-          <ListingRow
-            key={`${r.id}-${r.itemType}-${r.listingId ?? ""}-${index}`}
-            r={r}
-            mode={mode}
-            onOpenItem={onOpenItem}
-            onOpenSeller={onOpenSeller}
-            onWatch={onWatch}
-            watching={isInWatchlist(watch, r.itemType, [r.portfolioItemId])}
-            compact={compact}
-          />
-        );
-      })}
-      {bottomSpacerPx > 0 && (
-        <div style={{ height: bottomSpacerPx }} aria-hidden />
-      )}
+    >
+      {rows.map((r, idx) => (
+        <ListingRow
+          key={`${r.id}-${r.itemType}-${r.listingId ?? ""}-${idx}`}
+          r={r}
+          mode={mode}
+          onOpenItem={onOpenItem}
+          onOpenSeller={onOpenSeller}
+          onWatch={onWatch}
+          watching={isInWatchlist(watch, r.itemType, [r.portfolioItemId])}
+          compact={compact}
+        />
+      ))}
     </div>
   );
 }

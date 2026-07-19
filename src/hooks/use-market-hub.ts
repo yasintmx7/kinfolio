@@ -132,10 +132,10 @@ const CHEAP_FAST_URL =
   "/api/market/activity?limit=1200&pages=8&gold=1&sort=cheap";
 const CHEAP_DEEP_URL =
   "/api/market/activity?limit=2500&pages=12&gold=1&sort=cheap";
-// Pulse stays km-only for speed; lock flags preserved client-side
-const NEW_URL = "/api/market/activity?limit=250&pages=3&gold=1&sort=new&km=1";
+// Official enrich required for 'new' sorting because kintaramarket.xyz defaults to cheap items.
+const NEW_URL = "/api/market/activity?limit=250&pages=3&gold=1&sort=new";
 const PULSE_NEW_URL =
-  "/api/market/activity?limit=150&pages=1&gold=1&sort=new&km=1";
+  "/api/market/activity?limit=150&pages=1&gold=1&sort=new";
 // kintaramarket /api/sales supports up to ~500 (hours of history)
 const SOLD_URL = "/api/market/sold?limit=300";
 const PULSE_SOLD_URL = "/api/market/sold?limit=100";

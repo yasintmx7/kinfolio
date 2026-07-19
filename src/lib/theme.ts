@@ -56,7 +56,8 @@ export function applyTheme(theme: AppTheme): void {
   if (meta) {
     meta.setAttribute(
       "content",
-      theme === "light" ? "#FFF9E6" : "#060c14",
+      /* #FBE7B8 at 50% dim (approx mix with charcoal) */
+      theme === "light" ? "#8A7E64" : "#060c14",
     );
   }
 }

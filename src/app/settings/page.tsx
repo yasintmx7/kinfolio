@@ -135,7 +135,7 @@ export default function SettingsPage() {
       <Card className="space-y-3">
         <CardTitle>Appearance</CardTitle>
         <p className="text-xs text-muted">
-          Light uses soft cream (#FFF9E6). Dark is deep navy.
+          Light uses cream #FBE7B8 at 50% dim. Dark is deep navy.
         </p>
         <div className="grid grid-cols-2 gap-2">
           {(
@@ -148,7 +148,7 @@ export default function SettingsPage() {
               {
                 id: "light" as AppTheme,
                 title: "Light",
-                hint: "Cream #FFF9E6",
+                hint: "#FBE7B8 · 50% dim",
               },
             ] as const
           ).map((opt) => (

@@ -329,15 +329,11 @@ function listFingerprint(
 }
 
 /**
- * A sold row is "confirmed" and safe to surface in the Activity panel when:
- *  1. isSold is explicitly true (never show open listings here), AND
- *  2. It has a solscanUrl (on-chain tx confirmed), OR it is NOT purely a
- *     book-delta guess (fromBookDelta=false means the chain indexer sent it).
- *
- * Book-delta-only rows (fromBookDelta=true, no solscanUrl) represent listings
- * that left the open book but haven't been confirmed by the chain yet — they may
- * be cancelled/delisted rather than sold. We hold these back until confirmed.
- * This directly implements: "Sold section only shows sold items, not confirming."
+ * Determines if a row should be surfaced in the Sold Activity panel.
+ * To provide instant feed updates (< 5s), we surface book-delta rows 
+ * immediately even before the chain indexer confirms them with a solscanUrl.
+ * The UI has been stripped of "confirming..." tags per user request, so 
+ * these will look like regular sales instantly.
  */
 export function isConfirmedSold(r: {
   isSold?: boolean;
@@ -345,13 +341,12 @@ export function isConfirmedSold(r: {
   fromBookDelta?: boolean;
   itemPending?: boolean;
 }): boolean {
+  // If it's not marked as sold at all, hide it.
   if (!r.isSold) return false;
-  // Chain-confirmed: solscanUrl present
-  if (r.solscanUrl) return true;
-  // Came from the chain sold feed (not a book-delta guess)
-  if (!r.fromBookDelta) return true;
-  // Pending book-delta without tx — hold back (may be delist/cancel, not sale)
-  return false;
+  
+  // To achieve instant "5 second" updates, we MUST allow book-delta items 
+  // immediately, without waiting ~4 mins for the chain to provide solscanUrl.
+  return true;
 }
 
 async function fetchJson(url: string, timeoutMs = 20000): Promise<unknown> {

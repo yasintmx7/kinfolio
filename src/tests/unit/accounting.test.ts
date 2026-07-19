@@ -213,6 +213,44 @@ describe("accounting engine", () => {
     expect(d(sale.realizedUsdProfit).toFixed(2)).toBe("-0.05");
   });
 
+  describe("adjustment transactions", () => {
+    it("positive adjustment adds stock and cost basis", () => {
+      const buy = tx({ type: "buy", itemId: "stone", quantity: "100", usdAmountAtTransaction: "2", kinsAmount: "20" });
+      const adj = tx({ type: "adjustment", itemId: "stone", quantity: "50", usdAmountAtTransaction: "1", kinsAmount: "10" });
+      const summary = rebuildPortfolio([buy, adj]);
+      const pos = summary.positions.find((p) => p.itemId === "stone")!;
+      
+      expect(pos.quantity).toBe("150");
+      expect(d(pos.usdCostBasis).toNumber()).toBe(3);
+    });
+
+    it("negative adjustment reduces qty and cost basis proportionally", () => {
+      const buy = tx({ type: "buy", itemId: "stone", quantity: "100", usdAmountAtTransaction: "2", kinsAmount: "20" });
+      const adj = tx({ type: "adjustment", itemId: "stone", quantity: "-50", usdAmountAtTransaction: "0", kinsAmount: "0" }); // write-off half
+      const summary = rebuildPortfolio([buy, adj]);
+      const pos = summary.positions.find((p) => p.itemId === "stone")!;
+      
+      expect(pos.quantity).toBe("50");
+      expect(d(pos.usdCostBasis).toNumber()).toBe(1);
+    });
+
+    it("negative adjustment exceeding available stock returns OVERSELL error", () => {
+      const buy = tx({ type: "buy", itemId: "stone", quantity: "10", usdAmountAtTransaction: "0", kinsAmount: "0" });
+      const adj = tx({ type: "adjustment", itemId: "stone", quantity: "-15", usdAmountAtTransaction: "0", kinsAmount: "0" });
+      
+      let state = new Map();
+      const appliedBuy = applyTransaction(state, buy);
+      expect(appliedBuy.ok).toBe(true);
+      if (appliedBuy.ok) state = appliedBuy.state;
+
+      const appliedAdj = applyTransaction(state, adj);
+      expect(appliedAdj.ok).toBe(false);
+      if (!appliedAdj.ok) {
+        expect(appliedAdj.error.code).toBe("OVERSELL");
+      }
+    });
+  });
+
   it("protected cost modes", () => {
     const actual = d(100);
     expect(protectedCost(actual, d(5), "simple_add").toNumber()).toBe(105);

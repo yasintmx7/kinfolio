@@ -39,7 +39,7 @@ export type InstantSoldRow = {
  * Guardrails so a partial/failed book scan never mass-marks "sold".
  * Returns listings present in `prev` but missing from `next`.
  */
-export function detectGoneListings<T extends { id: string }>(
+export function detectGoneListings<T extends { id: string; listingId?: string | null }>(
   prev: T[],
   next: T[],
   options?: {
@@ -60,10 +60,21 @@ export function detectGoneListings<T extends { id: string }>(
   if (prev.length < minPrev || next.length < minNext) return [];
   if (next.length < prev.length * ratio) return [];
 
-  const nextIds = new Set(next.map((r) => String(r.id)));
+  // Build a set of all ids AND listingIds from the next snapshot (Bug #7 fix:
+  // previously only checked id, missing renamed listings → false gone positives).
+  const nextIds = new Set<string>();
+  for (const r of next) {
+    nextIds.add(String(r.id));
+    if (r.listingId) nextIds.add(String(r.listingId));
+  }
+
   const gone: T[] = [];
   for (const row of prev) {
-    if (!nextIds.has(String(row.id))) gone.push(row);
+    // A listing is truly gone only if neither its id nor its listingId appears in next
+    const stillPresent =
+      nextIds.has(String(row.id)) ||
+      (row.listingId != null && nextIds.has(String(row.listingId)));
+    if (!stillPresent) gone.push(row);
   }
   if (gone.length === 0) return [];
   if (gone.length > maxGone) return [];
@@ -230,7 +241,7 @@ export function mergeSoldFeeds<T extends InstantSoldRow>(
   return [...byListing.values(), ...extras]
     .map((r) => scrubSoldSellerFields(r))
     .sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp))
-    .slice(0, Math.min(Math.max(limit, 1), 200));
+    .slice(0, Math.min(Math.max(limit, 1), 500));
 }
 
 /** Drop book-delta rows older than maxAgeMs (default 45 min). */

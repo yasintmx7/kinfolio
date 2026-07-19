@@ -66,10 +66,10 @@ export function applyTransaction(
   const lot = getLot(next, tx.itemId);
   const qty = d(tx.quantity);
 
-  if (qty.lte(0)) {
+  if (qty.isZero() || (qty.isNegative() && tx.type !== "adjustment")) {
     return {
       ok: false,
-      error: { code: "INVALID_QUANTITY", message: "Quantity must be positive." },
+      error: { code: "INVALID_QUANTITY", message: "Quantity must be positive (except for negative adjustments)." },
     };
   }
 
@@ -99,15 +99,33 @@ export function applyTransaction(
       break;
     }
     case "adjustment": {
-      // Positive qty adds free basis adjustment; negative reduces qty/basis proportionally
       if (qty.gt(0)) {
+        // Positive: add stock with optional cost basis (e.g. correction entry)
         const usd = d(tx.usdAmountAtTransaction || "0");
         const kins = d(tx.kinsAmount || "0");
         lot.quantity = lot.quantity.plus(qty);
         lot.usdCostBasis = lot.usdCostBasis.plus(usd);
         lot.kinsCostBasis = lot.kinsCostBasis.plus(kins);
       } else {
-        // treated as reduction via absolute quantity on positive field only
+        // Negative: reduce qty + cost basis proportionally (write-off / correction)
+        const absQty = qty.abs();
+        if (absQty.gt(lot.quantity)) {
+          return {
+            ok: false,
+            error: {
+              code: "OVERSELL",
+              message: `Adjustment of -${absQty.toFixed()} exceeds available ${lot.quantity.toFixed()}.`,
+            },
+          };
+        }
+        if (lot.quantity.gt(0)) {
+          const ratio = absQty.div(lot.quantity);
+          lot.usdCostBasis = lot.usdCostBasis.minus(lot.usdCostBasis.mul(ratio));
+          lot.kinsCostBasis = lot.kinsCostBasis.minus(lot.kinsCostBasis.mul(ratio));
+          lot.purchasedQuantity = Decimal.max(d(0), lot.purchasedQuantity.minus(lot.purchasedQuantity.mul(ratio)));
+          lot.earnedQuantity = Decimal.max(d(0), lot.earnedQuantity.minus(lot.earnedQuantity.mul(ratio)));
+        }
+        lot.quantity = Decimal.max(d(0), lot.quantity.minus(absQty));
       }
       break;
     }
@@ -236,14 +254,18 @@ export function rebuildPortfolio(transactions: PortfolioTransaction[]): Portfoli
   const realizedSales: RealizedSaleResult[] = [];
 
   for (const tx of ordered) {
-    if (tx.type === "sell") {
-      const sale = computeRealizedSale(state, tx);
-      if (sale) realizedSales.push(sale);
-    }
+    // Snapshot state before applying so computeRealizedSale can use pre-sell basis.
+    // Only record the realized sale if applyTransaction ALSO succeeds (Bug #4 fix:
+    // previously the sale was pushed before apply, so rejected oversells inflated P&L).
+    const stateBefore = tx.type === "sell" ? state : null;
     const result = applyTransaction(state, tx);
     if (!result.ok) {
-      // Skip invalid historical sells to keep rebuild resilient, but don't apply
+      // Skip invalid historical transactions to keep rebuild resilient
       continue;
+    }
+    if (tx.type === "sell" && stateBefore) {
+      const sale = computeRealizedSale(stateBefore, tx);
+      if (sale) realizedSales.push(sale);
     }
     state = result.state;
   }

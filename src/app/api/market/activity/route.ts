@@ -133,16 +133,16 @@ export async function GET(request: Request) {
     }
 
     if (official.length > 0) {
+      const kmHadRows = rows.length > 0;
       rows = mergeById(rows, official);
-      if (rows.length === 0) {
-        rows = official;
-      }
-      source =
-        rows.length > official.length
-          ? "kintaramarket.xyz+kintara.com"
-          : "kintara.com+kintaramarket.xyz";
-      note =
-        "Merged kintaramarket open book + official kintara.com pages (locks/seller ids when available).";
+      // Bug #2 fix: accurately reflect which sources contributed data.
+      // When KM returned nothing, rows comes entirely from official.
+      source = kmHadRows
+        ? "kintaramarket.xyz+kintara.com"
+        : "kintara.com";
+      note = kmHadRows
+        ? "Merged kintaramarket open book + official kintara.com pages (locks/seller ids when available)."
+        : "Official kintara.com pages only (kintaramarket returned no rows).";
     }
 
     if (rows.length === 0 && official.length === 0) {

@@ -24,7 +24,7 @@ type SoldRow = {
   name: string;
   itemType: string;
   quantity: string;
-  unitKins: string;
+  unitKins: string | null;
   totalKins: string | null;
   unitUsd: string | null;
   usdTotal: string | null;
@@ -122,7 +122,7 @@ export async function GET(request: Request) {
           name: humanizeItemType(s.itemType),
           itemType: s.itemType,
           quantity: String(qty),
-          unitKins: match?.hasItem ? match.unitKins : "0",
+          unitKins: match?.hasItem ? match.unitKins : null,
           totalKins: match?.kinsTotal ?? null,
           unitUsd:
             priced.unitUsd != null

@@ -31,7 +31,12 @@ export function filterSoldStillOpen<
   return sold.filter((row) => {
     const lid = officialListingId(row.listingId);
     if (lid && openIds.has(lid)) return false;
-    // Collision safety (sale doc id should never match, but be strict)
+    // Bug #10 fix: also check when the sold row's own id is a numeric listing id
+    // (some sold rows have no listingId but their id IS the numeric listing id).
+    const lidFromId = officialListingId(row.id);
+    if (lidFromId && openIds.has(lidFromId)) return false;
+    // Safety: exact raw id collision (catches non-numeric ids shared between
+    // the sold feed and open book — e.g. "kh7abc" appearing in both).
     if (openIds.has(String(row.id))) return false;
     return true;
   });

@@ -328,6 +328,32 @@ function listFingerprint(
   ].join(":");
 }
 
+/**
+ * A sold row is "confirmed" and safe to surface in the Activity panel when:
+ *  1. isSold is explicitly true (never show open listings here), AND
+ *  2. It has a solscanUrl (on-chain tx confirmed), OR it is NOT purely a
+ *     book-delta guess (fromBookDelta=false means the chain indexer sent it).
+ *
+ * Book-delta-only rows (fromBookDelta=true, no solscanUrl) represent listings
+ * that left the open book but haven't been confirmed by the chain yet — they may
+ * be cancelled/delisted rather than sold. We hold these back until confirmed.
+ * This directly implements: "Sold section only shows sold items, not confirming."
+ */
+export function isConfirmedSold(r: {
+  isSold?: boolean;
+  solscanUrl?: string | null;
+  fromBookDelta?: boolean;
+  itemPending?: boolean;
+}): boolean {
+  if (!r.isSold) return false;
+  // Chain-confirmed: solscanUrl present
+  if (r.solscanUrl) return true;
+  // Came from the chain sold feed (not a book-delta guess)
+  if (!r.fromBookDelta) return true;
+  // Pending book-delta without tx — hold back (may be delist/cancel, not sale)
+  return false;
+}
+
 async function fetchJson(url: string, timeoutMs = 20000): Promise<unknown> {
   // bust HTTP/SW intermediate caches — phones often showed stale book vs desktop
   const controller = new AbortController();
@@ -360,7 +386,9 @@ function buildByItem(
 ): MarketHubData["byItem"] {
   const byType = new Map<string, { vals: number[]; lastAt: string | null }>();
   for (const s of sales) {
-    const n = Number(s.unitUsd ?? s.unitKins);
+    // Bug #5 fix: never fall back to unitKins — USD and KINS are different
+    // magnitude currencies (~125x difference). Only use unitUsd for consistent analytics.
+    const n = Number(s.unitUsd);
     if (!Number.isFinite(n) || n <= 0) continue;
     const cur = byType.get(s.itemType) ?? { vals: [], lastAt: null };
     cur.vals.push(n);
@@ -551,7 +579,16 @@ export function useMarketHub(pollMs = 1_500) {
       );
       // Longer Activity history: kintaramarket sales + book-delta solds
       const merged = mergeSoldFeeds(bookRows, chainEnriched, 350);
-      return resolveLockerNames(merged, sellerIdNameRef.current);
+      const withNames = resolveLockerNames(merged, sellerIdNameRef.current);
+
+      // Only surface confirmed sold items in the Activity feed.
+      // A row is "confirmed" when:
+      //   - isSold is true, AND
+      //   - it has a chain tx (solscanUrl) — i.e. on-chain confirmed; OR
+      //   - it came from the chain sold feed (not a book-delta-only guess).
+      // Book-delta-only rows without a tx hash are still tracked internally for
+      // enrichment but are NOT shown until the chain confirms the sale.
+      return withNames.filter(isConfirmedSold);
     },
     [],
   );
@@ -641,7 +678,13 @@ export function useMarketHub(pollMs = 1_500) {
               if (row.listingId) map.set(String(row.listingId), snap);
             }
             if (map.size > 4000) {
-              const entries = [...map.entries()].slice(-3000);
+              // Bug #13 fix: sort by listing timestamp (most recent first) before
+              // trimming so freshly-seen/updated listings survive, not just the
+              // last-inserted ones regardless of their recency.
+              const entries = [...map.entries()].sort(
+                ([, a], [, b]) =>
+                  Date.parse(b.timestamp || "0") - Date.parse(a.timestamp || "0"),
+              ).slice(0, 3000);
               knownListingsRef.current = new Map(entries);
             } else {
               knownListingsRef.current = map;
@@ -944,31 +987,53 @@ export function useMarketHub(pollMs = 1_500) {
     [reloadListings, reloadSold, reloadFloors],
   );
 
+  // Store the latest callbacks in refs so the pulse useEffect only needs pollMs
+  // as a dependency — avoids double-interval teardown/restart in StrictMode (Bug #3).
+  const reloadRef = useRef(reload);
+  const reloadListingsRef = useRef(reloadListings);
+  const reloadSoldRef = useRef(reloadSold);
+  const reloadFloorsRef = useRef(reloadFloors);
+  reloadRef.current = reload;
+  reloadListingsRef.current = reloadListings;
+  reloadSoldRef.current = reloadSold;
+  reloadFloorsRef.current = reloadFloors;
+
   useEffect(() => {
-    void reload({ floors: true });
+    void reloadRef.current({ floors: true });
 
     // Pulse loop: every tick = newest listings + sold; every 3rd = full cheap book
     const pulseId = setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+
       pulseTick.current += 1;
       const fullBook = pulseTick.current % 3 === 0;
-      void reloadListings({
+      void reloadListingsRef.current({
         silent: true,
         pulse: !fullBook,
         deep: false,
       });
-      void reloadSold({ pulse: !fullBook });
+      void reloadSoldRef.current({ pulse: !fullBook });
     }, pollMs);
 
     // Floors: expensive aggregate — keep ≥45s
-    const floorsId = setInterval(
-      () => void reloadFloors(),
-      Math.max(pollMs * 20, 45_000),
-    );
+    const floorsId = setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      void reloadFloorsRef.current();
+    }, Math.max(pollMs * 20, 45_000));
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void reloadRef.current({ floors: true, silent: true });
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
     return () => {
       clearInterval(pulseId);
       clearInterval(floorsId);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [reload, reloadListings, reloadSold, reloadFloors, pollMs]);
+  }, [pollMs]);
 
   return {
     ...data,

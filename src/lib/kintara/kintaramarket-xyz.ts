@@ -627,7 +627,8 @@ export async function fetchItemListingsAsDtos(
       quantity: qty,
       priceUsd: r.priceUsd,
       unitUsd: isGold && r.priceUsd == null ? null : r.unitPrice,
-      usdTotal: r.priceUsd,
+      // usdTotal intentionally omitted: priceUsd (lot total) already takes priority
+      // and passing the same value twice creates a misleading call contract (Bug #8).
       priceGold: r.priceGold,
       currency,
     });
@@ -712,8 +713,11 @@ export async function getListingsFromKintaraMarket(
       const qty = r.quantity || 1;
       const unitUsd = r.unitPrice ?? (r.priceUsd != null ? r.priceUsd / qty : null);
       const unitKins =
-        kinsUsd && unitUsd != null ? usdToKins(unitUsd, kinsUsd) : unitUsd != null
-          ? String(unitUsd) // temporary USD label if no kins rate — caller should convert
+        kinsUsd && unitUsd != null
+          ? usdToKins(unitUsd, kinsUsd)
+          // Bug #9 fix: when no kinsUsd rate is available, do NOT store the USD value
+          // in a KINS-named field — that would be ~100-10,000x off for all consumers.
+          // Return "0" so callers know the price is unavailable rather than wrong.
           : "0";
       const totalKins =
         kinsUsd && r.priceUsd != null

@@ -104,14 +104,19 @@ export async function GET(request: Request) {
       "Live open book via kintaramarket.xyz (official kintara.com often rate-limits Vercel).";
     let rows: MarketActivityRow[] = [];
 
-    try {
-      rows = await fetchMarketActivityFeed({
-        limit: want,
-        kinsUsd,
-        sort,
-      });
-    } catch {
-      rows = [];
+    // ONLY fetch from the indexer if we are sorting by 'cheap' (or forced kmOnly)
+    // because the indexer does not support sorting by 'new', and its 'lastSeen' 
+    // timestamps will pollute and ruin the actual newest items feed from official.
+    if (sort === "cheap" || kmOnly) {
+      try {
+        rows = await fetchMarketActivityFeed({
+          limit: want,
+          kinsUsd,
+          sort,
+        });
+      } catch {
+        rows = [];
+      }
     }
 
     // 2) Soft official enrich — skip on km-only pulse for ≤1s latency
@@ -134,15 +139,22 @@ export async function GET(request: Request) {
 
     if (official.length > 0) {
       const kmHadRows = rows.length > 0;
-      rows = mergeById(rows, official);
+      // If we are sorting by 'new', official IS the primary source of truth.
+      // We don't want to merge indexer items in at all, because their timestamps are fake.
+      if (sort === "new") {
+        rows = official;
+      } else {
+        rows = mergeById(rows, official);
+      }
+      
       // Bug #2 fix: accurately reflect which sources contributed data.
       // When KM returned nothing, rows comes entirely from official.
-      source = kmHadRows
+      source = kmHadRows && sort !== "new"
         ? "kintaramarket.xyz+kintara.com"
         : "kintara.com";
-      note = kmHadRows
+      note = kmHadRows && sort !== "new"
         ? "Merged kintaramarket open book + official kintara.com pages (locks/seller ids when available)."
-        : "Official kintara.com pages only (kintaramarket returned no rows).";
+        : "Official kintara.com pages only (kintaramarket returned no rows or was skipped).";
     }
 
     if (rows.length === 0 && official.length === 0) {

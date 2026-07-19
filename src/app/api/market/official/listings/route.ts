@@ -114,13 +114,31 @@ export async function GET(request: Request) {
       );
     } catch {
       // kintara.com 429 / down — use kintaramarket open book
+      // WARNING: kintaramarket.xyz only returns cheap items and doesn't have real creation timestamps.
+      // If the user wants 'newest' items, we must fail gracefully rather than returning fake data.
+      if (sort === "new") {
+        return ok(
+          {
+            listings: [],
+            count: 0,
+            provider: "kintaramarket.xyz (skipped for sort=new)",
+            kinsUsd: kinsUsd != null ? String(kinsUsd) : null,
+          },
+          {
+            source: "kintaramarket.xyz",
+            updatedAt: new Date().toISOString(),
+            cacheControl: "public, s-maxage=5",
+          },
+        );
+      }
+      
       const want = Number.isFinite(limit)
         ? Math.min(Math.max(limit, 1), 200)
         : 60;
       const feed = await fetchMarketActivityFeed({
         limit: want + (Number.isFinite(offset) ? Math.max(offset, 0) : 0) + 50,
         kinsUsd,
-        sort: sort === "new" ? "new" : "cheap",
+        sort: "cheap", // km feed can only sort by cheap realistically
       });
       const sliced = feed
         .filter((r) => (r.currency ?? "token") === currency)

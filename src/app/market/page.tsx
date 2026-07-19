@@ -5,11 +5,20 @@ import {
   Suspense,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ChevronDown, Lock, RefreshCw, SlidersHorizontal, Star, X } from "lucide-react";
+import {
+  ChevronDown,
+  Lock,
+  RefreshCw,
+  Search,
+  SlidersHorizontal,
+  Star,
+  X,
+} from "lucide-react";
 import { ItemIcon } from "@/components/items/item-icon";
 import { SellerAvatar } from "@/components/sellers/seller-avatar";
 import { Card, CardTitle } from "@/components/ui/card";
@@ -397,6 +406,10 @@ function MarketHubInner() {
     usePortfolioContext();
 
   const [q, setQ] = useState("");
+  /** Sold / Activity panel search (independent of main market search when set) */
+  const [soldQ, setSoldQ] = useState("");
+  const [soldSearchOpen, setSoldSearchOpen] = useState(false);
+  const soldSearchRef = useRef<HTMLInputElement>(null);
   const [watch, setWatch] = useState<string[]>([]);
   const [itemFocus, setItemFocus] = useState<string | null>(null);
   const [sellerFocus, setSellerFocus] = useState<SellerFocus | null>(null);
@@ -578,13 +591,20 @@ function MarketHubInner() {
   const searchMatch = (s: RecentSale, query: string) => {
     const qn = query.trim().toLowerCase();
     if (!qn) return true;
+    const idQ = qn.replace(/^#/, "");
     const sellerName = (s.sellerName ?? "").toLowerCase();
     const sellerField = (s.seller ?? "").toLowerCase();
     const sellerLabel = sellerDisplay(s).toLowerCase();
     const wallet = (s.sellerWallet ?? "").toLowerCase();
+    const buyerName = (s.buyerName ?? "").toLowerCase();
+    const buyerWallet = (s.buyerWallet ?? "").toLowerCase();
     const short =
       wallet.length > 8
         ? `${wallet.slice(0, 4)}…${wallet.slice(-4)}`.toLowerCase()
+        : "";
+    const buyerShort =
+      buyerWallet.length > 8
+        ? `${buyerWallet.slice(0, 4)}…${buyerWallet.slice(-4)}`.toLowerCase()
         : "";
     return (
       s.name.toLowerCase().includes(qn) ||
@@ -595,9 +615,14 @@ function MarketHubInner() {
       sellerField.includes(qn) ||
       sellerLabel.includes(qn) ||
       // Username search: strip # from #12345
-      String(s.sellerId ?? "").includes(qn.replace(/^#/, "")) ||
+      String(s.sellerId ?? "").includes(idQ) ||
       wallet.includes(qn) ||
       short.includes(qn) ||
+      // Sold: who bought
+      buyerName.includes(qn) ||
+      String(s.buyerId ?? "").includes(idQ) ||
+      buyerWallet.includes(qn) ||
+      buyerShort.includes(qn) ||
       String(s.listingId ?? s.id).includes(qn) ||
       (qn === "lock" && isLocked(s)) ||
       (qn === "locked" && isLocked(s)) ||
@@ -706,14 +731,14 @@ function MarketHubInner() {
     };
   }, [hub.sales]);
 
-  /** Sold-only activity (small card) */
+  /** Sold-only activity (small card) — soldQ overrides main q when typed */
   const soldRows = useMemo(() => {
     let list = [...(hub.sold ?? [])];
-    const query = q.trim().toLowerCase();
+    const query = (soldQ.trim() || q.trim()).toLowerCase();
     if (query) list = list.filter((s) => searchMatch(s, query));
     list.sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp));
     return list;
-  }, [hub.sold, q]);
+  }, [hub.sold, q, soldQ]);
 
   /**
    * All-items board — same data as kintaramarket.xyz /api/market
@@ -1104,191 +1129,213 @@ function MarketHubInner() {
         </div>
       </header>
 
-      {/* Sticky search + primary filters */}
+      {/* Sticky search + primary filters — search always full width */}
       <div className="sticky top-[3.25rem] z-20 space-y-2 rounded-2xl border border-border/35 bg-app/90 p-2.5 backdrop-blur-xl md:top-2">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder={
-              tab === "market"
-                ? "Search item, seller, reserved…"
-                : tab === "floors"
-                  ? "Search all items…"
-                  : "Search watchlist…"
-            }
-            className="field min-h-10 flex-1"
-          />
-          {tab === "market" && q.trim().length >= 2 && (
-            <div className="space-y-2 px-1 sm:order-last sm:basis-full">
-              <p className="text-[11px] text-muted">
-                {searchLoading
-                  ? "Searching full open book for seller/item…"
-                  : searchNote
-                    ? searchNote
-                    : listingRows.length
-                      ? `${listingRows.length} match${listingRows.length === 1 ? "" : "es"} (live book + full search)`
-                      : "No matches in live book or open listings"}
-              </p>
-              {searchSellers.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {searchSellers.slice(0, 12).map((s) => (
-                    <div
-                      key={s.sellerName}
-                      className="inline-flex items-center gap-1 rounded-xl border border-border/50 bg-surface-2/80 pl-2 pr-1 py-1"
-                    >
-                      <button
-                        type="button"
-                        className="text-xs font-medium text-sky-hi hover:underline"
-                        onClick={() => openSellerByName(s.sellerName)}
-                      >
-                        {s.sellerName}
-                        <span className="ml-1 font-mono text-[10px] text-muted">
-                          ×{s.count}
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded-lg px-1.5 py-0.5 text-[10px] text-muted hover:bg-sky/15 hover:text-sky-hi"
-                        onClick={() => onWatchSeller(s.sellerName)}
-                      >
-                        ★
-                      </button>
-                      <a
-                        href={`/sellers/${encodeURIComponent(s.sellerName)}`}
-                        className="rounded-lg px-1.5 py-0.5 text-[10px] text-muted hover:bg-sky/15 hover:text-sky-hi"
-                      >
-                        Profile
-                      </a>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-          {(tab === "floors" || tab === "watch") && (
-            <div className="flex flex-wrap items-center gap-1.5">
-              {(
-                [
-                  ["listings", "Listings"],
-                  ["floor", "Cheapest"],
-                  ["name", "A–Z"],
-                ] as const
-              ).map(([id, label]) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => setBrowseSort(id)}
-                  className={cn(
-                    "chip min-h-9",
-                    browseSort === id && "chip-active",
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-              <span className="mx-0.5 hidden h-4 w-px bg-border/50 sm:inline" />
-              {CATEGORY_CHIPS.map(({ id, label }) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => setCategoryFilter(id)}
-                  className={cn(
-                    "chip min-h-9",
-                    categoryFilter === id && "chip-active",
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          )}
-          {tab === "market" && (
-            <div className="flex flex-wrap items-center gap-1.5">
-              {(
-                [
-                  ["all", "All"],
-                  ["token", "Token"],
-                  ["gold", "Gold"],
-                ] as const
-              ).map(([id, label]) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => setCurrencyFilter(id)}
-                  className={cn(
-                    "chip min-h-9",
-                    currencyFilter === id && "chip-active",
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-              <span className="mx-0.5 hidden h-4 w-px bg-border/50 sm:inline" />
-              {(
-                [
-                  ["cheap", "Cheap"],
-                  ["new", "New"],
-                ] as const
-              ).map(([id, label]) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => setSortFilter(id)}
-                  className={cn(
-                    "chip min-h-9",
-                    sortFilter === id && "chip-active",
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-              {/* Locked are live in the feed — this only toggles visibility */}
+        {/* Row 1: search bar never shrinks when results/filters appear */}
+        <div className="flex w-full min-w-0 items-stretch gap-2">
+          <div className="relative min-w-0 flex-1">
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted"
+              aria-hidden
+            />
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder={
+                tab === "market"
+                  ? "Search item, seller, reserved…"
+                  : tab === "floors"
+                    ? "Search all items…"
+                    : "Search watchlist…"
+              }
+              className="field min-h-11 w-full min-w-0 pl-10 pr-10 text-[15px]"
+              aria-label="Search market"
+            />
+            {q.trim() ? (
               <button
                 type="button"
-                onClick={() => setHideLocked((v) => !v)}
-                className={cn(
-                  "chip min-h-9 inline-flex items-center gap-1.5",
-                  !hideLocked
-                    ? "bg-amber-500/20 text-amber-100 ring-1 ring-amber-400/40"
-                    : "text-muted",
-                )}
-                title={
-                  hideLocked
-                    ? "Show reserved/locked listings (live in feed)"
-                    : "Hide reserved/locked listings"
-                }
+                onClick={() => setQ("")}
+                className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-muted hover:bg-raised hover:text-primary"
+                aria-label="Clear search"
               >
-                <Lock className="h-3.5 w-3.5" />
-                Locked
-                <span className="font-mono tabular-nums text-[11px]">
-                  {filterCounts.locked}
-                </span>
+                <X className="h-4 w-4" />
               </button>
-              <button
-                type="button"
-                onClick={() => setFiltersOpen((v) => !v)}
-                className={cn(
-                  "chip min-h-9 inline-flex items-center gap-1.5",
-                  (filtersOpen || advancedActive) && "chip-soft-active",
-                )}
-                aria-expanded={filtersOpen}
-              >
-                <SlidersHorizontal className="h-3.5 w-3.5" />
-                Filters
-                {advancedActive ? (
-                  <span className="font-mono text-[10px] text-sky-hi">•</span>
-                ) : null}
-                <ChevronDown
-                  className={cn(
-                    "h-3.5 w-3.5 transition-transform",
-                    filtersOpen && "rotate-180",
-                  )}
-                />
-              </button>
-            </div>
-          )}
+            ) : null}
+          </div>
         </div>
+
+        {/* Row 2: search status + seller chips (below bar, never beside it) */}
+        {tab === "market" && q.trim().length >= 2 && (
+          <div className="w-full min-w-0 space-y-2 px-0.5">
+            <p className="text-[11px] text-muted">
+              {searchLoading
+                ? "Searching full open book for seller/item…"
+                : searchNote
+                  ? searchNote
+                  : listingRows.length
+                    ? `${listingRows.length} match${listingRows.length === 1 ? "" : "es"} (live book + full search)`
+                    : "No matches in live book or open listings"}
+            </p>
+            {searchSellers.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {searchSellers.slice(0, 12).map((s) => (
+                  <div
+                    key={s.sellerName}
+                    className="inline-flex items-center gap-1 rounded-xl border border-border/50 bg-surface-2/80 pl-2 pr-1 py-1"
+                  >
+                    <button
+                      type="button"
+                      className="text-xs font-medium text-sky-hi hover:underline"
+                      onClick={() => openSellerByName(s.sellerName)}
+                    >
+                      {s.sellerName}
+                      <span className="ml-1 font-mono text-[10px] text-muted">
+                        ×{s.count}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-lg px-1.5 py-0.5 text-[10px] text-muted hover:bg-sky/15 hover:text-sky-hi"
+                      onClick={() => onWatchSeller(s.sellerName)}
+                    >
+                      ★
+                    </button>
+                    <a
+                      href={`/sellers/${encodeURIComponent(s.sellerName)}`}
+                      className="rounded-lg px-1.5 py-0.5 text-[10px] text-muted hover:bg-sky/15 hover:text-sky-hi"
+                    >
+                      Profile
+                    </a>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Row 3: filter chips — own row so they never squeeze the search field */}
+        {(tab === "floors" || tab === "watch") && (
+          <div className="flex w-full min-w-0 flex-wrap items-center gap-1.5">
+            {(
+              [
+                ["listings", "Listings"],
+                ["floor", "Cheapest"],
+                ["name", "A–Z"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setBrowseSort(id)}
+                className={cn(
+                  "chip min-h-9",
+                  browseSort === id && "chip-active",
+                )}
+              >
+                {label}
+              </button>
+            ))}
+            <span className="mx-0.5 hidden h-4 w-px bg-border/50 sm:inline" />
+            {CATEGORY_CHIPS.map(({ id, label }) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setCategoryFilter(id)}
+                className={cn(
+                  "chip min-h-9",
+                  categoryFilter === id && "chip-active",
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+        {tab === "market" && (
+          <div className="flex w-full min-w-0 flex-wrap items-center gap-1.5">
+            {(
+              [
+                ["all", "All"],
+                ["token", "Token"],
+                ["gold", "Gold"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setCurrencyFilter(id)}
+                className={cn(
+                  "chip min-h-9",
+                  currencyFilter === id && "chip-active",
+                )}
+              >
+                {label}
+              </button>
+            ))}
+            <span className="mx-0.5 hidden h-4 w-px bg-border/50 sm:inline" />
+            {(
+              [
+                ["cheap", "Cheap"],
+                ["new", "New"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setSortFilter(id)}
+                className={cn(
+                  "chip min-h-9",
+                  sortFilter === id && "chip-active",
+                )}
+              >
+                {label}
+              </button>
+            ))}
+            {/* Locked are live in the feed — this only toggles visibility */}
+            <button
+              type="button"
+              onClick={() => setHideLocked((v) => !v)}
+              className={cn(
+                "chip min-h-9 inline-flex items-center gap-1.5",
+                !hideLocked
+                  ? "bg-amber-500/20 text-amber-100 ring-1 ring-amber-400/40"
+                  : "text-muted",
+              )}
+              title={
+                hideLocked
+                  ? "Show reserved/locked listings (live in feed)"
+                  : "Hide reserved/locked listings"
+              }
+            >
+              <Lock className="h-3.5 w-3.5" />
+              Locked
+              <span className="font-mono tabular-nums text-[11px]">
+                {filterCounts.locked}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setFiltersOpen((v) => !v)}
+              className={cn(
+                "chip min-h-9 inline-flex items-center gap-1.5",
+                (filtersOpen || advancedActive) && "chip-soft-active",
+              )}
+              aria-expanded={filtersOpen}
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+              Filters
+              {advancedActive ? (
+                <span className="font-mono text-[10px] text-sky-hi">•</span>
+              ) : null}
+              <ChevronDown
+                className={cn(
+                  "h-3.5 w-3.5 transition-transform",
+                  filtersOpen && "rotate-180",
+                )}
+              />
+            </button>
+          </div>
+        )}
 
         {tab === "market" && filtersOpen && (
           <div className="flex flex-col gap-2 border-t border-border/30 pt-2">
@@ -1373,20 +1420,73 @@ function MarketHubInner() {
 
             {/* Activity — sold pane */}
             <div className="flex w-full shrink-0 flex-col lg:w-[20.5rem] xl:w-[22rem]">
-              <header className="panel-head !py-2.5">
-                <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                  <h2 className="text-[14px] font-semibold tracking-tight">
-                    Activity
-                  </h2>
-                  <span className="rounded-md bg-forest/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-forest-hi">
-                    Sold
-                  </span>
-                  <p className="font-mono text-[11px] tabular-nums text-muted">
-                    {soldRows.length
-                      ? `${soldRows.length} sales`
-                      : "loading…"}
-                  </p>
+              <header className="panel-head !flex-col !items-stretch !gap-2 !py-2.5">
+                <div className="flex min-w-0 items-center justify-between gap-2">
+                  <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                    <h2 className="text-[14px] font-semibold tracking-tight">
+                      Activity
+                    </h2>
+                    <span className="rounded-md bg-forest/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-forest-hi">
+                      Sold
+                    </span>
+                    <p className="font-mono text-[11px] tabular-nums text-muted">
+                      {soldRows.length
+                        ? `${soldRows.length} sales`
+                        : "loading…"}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSoldSearchOpen((v) => {
+                        const next = !v;
+                        if (next) {
+                          queueMicrotask(() => soldSearchRef.current?.focus());
+                        } else {
+                          setSoldQ("");
+                        }
+                        return next;
+                      });
+                    }}
+                    className={cn(
+                      "inline-flex h-8 shrink-0 items-center gap-1 rounded-lg px-2 text-[11px] font-medium transition-colors",
+                      soldSearchOpen || soldQ.trim()
+                        ? "bg-sky/15 text-sky-hi"
+                        : "text-muted hover:bg-raised hover:text-sky-hi",
+                    )}
+                    aria-label="Search sold activity"
+                    aria-expanded={soldSearchOpen}
+                  >
+                    <Search className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline lg:inline">Search</span>
+                  </button>
                 </div>
+                {soldSearchOpen && (
+                  <div className="relative w-full min-w-0">
+                    <Search
+                      className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted"
+                      aria-hidden
+                    />
+                    <input
+                      ref={soldSearchRef}
+                      value={soldQ}
+                      onChange={(e) => setSoldQ(e.target.value)}
+                      placeholder="Search sold: item, seller, buyer…"
+                      className="field min-h-9 w-full min-w-0 pl-8 pr-8 text-[13px]"
+                      aria-label="Search sold sales"
+                    />
+                    {soldQ.trim() ? (
+                      <button
+                        type="button"
+                        onClick={() => setSoldQ("")}
+                        className="absolute right-1.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-muted hover:text-primary"
+                        aria-label="Clear sold search"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    ) : null}
+                  </div>
+                )}
               </header>
               <SoldActivityCard
                 rows={soldRows}

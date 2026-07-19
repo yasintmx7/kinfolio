@@ -78,6 +78,7 @@ html.light {
   --color-profit: var(--profit);
   --color-info: var(--info);
   --color-loss: var(--loss);
+  --color-amber: var(--amber);
   --color-ink: var(--ink);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);

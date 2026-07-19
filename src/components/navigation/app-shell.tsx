@@ -141,7 +141,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
             onClick={toggleTheme}
             className="flex w-full min-h-10 items-center gap-2.5 rounded-2xl px-3 text-[13px] text-muted transition-colors hover:bg-surface-2/80 hover:text-primary"
             aria-label={
-              theme === "dark" ? "Switch to light mode" : "Switch to dark mode"
+              theme === "dark" ? "Switch to dim mode" : "Switch to dark mode"
             }
           >
             {theme === "dark" ? (
@@ -150,7 +150,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
               <Moon className="h-4 w-4 shrink-0 text-sky-hi" />
             )}
             <span className="font-medium">
-              {theme === "dark" ? "Light mode" : "Dark mode"}
+              {theme === "dark" ? "Dim mode" : "Dark mode"}
             </span>
           </button>
           <div className="px-1">
@@ -173,7 +173,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
               onClick={toggleTheme}
               className="flex h-9 w-9 items-center justify-center rounded-xl border border-border/50 bg-surface/70 text-muted hover:text-primary"
               aria-label={
-                theme === "dark" ? "Switch to light mode" : "Switch to dark mode"
+                theme === "dark" ? "Switch to dim mode" : "Switch to dark mode"
               }
             >
               {theme === "dark" ? (
@@ -295,7 +295,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
                   <Moon className="h-4 w-4 text-sky-hi" />
                 )}
               </span>
-              {theme === "dark" ? "Light mode" : "Dark mode"}
+              {theme === "dark" ? "Dim mode" : "Dark mode"}
             </button>
           </div>
         </div>

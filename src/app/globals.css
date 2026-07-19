@@ -30,34 +30,35 @@ html.dark {
 }
 
 /**
- * Light mode — warm paper / sand, not pure white.
- * Soft cream surfaces, gentle transparency, eye-easing contrast.
+ * Dim mode (class "light" kept for storage compat).
+ * Soft raised navy — easier on eyes than pure black dark or bright white.
+ * Low glare, muted blues, readable soft text.
  */
 html.light {
-  --app: #efe8dc;
-  --surface: #f7f1e7;
-  --surface-2: #ebe3d4;
-  --raised: #fffaf2;
-  --border: #d2c4ae;
-  --primary: #2a2520;
-  --muted: #6f6558;
-  --sky: #3d87b8;
-  --sky-hi: #1f6a98;
-  --sky-dim: #6aa3c9;
-  --forest: #2d8a56;
-  --forest-hi: #1a6b3f;
-  --gold: #b08a3a;
-  --gold-hi: #8f6e28;
-  --profit: #2d8a56;
-  --info: #3d87b8;
-  --loss: #c24d5c;
-  --amber: #c48a2a;
-  --ink: #1a1612;
-  --glow-sky: color-mix(in srgb, #5ba3d4 14%, transparent);
-  --glow-forest: color-mix(in srgb, #3d9a68 10%, transparent);
-  --shadow-soft: color-mix(in srgb, #5c4630 9%, transparent);
-  --shadow-deep: color-mix(in srgb, #4a3828 12%, transparent);
-  --highlight-inset: color-mix(in srgb, #fff 55%, transparent);
+  --app: #121920;
+  --surface: #1a2430;
+  --surface-2: #222e3c;
+  --raised: #2b3848;
+  --border: #3d5166;
+  --primary: #d5e0ea;
+  --muted: #8b9bab;
+  --sky: #6aafd4;
+  --sky-hi: #9ad0f0;
+  --sky-dim: #4a8fb5;
+  --forest: #4da876;
+  --forest-hi: #6fcea0;
+  --gold: #d4b06e;
+  --gold-hi: #e6c88a;
+  --profit: #4da876;
+  --info: #6aafd4;
+  --loss: #e08090;
+  --amber: #e0b060;
+  --ink: #0e141c;
+  --glow-sky: color-mix(in srgb, #6aafd4 12%, transparent);
+  --glow-forest: color-mix(in srgb, #4da876 8%, transparent);
+  --shadow-soft: color-mix(in srgb, #000 22%, transparent);
+  --shadow-deep: color-mix(in srgb, #000 30%, transparent);
+  --highlight-inset: color-mix(in srgb, #fff 4%, transparent);
 }
 
 @theme inline {
@@ -138,29 +139,25 @@ body {
   min-height: 100dvh;
 }
 
-/* Warm light: soft parchment wash, not flat white */
+/* Dim: soft lift from pure black, gentle cool glow */
 html.light .page-glow {
   background:
     radial-gradient(
-      ellipse 90% 55% at 12% -8%,
-      color-mix(in srgb, #c9dff0 35%, transparent),
-      transparent 55%
+      ellipse 90% 55% at 10% -10%,
+      color-mix(in srgb, #4a7a9a 14%, transparent),
+      transparent 56%
     ),
     radial-gradient(
-      ellipse 70% 45% at 92% 0%,
-      color-mix(in srgb, #d4e8d4 28%, transparent),
-      transparent 50%
+      ellipse 70% 45% at 94% 0%,
+      color-mix(in srgb, #3a6a52 10%, transparent),
+      transparent 52%
     ),
     radial-gradient(
-      ellipse 80% 40% at 50% 100%,
-      color-mix(in srgb, #e8d5b8 22%, transparent),
+      ellipse 60% 35% at 50% 110%,
+      color-mix(in srgb, #2a4058 12%, transparent),
       transparent 60%
     ),
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--app) 92%, #f5efe4) 0%,
-      var(--app) 100%
-    );
+    var(--app);
 }
 
 /* Elevated panels */
@@ -174,8 +171,8 @@ html.light .page-glow {
 }
 
 html.light .card-quiet {
-  background: color-mix(in srgb, var(--surface) 82%, transparent);
-  border-color: color-mix(in srgb, var(--border) 70%, transparent);
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
+  border-color: color-mix(in srgb, var(--border) 55%, transparent);
 }
 
 .card-hero {
@@ -198,8 +195,8 @@ html.light .card-hero {
   background:
     linear-gradient(
       145deg,
-      color-mix(in srgb, var(--raised) 70%, #d6ebf7 30%),
-      color-mix(in srgb, var(--surface) 90%, transparent) 60%,
+      color-mix(in srgb, var(--surface) 80%, var(--sky) 10%),
+      color-mix(in srgb, var(--surface) 96%, transparent) 55%,
       var(--surface)
     );
 }
@@ -220,9 +217,9 @@ html.light .card-hero {
   pointer-events: none;
 }
 
-/* Light: softer mobile drawer dim (not harsh pure black) */
+/* Dim: soft scrim over dim UI */
 html.light .theme-scrim {
-  background: color-mix(in srgb, #3d3428 35%, transparent);
+  background: color-mix(in srgb, #05080c 55%, transparent);
 }
 
 /* Segmented control shell */

@@ -135,7 +135,7 @@ export default function SettingsPage() {
       <Card className="space-y-3">
         <CardTitle>Appearance</CardTitle>
         <p className="text-xs text-muted">
-          Light mode uses warm paper tones (not pure white) for easier reading.
+          Dim is a softer dark — less glare than pure black, easier on the eyes.
         </p>
         <div className="grid grid-cols-2 gap-2">
           {(
@@ -147,8 +147,8 @@ export default function SettingsPage() {
               },
               {
                 id: "light" as AppTheme,
-                title: "Light",
-                hint: "Warm parchment",
+                title: "Dim",
+                hint: "Soft · eye comfort",
               },
             ] as const
           ).map((opt) => (

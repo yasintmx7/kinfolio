@@ -56,7 +56,7 @@ export function applyTheme(theme: AppTheme): void {
   if (meta) {
     meta.setAttribute(
       "content",
-      theme === "light" ? "#efe8dc" : "#060c14",
+      theme === "light" ? "#121920" : "#060c14",
     );
   }
 }

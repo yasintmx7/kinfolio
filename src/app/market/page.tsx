@@ -44,9 +44,14 @@ import {
   formatDeltaPct,
   type CostVsFloor,
 } from "@/lib/market/cost-vs-floor";
-import { getWatchlist, toggleWatch } from "@/lib/market/watchlist";
+import {
+  getWatchlist,
+  isInWatchlist,
+  toggleWatch,
+} from "@/lib/market/watchlist";
 import {
   getWatchedSellers,
+  isSellerWatched,
   toggleSellerWatch,
   type WatchedSeller,
 } from "@/lib/market/seller-watch";
@@ -710,11 +715,26 @@ function MarketHubInner() {
     }));
 
     if (tab === "watch") {
-      list = list.filter(
-        (i) =>
-          watch.includes(i.id) ||
-          (i.portfolioItemId != null && watch.includes(i.portfolioItemId)),
+      // Match market type ↔ portfolio id (cooked_fish_meat / cooked-fish-meat)
+      const matched = list.filter((i) =>
+        isInWatchlist(watch, i.id, [i.portfolioItemId]),
       );
+      // Keep starred ids even when floors feed is partial
+      const stubs: BrowseRow[] = [];
+      for (const w of watch) {
+        if (matched.some((i) => isInWatchlist([w], i.id, [i.portfolioItemId]))) {
+          continue;
+        }
+        stubs.push({
+          id: w,
+          name: humanizeItemType(w),
+          portfolioItemId: undefined,
+          listings: 0,
+          hasLiveFloor: false,
+          category: itemCategory(w),
+        });
+      }
+      list = [...matched, ...stubs];
     }
     if (categoryFilter !== "all" && (tab === "floors" || tab === "watch")) {
       list = list.filter((i) => {
@@ -929,20 +949,45 @@ function MarketHubInner() {
     });
   }
 
-  function onWatch(id: string) {
-    const next = toggleWatch(id);
+  function onWatch(id: string, portfolioItemId?: string | null) {
+    if (!id?.trim()) return;
+    const next = toggleWatch(id, [portfolioItemId]);
     setWatch(next);
-    push(next.includes(id) ? "Watching" : "Removed", "ok");
+    push(
+      isInWatchlist(next, id, [portfolioItemId]) ? "Watching" : "Removed",
+      "ok",
+    );
   }
 
   function onWatchSeller(name: string, sellerId?: string | null) {
     const n = sanitizePersonName(name) ?? name.trim();
-    if (!n) return;
+    if (!n || n === "Seller") return;
     const next = toggleSellerWatch(n, sellerId);
     setWatchedSellersState(next);
     const on = next.some((s) => s.name.toLowerCase() === n.toLowerCase());
     push(on ? `Watching ${n}` : `Unwatched ${n}`, "ok");
   }
+
+  /** Live open lots from watched sellers (Watch tab). */
+  const watchedSellerListings = useMemo(() => {
+    if (tab !== "watch" || watchedSellers.length === 0) return [];
+    const names = new Set(
+      watchedSellers.map((s) => s.name.trim().toLowerCase()).filter(Boolean),
+    );
+    const ids = new Set(
+      watchedSellers
+        .map((s) => (s.sellerId != null ? String(s.sellerId) : ""))
+        .filter((x) => /^\d+$/.test(x)),
+    );
+    return hub.sales
+      .filter((s) => {
+        const n = sanitizePersonName(s.sellerName ?? s.seller)?.toLowerCase();
+        if (n && names.has(n)) return true;
+        if (s.sellerId != null && ids.has(String(s.sellerId))) return true;
+        return false;
+      })
+      .slice(0, 60);
+  }, [tab, watchedSellers, hub.sales]);
 
   const advancedActive = categoryFilter !== "all" || sortFilter === "qty";
 
@@ -996,9 +1041,10 @@ function MarketHubInner() {
                   {browseItems.filter((i) => (i.listings ?? 0) > 0).length}
                 </span>
               ) : null}
-              {id === "watch" && watch.length > 0 ? (
+              {id === "watch" &&
+              (watch.length > 0 || watchedSellers.length > 0) ? (
                 <span className="ml-1 tabular-nums opacity-80">
-                  {watch.length}
+                  {watch.length + watchedSellers.length}
                 </span>
               ) : null}
             </button>
@@ -1332,22 +1378,52 @@ function MarketHubInner() {
           <ul className="flex flex-wrap gap-2">
             {watchedSellers.map((s) => (
               <li key={s.name} className="inline-flex items-center gap-1">
-                <a
-                  href={`/sellers/${encodeURIComponent(s.name)}`}
+                <button
+                  type="button"
                   className="rounded-lg bg-raised px-2.5 py-1.5 text-xs font-medium text-sky-hi hover:bg-sky/15"
+                  onClick={() => openSellerByName(s.name, s.sellerId)}
                 >
                   {s.name}
+                </button>
+                <a
+                  href={`/sellers/${encodeURIComponent(s.name)}`}
+                  className="rounded-lg px-1.5 py-1 text-[10px] text-muted hover:text-sky-hi"
+                >
+                  Profile
                 </a>
                 <button
                   type="button"
                   className="rounded-lg px-1.5 py-1 text-[10px] text-muted hover:text-loss"
                   onClick={() => onWatchSeller(s.name, s.sellerId)}
+                  aria-label={`Unwatch ${s.name}`}
                 >
                   ✕
                 </button>
               </li>
             ))}
           </ul>
+          {watchedSellerListings.length > 0 ? (
+            <div className="border-t border-border/30 pt-2">
+              <p className="mb-1 px-0.5 text-[11px] text-muted">
+                Their open lots in the live book ({watchedSellerListings.length}
+                )
+              </p>
+              <ListingList
+                rows={watchedSellerListings}
+                mode="listings"
+                onOpenItem={openItem}
+                onOpenSeller={openSeller}
+                onWatch={onWatch}
+                watch={watch}
+                compact
+              />
+            </div>
+          ) : (
+            <p className="text-[11px] text-muted">
+              No open lots from these sellers in the partial live book right
+              now — open a profile for the full scan.
+            </p>
+          )}
         </Card>
       )}
 
@@ -1358,7 +1434,7 @@ function MarketHubInner() {
           floorsNote={hub.floorsNote}
           watch={watch}
           costByKey={costByKey}
-          loading={hub.loading && hub.floors.length === 0}
+          loading={hub.loading && hub.floors.length === 0 && tab === "floors"}
           onOpen={openItem}
           onWatch={onWatch}
           empty={
@@ -1415,9 +1491,17 @@ function MarketHubInner() {
                 (s.portfolioItemId != null &&
                   itemIdsMatch(s.portfolioItemId, itemFocus))),
           )}
-          watching={watch.includes(itemFocus)}
+          watching={isInWatchlist(watch, itemFocus, [
+            selectedFloor?.portfolioItemId,
+            selected[0]?.portfolioItemId,
+          ])}
           onClose={closeSheet}
-          onWatch={() => onWatch(itemFocus)}
+          onWatch={() =>
+            onWatch(
+              itemFocus,
+              selectedFloor?.portfolioItemId ?? selected[0]?.portfolioItemId,
+            )
+          }
           onOpenSeller={openSeller}
           mode="item"
           showLock
@@ -1433,8 +1517,22 @@ function MarketHubInner() {
               : `${sellerListings.length} listings · open + recent sold`
           }
           rows={sellerListings}
-          watching={false}
+          watching={
+            !!sellerFocus.sellerName &&
+            (isSellerWatched(sellerFocus.sellerName) ||
+              watchedSellers.some(
+                (s) =>
+                  s.name.toLowerCase() ===
+                  sellerFocus.sellerName!.toLowerCase(),
+              ))
+          }
           onClose={closeSheet}
+          onWatch={
+            sellerFocus.sellerName
+              ? () =>
+                  onWatchSeller(sellerFocus.sellerName!, sellerFocus.sellerId)
+              : undefined
+          }
           onOpenItem={openItem}
           mode="seller"
           showLock
@@ -1667,7 +1765,7 @@ const ListingRow = memo(function ListingRow({
   mode: "listings" | "activity";
   onOpenItem: (id: string) => void;
   onOpenSeller: (row: RecentSale) => void;
-  onWatch: (id: string) => void;
+  onWatch: (id: string, portfolioItemId?: string | null) => void;
   watching: boolean;
   compact: boolean;
 }) {
@@ -1785,7 +1883,7 @@ const ListingRow = memo(function ListingRow({
         </button>
         <button
           type="button"
-          onClick={() => onWatch(r.itemType)}
+          onClick={() => onWatch(r.itemType, r.portfolioItemId)}
           className={cn(
             "rounded-xl p-1.5 text-muted transition-colors hover:bg-raised hover:text-sky-hi",
             watching && "bg-sky/10 text-sky-hi",
@@ -1818,7 +1916,7 @@ function ListingList({
   mode: "listings" | "activity";
   onOpenItem: (id: string) => void;
   onOpenSeller: (row: RecentSale) => void;
-  onWatch: (id: string) => void;
+  onWatch: (id: string, portfolioItemId?: string | null) => void;
   watch: string[];
   compact?: boolean;
   tall?: boolean;
@@ -1850,7 +1948,7 @@ function ListingList({
           onOpenItem={onOpenItem}
           onOpenSeller={onOpenSeller}
           onWatch={onWatch}
-          watching={watch.includes(r.itemType)}
+          watching={isInWatchlist(watch, r.itemType, [r.portfolioItemId])}
           compact={compact}
         />
       ))}
@@ -1902,7 +2000,7 @@ function ItemBrowseBoard({
   costByKey: Map<string, { avgUsd: number; qty: string }>;
   loading?: boolean;
   onOpen: (id: string) => void;
-  onWatch: (id: string) => void;
+  onWatch: (id: string, portfolioItemId?: string | null) => void;
   empty: string;
 }) {
   if (loading) {
@@ -2013,7 +2111,7 @@ function ItemBrowseBoard({
         {rows.map((row) => {
           const rate = floorRateLabel(row.lowestUsdPerUnit);
           const listings = row.listings ?? 0;
-          const watching = watch.includes(row.id);
+          const watching = isInWatchlist(watch, row.id, [row.portfolioItemId]);
           const kins = row.kinsListings ?? 0;
           const gold = row.goldListings ?? 0;
           const held =
@@ -2104,7 +2202,7 @@ function ItemBrowseBoard({
               </button>
               <button
                 type="button"
-                onClick={() => onWatch(row.id)}
+                onClick={() => onWatch(row.id, row.portfolioItemId)}
                 className={cn(
                   "absolute right-2 top-2 rounded-lg p-1.5 text-muted hover:bg-raised hover:text-sky-hi",
                   watching && "bg-sky/10 text-sky-hi",
@@ -3156,7 +3254,7 @@ function DetailSheet({
           )}
         </div>
 
-        {mode === "item" && onWatch && (
+        {onWatch && (
           <div className="border-t border-border/40 p-4">
             <button
               type="button"
@@ -3167,7 +3265,13 @@ function DetailSheet({
               )}
             >
               <Star className={cn("h-4 w-4", watching && "fill-sky")} />
-              {watching ? "Watching" : "Watch item"}
+              {mode === "seller"
+                ? watching
+                  ? "Watching seller"
+                  : "Watch seller"
+                : watching
+                  ? "Watching"
+                  : "Watch item"}
             </button>
           </div>
         )}

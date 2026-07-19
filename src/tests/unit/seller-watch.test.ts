@@ -20,4 +20,17 @@ describe("seller-watch", () => {
     expect(list).toHaveLength(0);
     expect(isSellerWatched("Alice")).toBe(false);
   });
+
+  it("unwatch by sellerId when name casing differs", () => {
+    toggleSellerWatch("Bob", "42");
+    expect(isSellerWatched("bob", "42")).toBe(true);
+    const next = toggleSellerWatch("BOB", "42");
+    expect(next).toHaveLength(0);
+  });
+
+  it("rejects pure id watches without a username", () => {
+    const next = toggleSellerWatch("", "99");
+    expect(next).toHaveLength(0);
+    expect(isSellerWatched("", "99")).toBe(false);
+  });
 });

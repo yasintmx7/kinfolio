@@ -130,34 +130,42 @@ export default function SellerProfilePage({
     return () => ac.abort();
   }, [load]);
 
+  /** Prefer live listing username, then URL key, then formatted label. */
+  const watchableName = useMemo(() => {
+    return (
+      sanitizePersonName(listings[0]?.sellerName) ??
+      sanitizePersonName(sellerName) ??
+      null
+    );
+  }, [listings, sellerName]);
+
   useEffect(() => {
     const list = getWatchedSellers();
     setWatchList(list);
-    const name =
-      sanitizePersonName(sellerName) ??
-      (listings[0] ? sanitizePersonName(listings[0].sellerName) : null);
-    if (name) setWatched(isSellerWatched(name));
-  }, [sellerName, listings]);
+    if (watchableName) {
+      setWatched(isSellerWatched(watchableName));
+    } else {
+      setWatched(false);
+    }
+  }, [watchableName]);
 
   const displayName = useMemo(() => {
-    const fromList = listings[0]
-      ? sanitizePersonName(listings[0].sellerName)
-      : null;
     return formatSellerLabel({
-      sellerName: fromList ?? sellerName,
+      sellerName: watchableName ?? sellerName,
       sellerId: sellerId ?? listings[0]?.sellerId,
     });
-  }, [listings, sellerId, sellerName]);
+  }, [listings, sellerId, sellerName, watchableName]);
 
   const open = listings.filter((l) => !l.reserved);
   const locked = listings.filter((l) => l.reserved);
 
   function onToggleWatch() {
-    const name =
-      sanitizePersonName(displayName.startsWith("#") ? null : displayName) ??
-      sellerName;
+    const name = watchableName;
     if (!name || name === "Seller") return;
-    const next = toggleSellerWatch(name, sellerId ?? listings[0]?.sellerId);
+    const next = toggleSellerWatch(
+      name,
+      sellerId ?? listings[0]?.sellerId ?? null,
+    );
     setWatchList(next);
     setWatched(next.some((s) => s.name.toLowerCase() === name.toLowerCase()));
   }
@@ -194,7 +202,7 @@ export default function SellerProfilePage({
           <Button
             variant="secondary"
             onClick={onToggleWatch}
-            disabled={displayName === "Seller"}
+            disabled={!watchableName}
           >
             <Star
               className={cn(

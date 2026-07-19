@@ -69,10 +69,21 @@ export function setWatchedSellers(list: WatchedSeller[]): void {
   writeRaw(JSON.stringify(list.slice(0, MAX)));
 }
 
-export function isSellerWatched(name: string): boolean {
+export function isSellerWatched(
+  name: string,
+  sellerId?: string | null,
+): boolean {
   const n = normalizeName(name).toLowerCase();
-  if (!n) return false;
-  return getWatchedSellers().some((s) => s.name.toLowerCase() === n);
+  const id =
+    sellerId != null && /^\d+$/.test(String(sellerId).trim())
+      ? String(sellerId).trim()
+      : null;
+  if (!n && !id) return false;
+  return getWatchedSellers().some((s) => {
+    if (n && s.name.toLowerCase() === n) return true;
+    if (id && s.sellerId != null && String(s.sellerId) === id) return true;
+    return false;
+  });
 }
 
 export function toggleSellerWatch(
@@ -80,20 +91,36 @@ export function toggleSellerWatch(
   sellerId?: string | null,
 ): WatchedSeller[] {
   const n = normalizeName(name);
-  if (!n) return getWatchedSellers();
+  const id =
+    sellerId != null && /^\d+$/.test(String(sellerId).trim())
+      ? String(sellerId).trim()
+      : null;
+  if (!n && !id) return getWatchedSellers();
   const cur = getWatchedSellers();
   const key = n.toLowerCase();
-  const exists = cur.some((s) => s.name.toLowerCase() === key);
+  const exists = cur.some((s) => {
+    if (key && s.name.toLowerCase() === key) return true;
+    if (id && s.sellerId != null && String(s.sellerId) === id) return true;
+    return false;
+  });
   const next = exists
-    ? cur.filter((s) => s.name.toLowerCase() !== key)
+    ? cur.filter((s) => {
+        if (key && s.name.toLowerCase() === key) return false;
+        if (id && s.sellerId != null && String(s.sellerId) === id) return false;
+        return true;
+      })
     : [
         {
-          name: n,
-          sellerId: sellerId ?? null,
+          name: n || `#${id}`,
+          sellerId: id,
           addedAt: new Date().toISOString(),
         },
         ...cur,
       ];
+  // Don't store "#123" as a watch name — require a real username
+  if (!exists && (!n || n.startsWith("#"))) {
+    return cur;
+  }
   setWatchedSellers(next);
   return next;
 }

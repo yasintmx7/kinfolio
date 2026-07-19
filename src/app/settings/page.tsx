@@ -135,7 +135,7 @@ export default function SettingsPage() {
       <Card className="space-y-3">
         <CardTitle>Appearance</CardTitle>
         <p className="text-xs text-muted">
-          Dim is a softer dark — less glare than pure black, easier on the eyes.
+          Light uses soft cream (#FFF9E6). Dark is deep navy.
         </p>
         <div className="grid grid-cols-2 gap-2">
           {(
@@ -147,8 +147,8 @@ export default function SettingsPage() {
               },
               {
                 id: "light" as AppTheme,
-                title: "Dim",
-                hint: "Soft · eye comfort",
+                title: "Light",
+                hint: "Cream #FFF9E6",
               },
             ] as const
           ).map((opt) => (

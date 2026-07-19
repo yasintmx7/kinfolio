@@ -329,6 +329,7 @@ function listFingerprint(
 }
 
 async function fetchJson(url: string, timeoutMs = 20000): Promise<unknown> {
+  // bust HTTP/SW intermediate caches — phones often showed stale book vs desktop
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {

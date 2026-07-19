@@ -1374,9 +1374,13 @@ function MarketHubInner() {
 
       {tab === "market" && (
         <section className="card-quiet overflow-hidden rounded-2xl lg:rounded-3xl">
+          {/*
+            Mobile: single column with solid heights so listings aren't clipped
+            under sticky chrome. Desktop: side-by-side panes.
+          */}
           <div className="flex min-h-0 flex-col lg:flex-row">
             {/* Listings — primary pane */}
-            <div className="min-w-0 flex-1 border-b border-border/30 lg:border-b-0 lg:border-r">
+            <div className="flex min-w-0 flex-1 flex-col border-b border-border/30 lg:border-b-0 lg:border-r">
               <header className="panel-head !py-2.5">
                 <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
                   <h2 className="text-[14px] font-semibold tracking-tight">
@@ -1715,8 +1719,8 @@ function SoldActivityCard({
   }
 
   return (
-    <div className="max-h-[min(52dvh,32rem)] divide-y divide-border/20 overflow-y-auto lg:max-h-[calc(100dvh-12rem)]">
-      {rows.map((r) => {
+    <div className="max-h-[min(42dvh,26rem)] divide-y divide-border/20 overflow-x-hidden overflow-y-auto overscroll-contain lg:max-h-[calc(100dvh-12rem)]">
+      {rows.map((r, idx) => {
         const seller = sellerDisplay(r);
         const buyer = buyerParts(r);
         const pending = isItemPending(r);
@@ -1724,7 +1728,7 @@ function SoldActivityCard({
         const canOpenItem = !pending && r.itemType && r.itemType !== "unknown";
         return (
           <div
-            key={`${r.id}-${r.timestamp}`}
+            key={`${r.id}-${r.itemType}-${r.timestamp}-${idx}`}
             className="list-row-cv row-hover flex items-start gap-2.5 px-3 py-2.5"
           >
             {canOpenItem ? (
@@ -2085,17 +2089,18 @@ function ListingList({
   return (
     <div
       className={cn(
-        "divide-y divide-border/20 overflow-y-auto",
+        "divide-y divide-border/20 overflow-x-hidden overflow-y-auto overscroll-contain",
+        // Mobile: leave room for sticky search + bottom nav; avoid nested clip bugs
         tall
-          ? "max-h-[min(78dvh,52rem)] lg:max-h-[calc(100dvh-13rem)]"
+          ? "max-h-[min(62dvh,36rem)] min-h-[12rem] lg:max-h-[calc(100dvh-13rem)]"
           : compact
-            ? "max-h-[min(70dvh,36rem)] lg:max-h-[calc(100dvh-16rem)]"
-            : "max-h-[calc(100dvh-15rem)]",
+            ? "max-h-[min(48dvh,28rem)] lg:max-h-[calc(100dvh-16rem)]"
+            : "max-h-[min(58dvh,32rem)] lg:max-h-[calc(100dvh-15rem)]",
       )}
     >
-      {rows.map((r) => (
+      {rows.map((r, idx) => (
         <ListingRow
-          key={r.id}
+          key={`${r.id}-${r.itemType}-${r.listingId ?? ""}-${idx}`}
           r={r}
           mode={mode}
           onOpenItem={onOpenItem}

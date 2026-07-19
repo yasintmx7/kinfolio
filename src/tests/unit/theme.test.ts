@@ -3,8 +3,6 @@ import {
   getStoredTheme,
   isAppTheme,
   setTheme,
-  storeTheme,
-  THEME_STORAGE_KEY,
 } from "@/lib/theme";
 
 describe("theme", () => {

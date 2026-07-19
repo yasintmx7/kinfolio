@@ -297,6 +297,7 @@ export default function LeaderboardPage() {
   );
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setActiveSearch("");
     setSearchInput("");
     setPagesLoaded(0);

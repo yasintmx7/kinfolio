@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import {
   pixelColor,
   sellerPixelAvatar,
@@ -16,7 +16,7 @@ type Props = {
 };
 
 const DATA_URL_CACHE = new Map<string, string>();
-const MAX_CACHE = 250;
+const MAX_CACHE = 800;
 
 function cacheKey(sellerId?: string | null, sellerName?: string | null) {
   return `${sellerId ?? ""}|${sellerName ?? ""}`;
@@ -78,18 +78,44 @@ export const SellerAvatar = memo(function SellerAvatar({
     () => sellerPixelAvatar(sellerId, sellerName).palette.bg,
     [sellerId, sellerName],
   );
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(false);
   const [src, setSrc] = useState("");
 
+  // Defer canvas rendering until the avatar scrolls into view
   useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    // If IntersectionObserver is not available, render immediately
+    if (typeof IntersectionObserver === "undefined") {
+      setVisible(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry?.isIntersecting) {
+          setVisible(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "200px" },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!visible) return;
     try {
       setSrc(renderAvatarDataUrl(sellerId, sellerName));
     } catch {
       setSrc("");
     }
-  }, [sellerId, sellerName]);
+  }, [visible, sellerId, sellerName]);
 
   return (
     <div
+      ref={containerRef}
       className={cn(
         "relative shrink-0 overflow-hidden",
         profile

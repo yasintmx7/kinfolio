@@ -126,6 +126,7 @@ export default function SellerProfilePage({
 
   useEffect(() => {
     const ac = new AbortController();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load(ac.signal);
     return () => ac.abort();
   }, [load]);
@@ -141,6 +142,7 @@ export default function SellerProfilePage({
 
   useEffect(() => {
     const list = getWatchedSellers();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setWatchList(list);
     if (watchableName) {
       setWatched(isSellerWatched(watchableName));

@@ -32,7 +32,7 @@ export function ThemeSync() {
     } else {
       applyTheme(fromSettings);
     }
-  }, [ready, settings?.theme]);
+  }, [ready, settings]);
 
   // Expose nothing — pure side-effect sync
   void patchSettings;

@@ -1,6 +1,21 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  startTransition,
+} from "react";
+
+/**
+ * Detect coarse pointer (phone/tablet) for adaptive poll rates.
+ * Falls back to false on SSR.
+ */
+function isMobilePointer(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.matchMedia?.("(pointer: coarse)").matches ?? false;
+}
 import {
   cleanSellerFields,
   officialListingId,
@@ -524,8 +539,16 @@ function enrichSold(
  * Default poll ~1.5s pulse (new listings + sold).
  * Full cheap book every 3rd tick. Instant sold = book delta + sold-feed delist.
  */
-export function useMarketHub(pollMs = 1_500) {
+export function useMarketHub(pollMs?: number) {
+  // Adaptive poll: 3s desktop, 5s mobile (coarse pointer)
+  const effectivePollMs = pollMs ?? (isMobilePointer() ? 5_000 : 3_000);
   const [data, setData] = useState<MarketHubData>(empty);
+  // Keep a ref to current data so applyListingsFeed can read state
+  // without triggering a React render (for early-exit fingerprint check).
+  const dataRef = useRef(data);
+  useEffect(() => {
+    dataRef.current = data;
+  }, [data]);
   const listingsInFlight = useRef(false);
   const soldInFlight = useRef(false);
   const floorsInFlight = useRef(false);
@@ -596,152 +619,170 @@ export function useMarketHub(pollMs = 1_500) {
     ) => {
       const feedOk = cheap.ok || newest.ok;
 
-      setData((prev) => {
-        const cheapRows = cheap.ok
-          ? cheap.activity
-          : newest.ok
-            ? prev.sales
-            : [];
-        const newRows = newest.ok ? newest.activity : [];
-        let nextSalesRaw = feedOk
-          ? mergeListingFeeds(
-              cheapRows.length ? cheapRows : prev.sales,
-              newRows,
-            )
-          : prev.sales;
+      // Compute next state outside setData so we can early-exit
+      // before scheduling a React render when nothing changed.
+      const prevData = dataRef.current;
+      const cheapRows = cheap.ok
+        ? cheap.activity
+        : newest.ok
+          ? prevData.sales
+          : [];
+      const newRows = newest.ok ? newest.activity : [];
+      let nextSalesRaw = feedOk
+        ? mergeListingFeeds(
+            cheapRows.length ? cheapRows : prevData.sales,
+            newRows,
+          )
+        : prevData.sales;
 
-        // Keep lock state across KM-only pulses that omit reservedBy
-        nextSalesRaw = preserveLockState(prev.sales, nextSalesRaw, {
-          trustUnlock: Boolean(opts?.trustUnlock && cheap.ok),
-        });
+      // Keep lock state across KM-only pulses that omit reservedBy
+      nextSalesRaw = preserveLockState(prevData.sales, nextSalesRaw, {
+        trustUnlock: Boolean(opts?.trustUnlock && cheap.ok),
+      });
 
-        // Instant delist: drop anything already in sold / book-delta
-        nextSalesRaw = removeSoldFromOpenBook(nextSalesRaw, [
-          ...prev.sold,
-          ...bookDeltaSoldRef.current.values(),
-        ]);
+      // Instant delist: drop anything already in sold / book-delta
+      nextSalesRaw = removeSoldFromOpenBook(nextSalesRaw, [
+        ...prevData.sold,
+        ...bookDeltaSoldRef.current.values(),
+      ]);
 
-        if (feedOk) {
-          buildSellerIdNameMap(nextSalesRaw, sellerIdNameRef.current);
-        }
+      if (feedOk) {
+        buildSellerIdNameMap(nextSalesRaw, sellerIdNameRef.current);
+      }
 
-        const nextSales = resolveLockerNames(
-          nextSalesRaw,
-          sellerIdNameRef.current,
-        );
+      const nextSales = resolveLockerNames(
+        nextSalesRaw,
+        sellerIdNameRef.current,
+      );
 
-        const fp = listFingerprint(nextSales);
-        const sameList =
-          feedOk && fp === lastListingsFp.current && prev.sales.length > 0;
+      const fp = listFingerprint(nextSales);
+      const sameList =
+        feedOk && fp === lastListingsFp.current && prevData.sales.length > 0;
 
-        if (feedOk) {
-          lastListingsFp.current = fp;
-          // Instant sold: listing left official open book since last healthy poll
-          if (!sameList && lastOpenSnapshotRef.current.length > 0) {
-            const gone = detectGoneListings(
-              lastOpenSnapshotRef.current,
-              nextSales,
+      // *** EARLY EXIT: skip React render entirely when data hasn't changed ***
+      if (sameList && opts?.silent && feedOk) {
+        // Still update refs for book-delta tracking
+        lastListingsFp.current = fp;
+        return feedOk;
+      }
+
+      if (feedOk) {
+        lastListingsFp.current = fp;
+        // Instant sold: listing left official open book since last healthy poll
+        if (!sameList && lastOpenSnapshotRef.current.length > 0) {
+          const gone = detectGoneListings(
+            lastOpenSnapshotRef.current,
+            nextSales,
+          );
+          const now = Date.now();
+          for (const row of gone) {
+            const lid = officialListingId(row.listingId ?? row.id);
+            if (!lid) continue;
+            const snap = knownListingsRef.current.get(lid) ?? row;
+            bookDeltaSoldRef.current.set(
+              lid,
+              toInstantSold(snap, now) as RecentSale,
             );
-            const now = Date.now();
-            for (const row of gone) {
-              const lid = officialListingId(row.listingId ?? row.id);
-              if (!lid) continue;
-              const snap = knownListingsRef.current.get(lid) ?? row;
-              bookDeltaSoldRef.current.set(
-                lid,
-                toInstantSold(snap, now) as RecentSale,
-              );
-            }
           }
-
-          if (!sameList) {
-            const map = new Map(knownListingsRef.current);
-            for (const row of nextSales) {
-              // Keep last locker identity so sold enrichment can show "who bought"
-              const prevSnap =
-                map.get(String(row.id)) ??
-                (row.listingId ? map.get(String(row.listingId)) : undefined);
-              const snap: RecentSale = {
-                ...row,
-                buyerId: row.buyerId ?? prevSnap?.buyerId ?? null,
-                buyerName:
-                  sanitizePersonName(row.buyerName) ??
-                  sanitizePersonName(prevSnap?.buyerName) ??
-                  null,
-              };
-              map.set(String(row.id), snap);
-              if (row.listingId) map.set(String(row.listingId), snap);
-            }
-            if (map.size > 4000) {
-              // Bug #13 fix: sort by listing timestamp (most recent first) before
-              // trimming so freshly-seen/updated listings survive, not just the
-              // last-inserted ones regardless of their recency.
-              const entries = [...map.entries()].sort(
-                ([, a], [, b]) =>
-                  Date.parse(b.timestamp || "0") - Date.parse(a.timestamp || "0"),
-              ).slice(0, 3000);
-              knownListingsRef.current = new Map(entries);
-            } else {
-              knownListingsRef.current = map;
-            }
-          }
-
-          lastOpenSnapshotRef.current = nextSales;
         }
 
-        const kinsUsd = cheap.kinsUsd ?? newest.kinsUsd ?? prev.kinsUsd;
-        const rateSource =
-          cheap.rateSource ?? newest.rateSource ?? prev.rateSource;
+        if (!sameList) {
+          const map = new Map(knownListingsRef.current);
+          for (const row of nextSales) {
+            // Keep last locker identity so sold enrichment can show "who bought"
+            const prevSnap =
+              map.get(String(row.id)) ??
+              (row.listingId ? map.get(String(row.listingId)) : undefined);
+            const snap: RecentSale = {
+              ...row,
+              buyerId: row.buyerId ?? prevSnap?.buyerId ?? null,
+              buyerName:
+                sanitizePersonName(row.buyerName) ??
+                sanitizePersonName(prevSnap?.buyerName) ??
+                null,
+            };
+            map.set(String(row.id), snap);
+            if (row.listingId) map.set(String(row.listingId), snap);
+          }
+          if (map.size > 4000) {
+            const entries = [...map.entries()].sort(
+              ([, a], [, b]) =>
+                Date.parse(b.timestamp || "0") - Date.parse(a.timestamp || "0"),
+            ).slice(0, 3000);
+            knownListingsRef.current = new Map(entries);
+          } else {
+            knownListingsRef.current = map;
+          }
+        }
 
-        const sold = feedOk ? buildMergedSold(nextSales) : prev.sold;
+        lastOpenSnapshotRef.current = nextSales;
+      }
 
-        if (sameList && opts?.silent) {
+      const kinsUsd = cheap.kinsUsd ?? newest.kinsUsd ?? prevData.kinsUsd;
+      const rateSource =
+        cheap.rateSource ?? newest.rateSource ?? prevData.rateSource;
+
+      const sold = feedOk ? buildMergedSold(nextSales) : prevData.sold;
+
+      // Use startTransition for silent pulse updates (non-urgent)
+      const applyUpdate = (updater: () => void) => {
+        if (opts?.silent) {
+          startTransition(updater);
+        } else {
+          updater();
+        }
+      };
+
+      applyUpdate(() => {
+        setData((prev) => {
+          if (sameList && opts?.silent) {
+            return {
+              ...prev,
+              sales: nextSales,
+              sold,
+              kinsUsd,
+              rateSource,
+              loading: false,
+              refreshing: false,
+              error: feedOk ? null : prev.error,
+            };
+          }
+
+          let lastAt = prev.lastActivityAt;
+          for (const r of nextSales) {
+            if (!lastAt || Date.parse(r.timestamp) > Date.parse(lastAt)) {
+              lastAt = r.timestamp;
+            }
+          }
+          for (const r of sold) {
+            if (!lastAt || Date.parse(r.timestamp) > Date.parse(lastAt)) {
+              lastAt = r.timestamp;
+            }
+          }
+
           return {
             ...prev,
             sales: nextSales,
             sold,
+            byItem: buildByItem(nextSales, prev.floors),
             kinsUsd,
             rateSource,
+            salesNote: feedOk
+              ? "Sold: instant from official book + chain tx when ready."
+              : prev.salesNote,
+            activityCount: nextSales.length,
+            lastActivityAt: lastAt,
+            configured: Boolean(feedOk || prev.configured),
+            error:
+              !feedOk && prev.sales.length === 0
+                ? "Market data unavailable — check connection or Vercel login protection on API routes."
+                : feedOk
+                  ? null
+                  : prev.error,
             loading: false,
             refreshing: false,
-            error: feedOk ? null : prev.error,
           };
-        }
-
-        let lastAt = prev.lastActivityAt;
-        for (const r of nextSales) {
-          if (!lastAt || Date.parse(r.timestamp) > Date.parse(lastAt)) {
-            lastAt = r.timestamp;
-          }
-        }
-        for (const r of sold) {
-          if (!lastAt || Date.parse(r.timestamp) > Date.parse(lastAt)) {
-            lastAt = r.timestamp;
-          }
-        }
-
-        return {
-          ...prev,
-          sales: nextSales,
-          sold,
-          byItem: buildByItem(nextSales, prev.floors),
-          kinsUsd,
-          rateSource,
-          salesNote: feedOk
-            ? "Sold: instant from official book + chain tx when ready."
-            : prev.salesNote,
-          activityCount: nextSales.length,
-          lastActivityAt: lastAt,
-          configured: Boolean(feedOk || prev.configured),
-          error:
-            !feedOk && prev.sales.length === 0
-              ? "Market data unavailable — check connection or Vercel login protection on API routes."
-              : feedOk
-                ? null
-                : prev.error,
-          loading: false,
-          refreshing: false,
-        };
+        });
       });
 
       return feedOk;
@@ -988,10 +1029,13 @@ export function useMarketHub(pollMs = 1_500) {
   const reloadListingsRef = useRef(reloadListings);
   const reloadSoldRef = useRef(reloadSold);
   const reloadFloorsRef = useRef(reloadFloors);
-  reloadRef.current = reload;
-  reloadListingsRef.current = reloadListings;
-  reloadSoldRef.current = reloadSold;
-  reloadFloorsRef.current = reloadFloors;
+  
+  useEffect(() => {
+    reloadRef.current = reload;
+    reloadListingsRef.current = reloadListings;
+    reloadSoldRef.current = reloadSold;
+    reloadFloorsRef.current = reloadFloors;
+  }, [reload, reloadListings, reloadSold, reloadFloors]);
 
   useEffect(() => {
     void reloadRef.current({ floors: true });
@@ -1008,13 +1052,13 @@ export function useMarketHub(pollMs = 1_500) {
         deep: false,
       });
       void reloadSoldRef.current({ pulse: !fullBook });
-    }, pollMs);
+    }, effectivePollMs);
 
     // Floors: expensive aggregate — keep ≥45s
     const floorsId = setInterval(() => {
       if (document.visibilityState === "hidden") return;
       void reloadFloorsRef.current();
-    }, Math.max(pollMs * 20, 45_000));
+    }, Math.max(effectivePollMs * 15, 45_000));
 
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") {
@@ -1028,7 +1072,7 @@ export function useMarketHub(pollMs = 1_500) {
       clearInterval(floorsId);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [pollMs]);
+  }, [effectivePollMs]);
 
   return {
     ...data,

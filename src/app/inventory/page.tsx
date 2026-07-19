@@ -53,7 +53,7 @@ export default function InventoryPage() {
 
   const fee = settings?.defaultSellFeePercent ?? "5";
   const kinsUsd = price?.priceUsd ?? settings?.manualKinsUsd ?? "";
-  const favorites = settings?.favoriteItemIds ?? [];
+  const favorites = useMemo(() => settings?.favoriteItemIds ?? [], [settings?.favoriteItemIds]);
 
   // Live floors for cost-vs-market comparison
   useEffect(() => {

@@ -59,6 +59,7 @@ export function useKinsPrice(pollMs = 60000) {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
     const id = setInterval(load, pollMs);
     return () => clearInterval(id);

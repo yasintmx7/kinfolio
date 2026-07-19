@@ -38,7 +38,7 @@ export async function GET(request: Request) {
   try {
     const rate = await resolveKinsUsd();
     const byId = new Map<string, OfficialListingDto>();
-    let sources: string[] = [];
+    const sources: string[] = [];
 
     // 1) KM open book by seller name (covers more of the live market)
     if (sellerName) {

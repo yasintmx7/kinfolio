@@ -114,7 +114,7 @@ export default function AddEntryPage() {
   const [recentIds, setRecentIds] = useState<string[]>([]);
   const [queue, setQueue] = useState<QueueRow[] | null>(null);
   const [marketQueue, setMarketQueue] = useState<MarketQueueRow[] | null>(null);
-  const [marketWarnings, setMarketWarnings] = useState<string[]>([]);
+  const [, setMarketWarnings] = useState<string[]>([]);
   /** When true, missing stock before a sell is seeded as $0-cost gift (partial history). */
   const [seedMissingStock, setSeedMissingStock] = useState(true);
 

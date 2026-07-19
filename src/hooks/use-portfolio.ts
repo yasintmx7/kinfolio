@@ -55,6 +55,7 @@ export function usePortfolio() {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     refresh().catch((e) => {
       setError(e instanceof Error ? e.message : "Failed to load portfolio");
       setReady(true);

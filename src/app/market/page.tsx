@@ -3,11 +3,11 @@
 import {
   memo,
   Suspense,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
-  type ReactNode,
 } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -110,6 +110,38 @@ const CATEGORY_CHIPS: { id: CategoryFilter; label: string }[] = [
   { id: "key", label: "Keys" },
   { id: "other", label: "Other" },
 ];
+
+/** Default row caps — render only this many rows initially, rest behind "Show more". */
+const LISTING_CAP = 80;
+const SOLD_CAP = 40;
+const BROWSE_CAP = 60;
+const SHOW_MORE_STEP = 80;
+
+/**
+ * Cached timestamp formatter — avoids calling the extremely slow
+ * `toLocaleTimeString()` on every row every 1.5–3s poll cycle.
+ * Cache is keyed by ISO string (immutable) and cleared periodically.
+ */
+const _timeCache = new Map<string, string>();
+let _timeCacheFlush = 0;
+
+function formatTimeCached(iso: string): string {
+  const now = Date.now();
+  // Flush cache every 60s to pick up locale changes / prevent leak
+  if (now - _timeCacheFlush > 60_000) {
+    _timeCache.clear();
+    _timeCacheFlush = now;
+  }
+  const hit = _timeCache.get(iso);
+  if (hit) return hit;
+  try {
+    const val = new Date(iso).toLocaleTimeString();
+    _timeCache.set(iso, val);
+    return val;
+  } catch {
+    return "";
+  }
+}
 
 const RESOURCES = new Set([
   "wood",
@@ -398,9 +430,9 @@ function MarketHubInner() {
   const rawTab = searchParams.get("tab");
   const tab = parseTab(rawTab);
 
-  // 3s poll → sold on Activity typically within ~3–9s of leaving official book
-  // 1.5s pulse (new listings + sold); full book every ~4.5s
-  const hub = useMarketHub(1_500);
+  // Adaptive poll: 3s desktop, 5s mobile (coarse pointer).
+  // Full book every 3rd tick. Sold Activity typically within ~5–12s.
+  const hub = useMarketHub();
   const { price, reload: reloadPrice } = useKinsPrice(15_000);
   const { push } = useToast();
   const { summary: portfolioSummary, ready: portfolioReady } =
@@ -434,7 +466,34 @@ function MarketHubInner() {
   );
   const [prefsReady, setPrefsReady] = useState(false);
 
+  /** Row cap state — render limited rows initially for performance */
+  const [listingCap, setListingCap] = useState(LISTING_CAP);
+  const [soldCap, setSoldCap] = useState(SOLD_CAP);
+  const [browseCap, setBrowseCap] = useState(BROWSE_CAP);
+
+  // Reset caps when filters/tab change so user starts from top
+  const prevTab = useRef(tab);
   useEffect(() => {
+    if (prevTab.current !== tab) {
+      setListingCap(LISTING_CAP);
+      setSoldCap(SOLD_CAP);
+      setBrowseCap(BROWSE_CAP);
+      prevTab.current = tab;
+    }
+  }, [tab]);
+
+  const showMoreListings = useCallback(() => {
+    setListingCap((c) => c + SHOW_MORE_STEP);
+  }, []);
+  const showMoreSold = useCallback(() => {
+    setSoldCap((c) => c + SHOW_MORE_STEP);
+  }, []);
+  const showMoreBrowse = useCallback(() => {
+    setBrowseCap((c) => c + SHOW_MORE_STEP);
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setWatch(getWatchlist());
     setWatchedSellersState(getWatchedSellers());
     const prefs = getMarketPrefs();
@@ -471,6 +530,7 @@ function MarketHubInner() {
   useEffect(() => {
     const query = q.trim();
     if (tab !== "market" || query.length < 2) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSearchHits([]);
       setSearchSellers([]);
       setSearchNote(null);
@@ -545,6 +605,7 @@ function MarketHubInner() {
     const seller = searchParams.get("seller");
     const sellerName = searchParams.get("sellerName");
     const qParam = searchParams.get("q");
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (qParam != null && qParam !== "") setQ(qParam);
     if (item) {
       setItemFocus(item);
@@ -1424,6 +1485,9 @@ function MarketHubInner() {
                 watch={watch}
                 compact={false}
                 tall
+                maxRows={listingCap}
+                onShowMore={listingCap < listingRows.length ? showMoreListings : undefined}
+                totalRows={listingRows.length}
               />
             </div>
 
@@ -1501,6 +1565,9 @@ function MarketHubInner() {
                 rows={soldRows}
                 onOpenItem={openItem}
                 onOpenSeller={openSeller}
+                maxRows={soldCap}
+                onShowMore={soldCap < soldRows.length ? showMoreSold : undefined}
+                totalRows={soldRows.length}
               />
             </div>
           </div>
@@ -1551,6 +1618,7 @@ function MarketHubInner() {
                 onWatch={onWatch}
                 watch={watch}
                 compact
+                maxRows={40}
               />
             </div>
           ) : (
@@ -1572,6 +1640,9 @@ function MarketHubInner() {
           loading={hub.loading && hub.floors.length === 0 && tab === "floors"}
           onOpen={openItem}
           onWatch={onWatch}
+          maxRows={browseCap}
+          onShowMore={browseCap < browseItems.length ? showMoreBrowse : undefined}
+          totalRows={browseItems.length}
           empty={
             tab === "watch"
               ? watchedSellers.length
@@ -1704,15 +1775,152 @@ function isItemPending(r: RecentSale): boolean {
   return false;
 }
 
+/** Memoized sold row — avoids re-rendering all sold rows on every poll tick. */
+const SoldRow = memo(function SoldRow({
+  r,
+  onOpenItem,
+  onOpenSeller,
+}: {
+  r: RecentSale;
+  onOpenItem: (id: string) => void;
+  onOpenSeller: (row: RecentSale) => void;
+}) {
+  const seller = sellerDisplay(r);
+  const buyer = buyerParts(r);
+  const pending = isItemPending(r);
+  const age = formatSoldAge(r.timestamp);
+  const canOpenItem = !pending && r.itemType && r.itemType !== "unknown";
+  return (
+    <div
+      className="list-row-cv row-hover flex items-start gap-2.5 px-3 py-2.5"
+      style={{
+        contentVisibility: "auto",
+        containIntrinsicSize: "auto 64px",
+      }}
+    >
+      {canOpenItem ? (
+        <button
+          type="button"
+          onClick={() => onOpenItem(r.itemType)}
+          className="shrink-0"
+          aria-label={r.name}
+        >
+          <ItemIcon itemId={r.itemType} name={r.name} size={40} clear />
+        </button>
+      ) : (
+        <div
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface-2 text-[10px] font-semibold uppercase tracking-wide text-muted"
+          title="Item name still indexing"
+        >
+          …
+        </div>
+      )}
+      <div className="min-w-0 flex-1">
+        {canOpenItem ? (
+          <button
+            type="button"
+            onClick={() => onOpenItem(r.itemType)}
+            className="block w-full truncate text-left text-[13px] font-semibold hover:text-sky-hi"
+          >
+            <span className="font-mono tabular-nums text-sky-hi">
+              {qtyLabelFull(r.quantity)}
+            </span>{" "}
+            {r.name}
+          </button>
+        ) : (
+          <div className="truncate text-left text-[13px] font-semibold">
+            <span className="text-primary">Sale</span>
+            <span className="ml-1.5 text-[11px] font-medium text-muted">
+              item updating…
+            </span>
+          </div>
+        )}
+        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px]">
+          <button
+            type="button"
+            onClick={() => onOpenSeller(r)}
+            className="inline-flex max-w-full items-center gap-1 font-medium text-sky-hi underline decoration-sky/40 underline-offset-2 hover:bg-sky/10"
+          >
+            <SellerAvatar
+              sellerId={r.sellerId ?? r.sellerWallet}
+              sellerName={seller}
+              size={16}
+            />
+            <span className="truncate">
+              sold by {seller}
+              {r.sellerId && !seller.startsWith("#")
+                ? ` · #${r.sellerId}`
+                : ""}
+            </span>
+          </button>
+          {buyer.label ? (
+            <span
+              className="inline-flex max-w-full items-center gap-1 text-forest-hi"
+              title={
+                buyer.id
+                  ? `Buyer id #${buyer.id}`
+                  : buyer.wallet
+                    ? `Buyer wallet ${r.buyerWallet ?? ""}`
+                    : undefined
+              }
+            >
+              <SellerAvatar
+                sellerId={buyer.id ?? r.buyerWallet}
+                sellerName={buyer.name ?? buyer.label}
+                size={16}
+              />
+              <span className="truncate font-medium">
+                bought by{" "}
+                <span className="font-mono tabular-nums">
+                  {buyer.label}
+                </span>
+              </span>
+            </span>
+          ) : (
+            <span className="text-muted/80">buyer unknown</span>
+          )}
+        </div>
+        <div className="mt-0.5 text-[10px] text-muted">
+          {formatTimeCached(r.timestamp)}
+          {age ? (
+            <span className="text-sky-hi/90"> · {age}</span>
+          ) : null}
+          {r.solscanUrl ? (
+            <>
+              {" · "}
+              <a
+                href={r.solscanUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-sky-hi underline-offset-2 hover:underline"
+                onClick={(e) => e.stopPropagation()}
+              >
+                tx
+              </a>
+            </>
+          ) : null}
+        </div>
+      </div>
+      <PriceBlock row={r} compact />
+    </div>
+  );
+});
+
 /** Compact sold-only activity feed with seller username. */
 function SoldActivityCard({
   rows,
   onOpenItem,
   onOpenSeller,
+  maxRows,
+  onShowMore,
+  totalRows,
 }: {
   rows: RecentSale[];
   onOpenItem: (id: string) => void;
   onOpenSeller: (row: RecentSale) => void;
+  maxRows?: number;
+  onShowMore?: () => void;
+  totalRows?: number;
 }) {
   if (!rows.length) {
     return (
@@ -1724,132 +1932,28 @@ function SoldActivityCard({
     );
   }
 
+  const visible = maxRows != null ? rows.slice(0, maxRows) : rows;
+  const hiddenCount = (totalRows ?? rows.length) - visible.length;
+
   return (
     <div className="max-h-[min(42dvh,26rem)] divide-y divide-border/20 overflow-x-hidden overflow-y-auto overscroll-contain lg:max-h-[calc(100dvh-12rem)]">
-      {rows.map((r, idx) => {
-        const seller = sellerDisplay(r);
-        const buyer = buyerParts(r);
-        const pending = isItemPending(r);
-        const age = formatSoldAge(r.timestamp);
-        const canOpenItem = !pending && r.itemType && r.itemType !== "unknown";
-        return (
-          <div
-            key={`${r.id}-${r.itemType}-${r.timestamp}-${idx}`}
-            className="list-row-cv row-hover flex items-start gap-2.5 px-3 py-2.5"
-            style={{
-              contentVisibility: "auto",
-              // Hint to browser: each row is ~64px tall.
-              // Prevents scroll-position jumps when off-screen rows are skipped.
-              containIntrinsicSize: "auto 64px",
-            }}
-          >
-            {canOpenItem ? (
-              <button
-                type="button"
-                onClick={() => onOpenItem(r.itemType)}
-                className="shrink-0"
-                aria-label={r.name}
-              >
-                <ItemIcon itemId={r.itemType} name={r.name} size={40} clear />
-              </button>
-            ) : (
-              <div
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface-2 text-[10px] font-semibold uppercase tracking-wide text-muted"
-                title="Item name still indexing"
-              >
-                …
-              </div>
-            )}
-            <div className="min-w-0 flex-1">
-              {canOpenItem ? (
-                <button
-                  type="button"
-                  onClick={() => onOpenItem(r.itemType)}
-                  className="block w-full truncate text-left text-[13px] font-semibold hover:text-sky-hi"
-                >
-                  <span className="font-mono tabular-nums text-sky-hi">
-                    {qtyLabelFull(r.quantity)}
-                  </span>{" "}
-                  {r.name}
-                </button>
-              ) : (
-                <div className="truncate text-left text-[13px] font-semibold">
-                  <span className="text-primary">Sale</span>
-                  <span className="ml-1.5 text-[11px] font-medium text-muted">
-                    item updating…
-                  </span>
-                </div>
-              )}
-              <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px]">
-                <button
-                  type="button"
-                  onClick={() => onOpenSeller(r)}
-                  className="inline-flex max-w-full items-center gap-1 font-medium text-sky-hi underline decoration-sky/40 underline-offset-2 hover:bg-sky/10"
-                >
-                  <SellerAvatar
-                    sellerId={r.sellerId ?? r.sellerWallet}
-                    sellerName={seller}
-                    size={16}
-                  />
-                  <span className="truncate">
-                    sold by {seller}
-                    {r.sellerId && !seller.startsWith("#")
-                      ? ` · #${r.sellerId}`
-                      : ""}
-                  </span>
-                </button>
-                {buyer.label ? (
-                  <span
-                    className="inline-flex max-w-full items-center gap-1 text-forest-hi"
-                    title={
-                      buyer.id
-                        ? `Buyer id #${buyer.id}`
-                        : buyer.wallet
-                          ? `Buyer wallet ${r.buyerWallet ?? ""}`
-                          : undefined
-                    }
-                  >
-                    <SellerAvatar
-                      sellerId={buyer.id ?? r.buyerWallet}
-                      sellerName={buyer.name ?? buyer.label}
-                      size={16}
-                    />
-                    <span className="truncate font-medium">
-                      bought by{" "}
-                      <span className="font-mono tabular-nums">
-                        {buyer.label}
-                      </span>
-                    </span>
-                  </span>
-                ) : (
-                  <span className="text-muted/80">buyer unknown</span>
-                )}
-              </div>
-              <div className="mt-0.5 text-[10px] text-muted">
-                {new Date(r.timestamp).toLocaleTimeString()}
-                {age ? (
-                  <span className="text-sky-hi/90"> · {age}</span>
-                ) : null}
-                {r.solscanUrl ? (
-                  <>
-                    {" · "}
-                    <a
-                      href={r.solscanUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-sky-hi underline-offset-2 hover:underline"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      tx
-                    </a>
-                  </>
-                ) : null}
-              </div>
-            </div>
-            <PriceBlock row={r} compact />
-          </div>
-        );
-      })}
+      {visible.map((r, idx) => (
+        <SoldRow
+          key={`${r.id}-${r.itemType}-${r.timestamp}-${idx}`}
+          r={r}
+          onOpenItem={onOpenItem}
+          onOpenSeller={onOpenSeller}
+        />
+      ))}
+      {onShowMore && hiddenCount > 0 && (
+        <button
+          type="button"
+          onClick={onShowMore}
+          className="flex w-full items-center justify-center gap-2 py-3 text-[12px] font-medium text-sky-hi hover:bg-sky/5"
+        >
+          Show more · {hiddenCount} hidden
+        </button>
+      )}
     </div>
   );
 }
@@ -2022,7 +2126,7 @@ const ListingRow = memo(function ListingRow({
             · qty {qtyLabel}
           </span>
           <span className="shrink-0 text-muted/70">
-            · {new Date(r.timestamp).toLocaleTimeString()}
+            · {formatTimeCached(r.timestamp)}
           </span>
         </button>
         {/* Locker line — who reserved this listing */}
@@ -2082,6 +2186,9 @@ function ListingList({
   watch,
   compact = false,
   tall = false,
+  maxRows,
+  onShowMore,
+  totalRows,
 }: {
   rows: RecentSale[];
   mode: "listings" | "activity";
@@ -2091,6 +2198,9 @@ function ListingList({
   watch: string[];
   compact?: boolean;
   tall?: boolean;
+  maxRows?: number;
+  onShowMore?: () => void;
+  totalRows?: number;
 }) {
   if (!rows.length) {
     return (
@@ -2099,6 +2209,9 @@ function ListingList({
       </div>
     );
   }
+
+  const visible = maxRows != null ? rows.slice(0, maxRows) : rows;
+  const hiddenCount = (totalRows ?? rows.length) - visible.length;
 
   return (
     <div
@@ -2112,7 +2225,7 @@ function ListingList({
             : "max-h-[min(58dvh,32rem)] lg:max-h-[calc(100dvh-15rem)]",
       )}
     >
-      {rows.map((r, idx) => (
+      {visible.map((r, idx) => (
         <ListingRow
           key={`${r.id}-${r.itemType}-${r.listingId ?? ""}-${idx}`}
           r={r}
@@ -2124,6 +2237,15 @@ function ListingList({
           compact={compact}
         />
       ))}
+      {onShowMore && hiddenCount > 0 && (
+        <button
+          type="button"
+          onClick={onShowMore}
+          className="flex w-full items-center justify-center gap-2 py-3.5 text-[13px] font-medium text-sky-hi hover:bg-sky/5"
+        >
+          Show {Math.min(hiddenCount, SHOW_MORE_STEP)} more · {hiddenCount} remaining
+        </button>
+      )}
     </div>
   );
 }
@@ -2163,6 +2285,9 @@ function ItemBrowseBoard({
   loading,
   onOpen,
   onWatch,
+  maxRows,
+  onShowMore,
+  totalRows,
   empty,
 }: {
   rows: (MarketFloorItem & { category?: string; hasLiveFloor?: boolean })[];
@@ -2173,6 +2298,9 @@ function ItemBrowseBoard({
   loading?: boolean;
   onOpen: (id: string) => void;
   onWatch: (id: string, portfolioItemId?: string | null) => void;
+  maxRows?: number;
+  onShowMore?: () => void;
+  totalRows?: number;
   empty: string;
 }) {
   if (loading) {
@@ -2280,7 +2408,7 @@ function ItemBrowseBoard({
       </div>
 
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-        {rows.map((row) => {
+        {(maxRows != null ? rows.slice(0, maxRows) : rows).map((row) => {
           const rate = floorRateLabel(row.lowestUsdPerUnit);
           const listings = row.listings ?? 0;
           const watching = isInWatchlist(watch, row.id, [row.portfolioItemId]);
@@ -2389,6 +2517,15 @@ function ItemBrowseBoard({
           );
         })}
       </div>
+      {onShowMore && maxRows != null && (totalRows ?? rows.length) > maxRows && (
+        <button
+          type="button"
+          onClick={onShowMore}
+          className="card-quiet flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 text-[13px] font-medium text-sky-hi hover:border-sky/35 hover:bg-sky/5"
+        >
+          Show more · {(totalRows ?? rows.length) - maxRows} remaining
+        </button>
+      )}
     </div>
   );
 }
@@ -2710,7 +2847,7 @@ function SheetListingRow({
                   {" · "}
                 </>
               ) : null}
-              {new Date(s.timestamp).toLocaleString()}
+              {formatTimeCached(s.timestamp)}
             </span>
           )}
         </div>
@@ -2762,6 +2899,7 @@ function DetailSheet({
 
   useEffect(() => {
     if (mode !== "item" || !itemId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setStats(null);
       setStatsError(null);
       setStatsLoading(false);
@@ -2804,6 +2942,7 @@ function DetailSheet({
   // Deeper seller inventory from shared book (reuses item-detail cache)
   useEffect(() => {
     if (mode !== "seller") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSellerScan(null);
       setSellerScanError(null);
       setSellerScanLoading(false);

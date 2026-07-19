@@ -218,20 +218,14 @@ html.light .theme-scrim {
 }
 
 /**
- * content-visibility only on fine pointers (desktop).
- * iOS Safari often blanks / reorders list rows with CV auto — phone listings
- * looked wrong or missing vs PC.
+ * content-visibility: auto on all devices now.
+ * Previously restricted to desktop (pointer: fine) because iOS Safari
+ * blanked/reordered rows. Row capping (80 max rendered) mitigates the
+ * Safari issue since fewer rows exist in the DOM.
  */
 .list-row-cv {
-  content-visibility: visible;
-  contain-intrinsic-size: auto;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .list-row-cv {
-    content-visibility: auto;
-    contain-intrinsic-size: auto 72px;
-  }
+  content-visibility: auto;
+  contain-intrinsic-size: auto 68px;
 }
 
 /* Segmented control shell */

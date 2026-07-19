@@ -1,7 +1,8 @@
 @import "tailwindcss";
 
-/* Kinfolio — deep navy + sky + forest (kintara.com inspired) */
-:root {
+/* Kinfolio — deep navy + sky + forest (default = dark) */
+:root,
+html.dark {
   --app: #060c14;
   --surface: #0e1a29;
   --surface-2: #142333;
@@ -23,6 +24,40 @@
   --ink: #061018;
   --glow-sky: color-mix(in srgb, var(--sky) 16%, transparent);
   --glow-forest: color-mix(in srgb, var(--forest) 9%, transparent);
+  --shadow-soft: color-mix(in srgb, #000 18%, transparent);
+  --shadow-deep: color-mix(in srgb, #000 28%, transparent);
+  --highlight-inset: color-mix(in srgb, #fff 3.5%, transparent);
+}
+
+/**
+ * Light mode — warm paper / sand, not pure white.
+ * Soft cream surfaces, gentle transparency, eye-easing contrast.
+ */
+html.light {
+  --app: #efe8dc;
+  --surface: #f7f1e7;
+  --surface-2: #ebe3d4;
+  --raised: #fffaf2;
+  --border: #d2c4ae;
+  --primary: #2a2520;
+  --muted: #6f6558;
+  --sky: #3d87b8;
+  --sky-hi: #1f6a98;
+  --sky-dim: #6aa3c9;
+  --forest: #2d8a56;
+  --forest-hi: #1a6b3f;
+  --gold: #b08a3a;
+  --gold-hi: #8f6e28;
+  --profit: #2d8a56;
+  --info: #3d87b8;
+  --loss: #c24d5c;
+  --amber: #c48a2a;
+  --ink: #1a1612;
+  --glow-sky: color-mix(in srgb, #5ba3d4 14%, transparent);
+  --glow-forest: color-mix(in srgb, #3d9a68 10%, transparent);
+  --shadow-soft: color-mix(in srgb, #5c4630 9%, transparent);
+  --shadow-deep: color-mix(in srgb, #4a3828 12%, transparent);
+  --highlight-inset: color-mix(in srgb, #fff 55%, transparent);
 }
 
 @theme inline {
@@ -102,13 +137,44 @@ body {
   min-height: 100dvh;
 }
 
+/* Warm light: soft parchment wash, not flat white */
+html.light .page-glow {
+  background:
+    radial-gradient(
+      ellipse 90% 55% at 12% -8%,
+      color-mix(in srgb, #c9dff0 35%, transparent),
+      transparent 55%
+    ),
+    radial-gradient(
+      ellipse 70% 45% at 92% 0%,
+      color-mix(in srgb, #d4e8d4 28%, transparent),
+      transparent 50%
+    ),
+    radial-gradient(
+      ellipse 80% 40% at 50% 100%,
+      color-mix(in srgb, #e8d5b8 22%, transparent),
+      transparent 60%
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--app) 92%, #f5efe4) 0%,
+      var(--app) 100%
+    );
+}
+
 /* Elevated panels */
 .card-quiet {
   background: color-mix(in srgb, var(--surface) 94%, transparent);
   border: 1px solid color-mix(in srgb, var(--border) 62%, transparent);
   box-shadow:
-    0 1px 0 color-mix(in srgb, #fff 3.5%, transparent) inset,
-    0 8px 28px color-mix(in srgb, #000 18%, transparent);
+    0 1px 0 var(--highlight-inset) inset,
+    0 8px 28px var(--shadow-soft);
+  backdrop-filter: blur(8px);
+}
+
+html.light .card-quiet {
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  border-color: color-mix(in srgb, var(--border) 70%, transparent);
 }
 
 .card-hero {
@@ -123,8 +189,18 @@ body {
     );
   border: 1px solid color-mix(in srgb, var(--border) 70%, var(--sky) 12%);
   box-shadow:
-    0 1px 0 color-mix(in srgb, #fff 5%, transparent) inset,
-    0 16px 48px color-mix(in srgb, #000 28%, transparent);
+    0 1px 0 var(--highlight-inset) inset,
+    0 16px 48px var(--shadow-deep);
+}
+
+html.light .card-hero {
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--raised) 70%, #d6ebf7 30%),
+      color-mix(in srgb, var(--surface) 90%, transparent) 60%,
+      var(--surface)
+    );
 }
 
 .card-hero::before {
@@ -141,6 +217,11 @@ body {
     transparent 100%
   );
   pointer-events: none;
+}
+
+/* Light: softer mobile drawer dim (not harsh pure black) */
+html.light .theme-scrim {
+  background: color-mix(in srgb, #3d3428 35%, transparent);
 }
 
 /* Segmented control shell */

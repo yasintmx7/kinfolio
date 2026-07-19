@@ -2,10 +2,12 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { PortfolioProvider } from "@/components/providers/portfolio-provider";
+import { ThemeSync } from "@/components/providers/theme-provider";
 import { ToastProvider } from "@/components/feedback/toast";
 import { AppShell } from "@/components/navigation/app-shell";
 import { RegisterServiceWorker } from "@/components/pwa/register-sw";
 import { APP_NAME, APP_TAGLINE } from "@/config/kintara";
+import { THEME_BOOT_SCRIPT } from "@/lib/theme";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -57,10 +59,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en" className="dark" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }}
+        />
+      </head>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <ToastProvider>
           <PortfolioProvider>
+            <ThemeSync />
             <RegisterServiceWorker />
             <div className="page-glow min-h-dvh">
               <AppShell>{children}</AppShell>

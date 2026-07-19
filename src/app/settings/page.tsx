@@ -7,6 +7,7 @@ import { Input, Label, Select } from "@/components/ui/input";
 import { usePortfolioContext } from "@/components/providers/portfolio-provider";
 import { useToast } from "@/components/feedback/toast";
 import type { BackupPayload, FeeTargetMode, ValuationMethod } from "@/lib/accounting/types";
+import { setTheme, type AppTheme } from "@/lib/theme";
 import { z } from "zod";
 
 const backupSchema = z.object({
@@ -129,6 +130,46 @@ export default function SettingsPage() {
         <p className="text-[11px] text-muted">
           Run API check below to confirm market + leaderboard health.
         </p>
+      </Card>
+
+      <Card className="space-y-3">
+        <CardTitle>Appearance</CardTitle>
+        <p className="text-xs text-muted">
+          Light mode uses warm paper tones (not pure white) for easier reading.
+        </p>
+        <div className="grid grid-cols-2 gap-2">
+          {(
+            [
+              {
+                id: "dark" as AppTheme,
+                title: "Dark",
+                hint: "Deep navy",
+              },
+              {
+                id: "light" as AppTheme,
+                title: "Light",
+                hint: "Warm parchment",
+              },
+            ] as const
+          ).map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => {
+                setTheme(opt.id);
+                void patchSettings({ theme: opt.id });
+              }}
+              className={`rounded-2xl border px-3 py-3 text-left transition-colors ${
+                settings.theme === opt.id
+                  ? "border-sky/50 bg-sky/15 text-sky-hi"
+                  : "border-border/50 bg-surface-2/60 text-muted hover:text-primary"
+              }`}
+            >
+              <div className="text-sm font-semibold">{opt.title}</div>
+              <div className="mt-0.5 text-[11px] opacity-80">{opt.hint}</div>
+            </button>
+          ))}
+        </div>
       </Card>
 
       <Card className="space-y-3">

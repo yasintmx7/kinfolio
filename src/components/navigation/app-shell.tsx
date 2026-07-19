@@ -8,18 +8,21 @@ import {
   Grid3X3,
   History,
   Layers,
+  Moon,
   MoreHorizontal,
   Package,
   PlusCircle,
   Settings,
   Star,
   Store,
+  Sun,
   Trophy,
   Wallet,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Logo } from "@/components/brand/logo";
+import { useThemeToggle } from "@/components/providers/theme-provider";
 
 const NAV = [
   {
@@ -61,6 +64,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
       ? "market"
       : rawTab;
   const [moreOpen, setMoreOpen] = useState(false);
+  const { theme, toggle: toggleTheme } = useThemeToggle();
   const onMarket = pathname.startsWith("/market");
   const onLeaderboard = pathname.startsWith("/leaderboard");
 
@@ -131,11 +135,30 @@ function ShellInner({ children }: { children: React.ReactNode }) {
             );
           })}
         </nav>
-        <div className="border-t border-border/30 px-4 py-4">
-          <p className="text-[11px] font-medium text-primary/90">Kinfolio</p>
-          <p className="mt-0.5 text-[10px] leading-relaxed text-muted/70">
-            Read-only Kintara market · $ floors · live book
-          </p>
+        <div className="space-y-2 border-t border-border/30 px-3 py-3">
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="flex w-full min-h-10 items-center gap-2.5 rounded-2xl px-3 text-[13px] text-muted transition-colors hover:bg-surface-2/80 hover:text-primary"
+            aria-label={
+              theme === "dark" ? "Switch to light mode" : "Switch to dark mode"
+            }
+          >
+            {theme === "dark" ? (
+              <Sun className="h-4 w-4 shrink-0 text-amber" />
+            ) : (
+              <Moon className="h-4 w-4 shrink-0 text-sky-hi" />
+            )}
+            <span className="font-medium">
+              {theme === "dark" ? "Light mode" : "Dark mode"}
+            </span>
+          </button>
+          <div className="px-1">
+            <p className="text-[11px] font-medium text-primary/90">Kinfolio</p>
+            <p className="mt-0.5 text-[10px] leading-relaxed text-muted/70">
+              Read-only Kintara market · $ floors · live book
+            </p>
+          </div>
         </div>
       </aside>
 
@@ -144,10 +167,26 @@ function ShellInner({ children }: { children: React.ReactNode }) {
           <Link href="/market?tab=market">
             <Logo size={30} />
           </Link>
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-sky/20 bg-sky/12 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-sky-hi">
-            <span className="live-dot" />
-            Live
-          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="flex h-9 w-9 items-center justify-center rounded-xl border border-border/50 bg-surface/70 text-muted hover:text-primary"
+              aria-label={
+                theme === "dark" ? "Switch to light mode" : "Switch to dark mode"
+              }
+            >
+              {theme === "dark" ? (
+                <Sun className="h-4 w-4 text-amber" />
+              ) : (
+                <Moon className="h-4 w-4 text-sky-hi" />
+              )}
+            </button>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-sky/20 bg-sky/12 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-sky-hi">
+              <span className="live-dot" />
+              Live
+            </span>
+          </div>
         </header>
         <main className="mx-auto w-full max-w-6xl px-4 py-5 pb-28 md:px-8 md:py-7 md:pb-10">
           {children}
@@ -213,7 +252,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
         <div className="fixed inset-0 z-[45] md:hidden">
           <button
             type="button"
-            className="absolute inset-0 bg-black/55"
+            className="theme-scrim absolute inset-0 bg-black/55"
             aria-label="Close"
             onClick={() => setMoreOpen(false)}
           />
@@ -241,6 +280,23 @@ function ShellInner({ children }: { children: React.ReactNode }) {
                 </Link>
               );
             })}
+            <button
+              type="button"
+              onClick={() => {
+                toggleTheme();
+                setMoreOpen(false);
+              }}
+              className="flex min-h-12 w-full items-center gap-3 rounded-xl px-3 text-sm text-primary hover:bg-surface-2"
+            >
+              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-raised/60">
+                {theme === "dark" ? (
+                  <Sun className="h-4 w-4 text-amber" />
+                ) : (
+                  <Moon className="h-4 w-4 text-sky-hi" />
+                )}
+              </span>
+              {theme === "dark" ? "Light mode" : "Dark mode"}
+            </button>
           </div>
         </div>
       )}

@@ -487,7 +487,7 @@ export function openListingsToActivity(
         : unitKins != null
           ? d(unitKins).mul(qty).toFixed()
           : null;
-    const tsMs = r.lastSeen ?? r.firstSeen ?? Date.now();
+    const tsMs = r.lastSeen ?? r.firstSeen ?? 0;
     const buyerId = reservedBuyerId(r.reservedBy);
     const reserved =
       r.reservedBy != null ||

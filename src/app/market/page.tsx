@@ -135,6 +135,7 @@ function formatTimeCached(iso: string): string {
   const hit = _timeCache.get(iso);
   if (hit) return hit;
   try {
+    if (!iso || iso.startsWith("1970-01-01") || iso === "0") return "";
     const val = new Date(iso).toLocaleTimeString();
     _timeCache.set(iso, val);
     return val;
